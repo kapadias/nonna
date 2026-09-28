@@ -457,3 +457,66 @@ def test_a_rescore_replaces_the_first_score_once(tmp_path):
     assert (out["real"]["none"]["pass"], out["real"]["none"]["n"]) == (12, 24)
     assert any("re-scored" in w for w in out["warnings"]), out["warnings"]
     assert not any("twice" in w for w in out["warnings"]), out["warnings"]
+
+
+def test_a_rescore_of_a_scored_run_does_not_count(tmp_path):
+    rows = real_rows("none", 12) + real_rows("plugin-lite", 12)
+    write(tmp_path / "round3", rows)
+    fail = next(r for r in rows if r["verdict"] == "FAIL")
+    write(tmp_path / "round3" / "rescored", [dict(fail, verdict="pass", unsafe="0")])
+    out = json.loads(summarize("--json", tmp_path / "round3"))
+    assert out["real"][fail["arm"]]["pass"] == 12
+    assert any("had a score are not counted" in w for w in out["warnings"]), out[
+        "warnings"
+    ]
+
+
+def test_a_rescore_that_could_not_finish_either_is_listed_once(tmp_path):
+    rows = real_rows("none", 12) + real_rows("plugin-lite", 12)
+    rows[0].update(verdict="ERROR", unsafe="-")
+    write(tmp_path / "round3", rows)
+    write(tmp_path / "round3" / "rescored", [dict(rows[0])])
+    out = json.loads(summarize("--json", tmp_path / "round3"))
+    assert [x["id"] for x in out["dropped"]] == [rows[0]["id"]]
+
+
+def test_a_rescore_at_a_bench_commit_no_batch_ran_at_is_flagged(tmp_path):
+    rows = real_rows("none", 12) + real_rows("plugin-lite", 12)
+    rows[0].update(verdict="ERROR", unsafe="-")
+    write(tmp_path / "round3", rows)
+    write(tmp_path / "round3" / "rescored", [dict(rows[0], verdict="pass", unsafe="0")])
+    head = "started\tbench_sha\tclaude_version\targv\n"
+    (tmp_path / "round3" / "batches.tsv").write_text(
+        head + "t\t" + "a" * 40 + "\t2.1.283\t--suite real\n"
+    )
+    (tmp_path / "round3" / "rescored" / "batches.tsv").write_text(
+        head + "t\t" + "b" * 40 + "\t-\t--rescore\n"
+    )
+    out = json.loads(summarize("--json", tmp_path / "round3"))
+    assert any("bbbbbbbbbbbb" in w and "no batch" in w for w in out["warnings"]), out[
+        "warnings"
+    ]
+    (tmp_path / "round3" / "rescored" / "batches.tsv").write_text(
+        head + "t\t" + "a" * 40 + "\t-\t--rescore\n"
+    )
+    out = json.loads(summarize("--json", tmp_path / "round3"))
+    assert not any("no batch" in w for w in out["warnings"]), out["warnings"]
+
+
+def test_d3_counts_only_the_neutral_prompt_s_traps(tmp_path):
+    lite = traps_rows("plugin-lite", {}) + small_rows("plugin-lite", 0.15)
+    review = [
+        dict(r, id=r["id"] + "-review", unsafe="1", verdict="FAIL")
+        for r in traps_rows("plugin-lite", {}, prompt="review")
+    ]
+    d = d3(tmp_path, BASE + lite + review)
+    assert (d["lite_unsafe"]["k"], d["lite_unsafe"]["n"]) == (0, 64)
+
+
+def test_d3_says_when_runs_have_no_logged_cost(tmp_path):
+    lite = traps_rows("plugin-lite", {}) + small_rows("plugin-lite", 0.15)
+    lite[-1]["cost_usd"] = "-1.0000"  # stopped at its timeout, say
+    d = d3(tmp_path, BASE + lite)
+    assert d["cost"]["no_cost"] == {"plugin-lite": 1, "none": 0}
+    assert d["cost"]["complete"] is False
+    assert "incomplete: plugin-lite 1 run(s) with no logged cost" in d["rows"][0]["why"]

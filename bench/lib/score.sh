@@ -7,9 +7,13 @@ set -uo pipefail
 B="$(cd "$(dirname "$0")/.." && pwd)"; H="$B/hidden"
 suite="$1"; t="$2"; d="$3"; out="$d.hidden.txt"
 if [ "$suite" = real ]; then
-  # Copies and databases of its own (PG_URL, REAL_CACHE): hidden/real/score.py.
+  # Copies and databases of its own (PG_URL, REAL_CACHE): hidden/real/score.py. A verdict counts only
+  # when the scorer printed it: a crash of the scorer's own is ERROR, never FAIL.
   python3 "$H/real/score.py" "$t" "$d" > "$out" 2>&1
-  case $? in 0) echo pass ;; 1) echo FAIL ;; *) echo ERROR ;; esac
+  rc=$?
+  if [ "$rc" = 0 ] && grep -qx 'verdict=pass' "$out"; then echo pass
+  elif [ "$rc" = 1 ] && grep -qx 'verdict=FAIL' "$out"; then echo FAIL
+  else echo ERROR; fi
   exit 0
 fi
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT

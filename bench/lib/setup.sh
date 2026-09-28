@@ -16,9 +16,8 @@
 #   <run-dir>.harness     what is installed: the harness commit (arm=nonna), or nonna@<sha>,
 #                         ponytail@<sha>, or both joined by + (plugin arms)
 #   <run-dir>.remote.git  a local bare "origin" (push only; nothing leaves the machine)
-#   <run-dir>.db          suite real: the run's own database (run-one.sh drops it after the run)
-#   <run-dir>.env         suite real: the backend's settings for it, KEY=VALUE per line; run-one.sh
-#                         puts them in the agent's environment
+#   <run-dir>.env         suite real: the backend's settings for the run's own database, KEY=VALUE
+#                         per line; run-one.sh puts them in the agent's environment
 #
 # The real suite's project is the pinned upstream tree instead of base/, with its locked
 # dependencies in ./.venv (ignored through .git/info/exclude) and a database of its own, migrated
@@ -63,15 +62,17 @@ fi
 # The user's own git config stays out of the project: a global init template (a hook manager's, say)
 # would plant hooks in every run's .git, and a global hooksPath would run them at the setup commits.
 export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL=/dev/null
-# A database an earlier setup of this run dir left behind (a run that never reached its teardown).
-if [ -f "$d.db" ] && [ -n "${PG_URL:-}" ]; then
-  python3 "$B/lib/real/db.py" drop "$PG_URL" "$(cat "$d.db")" || true
+if [ "$suite" = real ]; then
+  # The run's database is named after its run dir, so run-one.sh can drop it without asking a file
+  # the agent could write. One an earlier setup of this run dir left behind goes first.
+  db="$(python3 "$B/lib/real/db.py" name "$d")"
+  python3 "$B/lib/real/db.py" drop "$db"
 fi
 rm -rf "$d" "$d".pristine "$d".remote.git
-rm -f "$d".prompt "$d".key "$d".base "$d".remote-main "$d".harness "$d".meta "$d".db "$d".env "$d".setup.log
+rm -f "$d".prompt "$d".key "$d".base "$d".remote-main "$d".harness "$d".meta "$d".env "$d".setup.log
 mkdir -p "$(dirname "$d")"
 if [ "$suite" = real ]; then
-  cp -r "$(bash "$B/lib/real/cache.sh" "$REAL_CACHE")" "$d"
+  bash "$B/lib/real/cache.sh" "$REAL_CACHE" "$d" # the pinned tree, from git's object store
 else
   cp -r "$B/base" "$d"
 fi
@@ -94,9 +95,7 @@ if [ "$suite" = real ]; then
       UV_PROJECT_ENVIRONMENT="$d/.venv" UV_LINK_MODE=copy UV_OFFLINE=1 \
       uv sync -q --frozen --offline --package app --python 3.11 ) > "$d.setup.log" 2>&1 ||
     { echo "setup: uv sync failed, see $d.setup.log" >&2; exit 1; }
-  db="r$(python3 -c 'import secrets; print(secrets.token_hex(6))')"
-  printf '%s\n' "$db" > "$d.db"
-  python3 "$B/lib/real/db.py" create "$PG_URL" "$db" > "$d.env"
+  python3 "$B/lib/real/db.py" create "$db" > "$d.env"
   settings=()
   while IFS= read -r kv; do settings+=("$kv"); done < "$d.env"
   # Migrated as the agent would, from backend/ with the run's settings and nothing else of ours.

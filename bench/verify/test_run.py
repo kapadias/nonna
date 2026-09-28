@@ -225,3 +225,76 @@ def test_a_dry_run_end_to_end(stub_path, tmp_path):
         log = fh.read().splitlines()
     assert log[0].split("\t") == ["started", "bench_sha", "claude_version", "argv"]
     assert "--dry-run" in log[-1] and "stub" in log[-1]
+
+
+def committed_bench(tmp_path):
+    repo = tmp_path / "repo"
+    shutil.copytree(
+        B, repo / "bench", ignore=shutil.ignore_patterns("__pycache__", "results")
+    )
+    git(repo, "init", "-q")
+    git(repo, "add", "-A")
+    git(repo, "commit", "-qm", "bench")
+    return repo / "bench"
+
+
+def test_a_rescore_needs_a_clean_committed_bench_and_is_logged(stub_path, tmp_path):
+    bench = committed_bench(tmp_path)
+    args = [
+        "--rescore",
+        "--arm",
+        "none",
+        "--tasks",
+        "refactor",
+        "--reps",
+        "1",
+        "--work",
+        str(tmp_path / "w"),
+        "--results",
+        str(tmp_path / "r"),
+    ]
+    (bench / "lib" / "scratch.py").write_text("x = 1\n")
+    r = run(stub_path, *args, bench=str(bench))
+    assert r.returncode == 2 and "not clean" in r.stderr, r.stderr
+    (bench / "lib" / "scratch.py").unlink()
+    r = run(
+        stub_path, *args, bench=str(bench)
+    )  # no run dirs to score: nothing counted, but logged
+    log = (tmp_path / "r" / "rescored" / "batches.tsv").read_text()
+    assert "--rescore" in log.splitlines()[-1], (log, r.stderr)
+
+
+def test_the_real_suite_refuses_a_server_that_lets_a_login_in_without_a_password(
+    stub_path, tmp_path
+):
+    bench = committed_bench(tmp_path)
+    pgbin = tmp_path / "pgbin"
+    pgbin.mkdir()
+    (pgbin / "psql").write_text(
+        "#!/bin/sh\ncat > /dev/null\nexit 0\n"
+    )  # every login works
+    (pgbin / "psql").chmod(0o755)
+    r = run(
+        stub_path,
+        "--rescore",
+        "--suite",
+        "real",
+        "--arm",
+        "none",
+        "--tasks",
+        "search",
+        "--reps",
+        "1",
+        "--work",
+        str(tmp_path / "w"),
+        "--results",
+        str(tmp_path / "r"),
+        bench=str(bench),
+        PG_BIN=str(pgbin),
+        PG_URL="postgresql://admin:FAKE-admin-pw@127.0.0.1:1/postgres",
+        REAL_CACHE=str(tmp_path / "cache"),
+    )
+    assert r.returncode == 2 and "asks every login for a password" in r.stderr, r.stderr
+    assert not (
+        tmp_path / "cache" / "upstream.git"
+    ).exists()  # refused before fetching anything

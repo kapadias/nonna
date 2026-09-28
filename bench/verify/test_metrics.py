@@ -274,3 +274,10 @@ def test_old_callers_get_dashes_for_prompt_and_label(tmp_path):
     d = make_run(tmp_path)
     r = row(d)
     assert (r["prompt"], r["label"]) == ("-", "-")
+
+
+def test_no_field_can_split_the_row(tmp_path):
+    forged = tool("Agent", subagent_type="Explore\tforged\nrow")
+    d = make_run(tmp_path, stream=[INIT, forged, MAIN])
+    r = row(d, "neutral", "-")
+    assert r["subagent_types"] == "Explore forged row=1"

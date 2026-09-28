@@ -9,7 +9,8 @@
 #   lives as long as the batch.
 # - Every login needs a password: the admin URL carries the superuser's, drawn fresh here, and a
 #   run's environment carries only its own database's. So an agent that reaches for the superuser
-#   out of habit cannot touch another run's database.
+#   out of habit cannot touch another run's database. It is no barrier to one that goes looking:
+#   the admin URL is in the environment of run.sh and its children, which the same user can read.
 # - Postgres refuses to run as root, so as root the server runs as the postgres user, and <dir>
 #   must be somewhere that user can reach.
 set -euo pipefail

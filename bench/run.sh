@@ -21,10 +21,12 @@
 #   --cap USD          stop launching runs once logged spend reaches it  [150]
 #   --run-budget USD   each run's --max-budget-usd                       [3]
 #   --ponytail D       a ponytail checkout, for the ponytail arms: committed, and node on PATH
-#   --pg-url URL       suite real: a PostgreSQL admin URL whose user may create roles and databases
-#                      (or PG_URL in the environment); each run gets a role and a database of its
-#                      own. Without it: a throwaway cluster (initdb from PG_BIN) for the batch.
-#                      Never logged.
+#   --pg-url URL       suite real: a PostgreSQL admin URL whose user may create roles and databases;
+#                      each run gets a role and a database of its own. Better as PG_URL in the
+#                      environment: a command line is readable by every process on the machine.
+#                      Never logged. The server must ask every login for a password: a paid run or
+#                      a re-score refuses one that lets the admin, or postgres, in without. Without
+#                      it: a throwaway cluster (initdb from PG_BIN) for the batch, which asks.
 #                      The pinned upstream tree and its dependencies are fetched once into
 #                      $REAL_CACHE                        [~/.cache/nonna-bench/real]
 #   --installer D      arm nonna: install the harness by running D/install.sh (NONNA_SRC=D) in each
@@ -34,15 +36,17 @@
 #   --harness-ref R    commit of the harness to install or snapshot      [HEAD]
 #   --work D           where run dirs and transcripts go                 [$BENCH_WORK or /tmp/nonna-bench]
 #   --results D        where the TSVs go                                 [bench/results/round3]
-#   --rescore          re-score existing run dirs into D/rescored/ (no API calls)
+#   --rescore          re-score existing run dirs into D/rescored/ (no API calls). summarize.py
+#                      counts a re-score only for a run its scorer could not finish (ERROR)
 #   --dry-run          run the stub claude (verify/stub/claude) instead: no model, no network, no
 #                      cost; ponytail arms use a stand-in unless --ponytail is given; work and
 #                      results go to a new temporary directory unless given
 #
-# A paid run (neither --dry-run nor --rescore) starts only when bench/PREREGISTRATION.md is committed,
-# bench/ outside results/ has no uncommitted change, and ANTHROPIC_API_KEY is set: each run bills that
-# key, and lib/fingerprint.py stops a run that bills anything else. Each batch is logged to
-# <results>/batches.tsv: when, the bench commit, `claude --version` and the arguments.
+# A paid run or a re-score (anything but --dry-run) starts only when bench/PREREGISTRATION.md is
+# committed and bench/ outside results/ has no uncommitted change, so the logged bench commit is what
+# ran; a paid run also needs ANTHROPIC_API_KEY: each run bills that key, and lib/fingerprint.py stops a
+# run that bills anything else. Each batch is logged to <results>/batches.tsv: when, the bench commit,
+# `claude --version` and the arguments.
 #
 # Each run appends one row to <results>/<suite>.tsv. `python3 bench/summarize.py` prints the tables.
 set -uo pipefail
@@ -153,7 +157,7 @@ for f in "$RESULTS"/*.tsv; do
     die "$f has another header (an older round's?); give this round its own --results"
 done
 
-if [ "$dry" = 0 ] && [ "$rescore" = 0 ]; then
+if [ "$dry" = 0 ]; then
   top="$(git -C "$B" rev-parse --show-toplevel 2>/dev/null)" || die "bench/ is not in a git checkout"
   if [ -z "$(git -C "$top" ls-files -- "$B/PREREGISTRATION.md")" ] ||
     ! git -C "$top" diff --quiet HEAD -- "$B/PREREGISTRATION.md"; then
@@ -161,7 +165,7 @@ if [ "$dry" = 0 ] && [ "$rescore" = 0 ]; then
   fi
   [ -z "$(git -C "$top" status --porcelain -- "$B" ":(exclude)$B/results")" ] ||
     die "bench/ is not clean; commit it, so the logged commit is what ran"
-  [ -n "${ANTHROPIC_API_KEY:-}" ] ||
+  [ "$rescore" = 1 ] || [ -n "${ANTHROPIC_API_KEY:-}" ] ||
     die "set ANTHROPIC_API_KEY: every run bills it, and a run that bills anything else is stopped"
 fi
 
@@ -190,8 +194,6 @@ elif [ "$rescore" = 0 ] && { has ponytail || has ponytail+lite; }; then
 fi
 
 if [ "$suite" = real ]; then
-  REAL_CACHE="${REAL_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/nonna-bench/real}"
-  bash "$B/lib/real/cache.sh" "$REAL_CACHE" > /dev/null || die "could not fill the real suite's cache, $REAL_CACHE"
   if [ -z "$pg_url" ]; then
     # Postgres runs as the postgres user when this runs as root, so the cluster lives where that
     # user can reach: the temporary directory, not WORK.
@@ -200,7 +202,14 @@ if [ "$suite" = real ]; then
     pg_url="$(PG_BIN="$PG_BIN" bash "$B/lib/real/pg.sh" start "$pgdir")" ||
       die "could not start a throwaway PostgreSQL (give --pg-url)"
   fi
-  export PG_URL="$pg_url" REAL_CACHE PG_BIN
+  export PG_URL="$pg_url" PG_BIN
+  # A run, and the scorer running its code, get the server's host and port: a server that lets its
+  # admin, or postgres, in with no password lets them in too.
+  [ "$dry" = 1 ] || python3 "$B/lib/real/db.py" check-auth ||
+    die "the real suite needs a PostgreSQL that asks every login for a password"
+  REAL_CACHE="${REAL_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/nonna-bench/real}"
+  export REAL_CACHE
+  bash "$B/lib/real/cache.sh" "$REAL_CACHE" > /dev/null || die "could not fill the real suite's cache, $REAL_CACHE"
 fi
 
 export WORK RESULTS CAP="$cap" RESCORE="$rescore" PROMPT_MODE="$prompt" LABEL="$label" RUN_BUDGET="$run_budget"
@@ -212,14 +221,12 @@ echo "work=$WORK results=$RESULTS harness=$h${NONNA_SHA:+ nonna@$NONNA_SHA}${PON
 [ "$dry" = 1 ] && echo "dry run: $CLAUDE_BIN, no model, no network"
 [ "$suite" = real ] && echo "real suite: cache $REAL_CACHE, PostgreSQL ${pgdir:+a throwaway cluster in $pgdir}${pgdir:-from --pg-url}"
 
-if [ "$rescore" = 0 ]; then
-  [ -s "$RESULTS/batches.tsv" ] || printf 'started\tbench_sha\tclaude_version\targv\n' > "$RESULTS/batches.tsv"
-  printf '%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(git -C "$B" rev-parse HEAD 2>/dev/null || echo -)" \
-    "$("$CLAUDE_BIN" --version 2>/dev/null | head -1 || echo -)" "$argv" >> "$RESULTS/batches.tsv"
-fi
+[ -s "$RESULTS/batches.tsv" ] || printf 'started\tbench_sha\tclaude_version\targv\n' > "$RESULTS/batches.tsv"
+printf '%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$(git -C "$B" rev-parse HEAD 2>/dev/null || echo -)" \
+  "$("$CLAUDE_BIN" --version 2>/dev/null | head -1 || echo -)" "$argv" >> "$RESULTS/batches.tsv"
 
 # Interleave arms and tasks so that a budget stop leaves a balanced partial sample.
 for ((r = rep_start; r < rep_start + reps; r++)); do
   for t in $tasks; do for a in $arms; do printf '%s %s %s %s %s\n' "$suite" "$t" "$a" "$model" "$r"; done; done
 done | xargs -P "$par" -L1 bash "$B/lib/run-one.sh"
-echo "done. spend so far: \$$(awk -F'\t' 'FNR==1{c=0; for(i=1;i<=NF;i++) if($i=="cost_usd") c=i; next} c && $c>0 {s+=$c} END{printf "%.2f", s+0}' "$RESULTS"/*.tsv 2>/dev/null)"
+echo "done. spend so far: \$$(bash "$B/lib/run-one.sh" --spent)"

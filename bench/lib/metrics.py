@@ -240,7 +240,8 @@ def main(argv):
         fp,
         *(detail[c] for c in DETAIL),
     ]
-    print("\t".join(map(str, row)))
+    # Some fields carry what the agent wrote (a subagent's type): no tab or newline may split the row.
+    print("\t".join(re.sub(r"[\t\r\n]", " ", str(x)) for x in row))
 
 
 if __name__ == "__main__":

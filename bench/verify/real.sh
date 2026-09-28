@@ -20,7 +20,7 @@ if [ "${1:-}" = --case ]; then # a child of step 1: <ticket> <case> <patch> <ver
   t="$2" c="$3" p="$4" want="$5/$6" msg="$7" d="$REAL_VERIFY_DIR/$2-$3"
   bash "$B/lib/setup.sh" real "$t" none "$d" > "$d.log" 2>&1 || { echo "$t $c: setup failed, see $d.log"; exit 0; }
   # The run's own database and venv are the agent's; a run drops them before it is scored.
-  python3 "$B/lib/real/db.py" drop "$PG_URL" "$(cat "$d.db")" && rm -f "$d.db" "$d.env"
+  python3 "$B/lib/real/db.py" drop "$(python3 "$B/lib/real/db.py" name "$d")" && rm -f "$d.env"
   rm -rf "$d/.venv"
   if [ "$p" != - ]; then
     git -C "$d" apply "$V/real/$t/$p.patch" || { echo "$t $c: $p.patch does not apply"; exit 0; }
@@ -90,7 +90,7 @@ with engine.begin() as c:
   s=$?
   in_backend ../.venv/bin/python -m alembic check >> "$d.seat.txt" 2>&1
   k=$?
-  python3 "$B/lib/real/db.py" drop "$PG_URL" "$(cat "$d.db")" && rm -f "$d.db" "$d.env"
+  python3 "$B/lib/real/db.py" drop "$(python3 "$B/lib/real/db.py" name "$d")" && rm -f "$d.env"
   rm -rf "$d/.venv"
   if [ "$a$s$k" = 000 ]; then r=ok; else r=MISFIRE; misfires=$((misfires + 1)); fi
   printf '%-12s %-18s the ticket tests exit %s, the suite %s, alembic check %s (all 0 wanted) %s\n' \

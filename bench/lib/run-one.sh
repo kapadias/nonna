@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # usage: run-one.sh <suite> <task> <arm> <model> <rep>
+#        run-one.sh --spent   -> the spend so far across $RESULTS/*.tsv (the cap's measure)
 # env (set by run.sh): WORK RESULTS CAP TIMEOUT MAX_TURNS RUN_BUDGET PROMPT_MODE LABEL RESCORE CLAUDE_BIN,
 #   HARNESS_REPO HARNESS_REF INSTALLER (arm nonna), NONNA_SNAP NONNA_SHA PONYTAIL_SNAP PONYTAIL_SHA
 #   (the plugin snapshots run.sh took), PG_URL REAL_CACHE PG_BIN (suite real)
@@ -11,10 +12,20 @@
 # variables kept below, a fresh config dir ($d.cfg: its global git config and its transcripts too),
 # no user settings and no MCP servers. lib/fingerprint.py launches it, and stops it as soon as its
 # first events show it is not the arm it claims to be (exit 86), or at TIMEOUT (exit 124). A real-suite
-# run also gets its own database's settings ($d.env), never the admin URL; the database and the
-# run's venv go once the agent is done, since the scorer builds its own.
+# run also gets its own database's settings ($d.env), not the admin URL, and no password file; the
+# database and the run's venv go once the agent is done, since the scorer builds its own. This keeps
+# out what a shell would pass on by accident. It is not a sandbox: the agent runs as this user.
 set -uo pipefail
 B="$(cd "$(dirname "$0")/.." && pwd)"
+spent() { # total spend across every results TSV, by header name. A run with no logged cost (one
+  # stopped at its timeout, say) counts as its whole budget, unless the fingerprint stopped it at start.
+  awk -F'\t' -v b="${RUN_BUDGET:-3}" '
+    FNR==1 { c = k = 0; for (i = 1; i <= NF; i++) { if ($i == "cost_usd") c = i; if ($i == "rc") k = i }; next }
+    c && $c > 0 { s += $c; next }
+    c && $c < 0 && !(k && $k == 86) { s += b }
+    END { printf "%.2f", s + 0 }' "$RESULTS"/*.tsv 2>/dev/null || echo 0
+}
+[ "${1:-}" = --spent ] && { spent; exit 0; }
 suite="$1"; t="$2"; arm="$3"; model="$4"; rep="$5"
 # The run dir's name is the row's id, so a review-prompt run or a labelled rerun is a run of its own.
 id="${t}-${arm}-${model}-${rep}"
@@ -23,10 +34,12 @@ id="${t}-${arm}-${model}-${rep}"
 d="$WORK/$suite/$id"
 tsv="$RESULTS/$suite.tsv"
 
-spent() { # total logged spend across every results TSV, by header name
-  awk -F'\t' 'FNR==1{c=0; for(i=1;i<=NF;i++) if($i=="cost_usd") c=i; next} c && $c>0 {s+=$c} END{printf "%.2f", s+0}' \
-    "$RESULTS"/*.tsv 2>/dev/null || echo 0
+teardown() { # the real suite's database (named after the run dir, never after a file) and venv
+  [ "$suite" = real ] || return 0
+  python3 "$B/lib/real/db.py" drop "$(python3 "$B/lib/real/db.py" name "$d")" && rm -f "$d.env"
+  rm -rf "$d/.venv"
 }
+
 
 if [ "${RESCORE:-0}" != 1 ]; then
   s="$(spent)"
@@ -34,7 +47,7 @@ if [ "${RESCORE:-0}" != 1 ]; then
     echo "SKIP $id: logged spend \$$s has reached the cap \$$CAP" >&2
     exit 0
   fi
-  bash "$B/lib/setup.sh" "$suite" "$t" "$arm" "$d" || { echo "SETUP FAILED $id" >&2; exit 1; }
+  bash "$B/lib/setup.sh" "$suite" "$t" "$arm" "$d" || { teardown; echo "SETUP FAILED $id" >&2; exit 1; }
   # A fresh config dir, with an empty global git config. A ponytail arm starts as a returning user:
   # its first session asks the agent to offer a statusline setup, which a real user sees once.
   cfg="$d.cfg"
@@ -69,7 +82,7 @@ PY
   # No user settings (--setting-sources) and no MCP servers (--strict-mcp-config, none given).
   # acceptEdits + an explicit tool allowlist: --dangerously-skip-permissions is refused as root.
   (
-    cd "$d" && env -i ${keep[@]+"${keep[@]}"} DISABLE_AUTOUPDATER=1 CLAUDE_CONFIG_DIR="$cfg" \
+    cd "$d" && env -i ${keep[@]+"${keep[@]}"} DISABLE_AUTOUPDATER=1 CLAUDE_CONFIG_DIR="$cfg" PGPASSFILE=/dev/null \
       XDG_CONFIG_HOME="$d.xdg" GIT_CONFIG_GLOBAL="$cfg/gitconfig" GIT_CONFIG_NOSYSTEM=1 \
       python3 "$B/lib/fingerprint.py" run "$d.fpspec" "$d.stream.jsonl" "$d.err.txt" "$d.fingerprint" \
       "${TIMEOUT:-1500}" -- \
@@ -88,10 +101,7 @@ PY
   mkdir -p "$d.transcripts"
   cp "$proj/$sid.jsonl" "$d.transcripts/" 2>/dev/null
   [ -d "$proj/$sid" ] && cp -r "$proj/$sid" "$d.transcripts/"
-  if [ -f "$d.db" ]; then
-    python3 "$B/lib/real/db.py" drop "$PG_URL" "$(cat "$d.db")" && rm -f "$d.db" "$d.env"
-    rm -rf "$d/.venv"
-  fi
+  teardown
 fi
 
 [ -f "$d.meta" ] || { echo "NO RUN $id" >&2; exit 1; }

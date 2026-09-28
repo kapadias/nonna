@@ -17,6 +17,7 @@ import subprocess
 import sys
 
 B = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DB = os.path.join(B, "lib", "real", "db.py")
 ARMS = ("none", "plugin-lite", "ponytail+lite")
 SETTINGS = {
     "POSTGRES_SERVER",
@@ -86,12 +87,17 @@ def main(work, results):
             env = set(json.load(fh)["env"])
         ok(SETTINGS <= env, f"{rid}: the run had its database's settings")
         ok(not (NEVER & env), f"{rid}: and none of run.sh's ({sorted(NEVER & env)})")
-        gone = [
-            p
-            for p in (d + ".db", d + ".env", os.path.join(d, ".venv"))
-            if os.path.exists(p)
-        ]
-        ok(not gone, f"{rid}: its database and venv are gone ({gone})")
+        gone = [p for p in (d + ".env", os.path.join(d, ".venv")) if os.path.exists(p)]
+        name = subprocess.run(
+            [sys.executable, DB, "name", d], capture_output=True, text=True
+        ).stdout.strip()
+        there = subprocess.run(
+            [sys.executable, DB, "exists", name], capture_output=True
+        )
+        ok(
+            not gone and there.returncode == 1,
+            f"{rid}: its database ({name}: exists rc {there.returncode}) and venv are gone ({gone})",
+        )
         if r["arm"] == "none":
             ok(r["gate_kinds"] == "-", f"{rid}: no gate fired ({r['gate_kinds']})")
         else:

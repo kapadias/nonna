@@ -216,3 +216,24 @@ def test_a_labelled_rerun_gets_its_own_run_dir(tmp_path, snaps):
     )
     assert row["id"] == "refactor-none-haiku-1-rerun1"
     assert row["label"] == "rerun1"
+
+
+def test_a_run_with_no_logged_cost_counts_at_its_budget_toward_the_cap(tmp_path):
+    (tmp_path / "traps.tsv").write_text(
+        "id\tcost_usd\trc\n"
+        "a\t0.5000\t0\n"  # logged
+        "b\t-1.0000\t124\n"  # stopped at its timeout: its budget
+        "c\t-1.0000\t86\n"  # stopped by the fingerprint at its start
+    )
+    r = subprocess.run(
+        ["bash", os.path.join(B, "lib", "run-one.sh"), "--spent"],
+        env=dict(os.environ, RESULTS=str(tmp_path), RUN_BUDGET="3"),
+        capture_output=True,
+        text=True,
+    )
+    assert r.stdout == "3.50", r
+
+
+def test_the_agent_gets_no_password_file(tmp_path, snaps):
+    row, d, inv, _ = run_one(tmp_path, snaps, "traps", "refactor", "none")
+    assert "PGPASSFILE" in inv["env"]
