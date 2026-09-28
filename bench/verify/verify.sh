@@ -12,8 +12,8 @@ set -uo pipefail
 V="$(cd "$(dirname "$0")" && pwd)"; B="$(dirname "$V")"
 [ "${1:-}" = --real ] && exec bash "$V/real.sh" "${@:2}"
 R="${VERIFY_WORK:-$(mktemp -d)}"
+mkdir -p "$R"
 if [ "${1:-}" = --dry-run ]; then
-  mkdir -p "$R"
   dry() {
     bash "$B/run.sh" --dry-run --model haiku --reps 1 --work "$R/work" --results "$R/results" "$@" >> "$R/run.log" 2>&1 ||
       { tail -20 "$R/run.log"; echo "verify: run.sh --dry-run $* failed (log: $R/run.log)" >&2; exit 1; }

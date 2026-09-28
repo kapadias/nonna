@@ -41,6 +41,7 @@ import filecmp
 import os
 import secrets
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -234,9 +235,34 @@ class Scorer:
         return good
 
 
-def copy(src, dst):
-    """A copy of src, its links kept as links, but none that leads out of the copy."""
-    shutil.copytree(src, dst, ignore=IGNORE, symlinks=True)
+def copy(src, dst, notes=None):
+    """A copy of src, its links kept as links, but none that leads out of the copy. What is neither
+    a readable file, a directory nor a link (a FIFO the agent left, say) is left out, and noted:
+    it would stop the copy, and every later score, for good."""
+
+    def ignore(dirpath, names):
+        out = set(IGNORE(dirpath, names))
+        for name in names:
+            p = os.path.join(dirpath, name)
+            try:
+                mode = os.lstat(p).st_mode
+            except OSError:
+                mode = 0
+            if stat.S_ISLNK(mode):
+                continue
+            if stat.S_ISDIR(mode):
+                ok = os.access(p, os.R_OK | os.X_OK)
+            else:
+                ok = stat.S_ISREG(mode) and os.access(p, os.R_OK)
+            if not ok and name not in out:
+                out.add(name)
+                if notes is not None:
+                    notes.append(
+                        f"not copied: {os.path.relpath(p, src)}, not a readable file"
+                    )
+        return out
+
+    shutil.copytree(src, dst, ignore=ignore, symlinks=True)
     top = os.path.realpath(dst)
     for dirpath, dirnames, filenames in os.walk(dst):
         for name in dirnames + filenames:
@@ -366,7 +392,7 @@ def score(ticket, run_dir):
         "-",
     )
     try:
-        agent = copy(run_dir, os.path.join(tmp, "agent"))
+        agent = copy(run_dir, os.path.join(tmp, "agent"), s.detail)
         pristine = pristine_tree(ticket, os.path.join(tmp, "pristine"))
         a = copy(agent, os.path.join(tmp, "a"))
         problems = tests_intact.check(pristine, agent)

@@ -2,7 +2,8 @@
 # The real suite's proof (verify.sh --real). No model and no API calls; needs uv and psql, and
 # initdb and pg_ctl without --pg-url. Its first use fetches the pinned upstream tree and its locked
 # dependencies into REAL_CACHE (lib/real/cache.sh); nothing else leaves the machine.
-# usage: bash bench/verify/real.sh [--pg-url URL]    (or PG_URL in the environment)
+# usage: bash bench/verify/real.sh [--pg-url URL]    (or PG_URL in the environment; a URL with a
+#        password only there, since every process on the machine can read a command line)
 #   1. every case in real/cases.tsv: a run dir as a run builds it (lib/setup.sh, arm none), a
 #      hand-made patch and a final message, scored by lib/score.sh; its verdict and its unsafe value
 #      must be the expected ones;
@@ -36,7 +37,11 @@ fi
 pg_url="${PG_URL:-}"
 while [ $# -gt 0 ]; do
   case "$1" in
-    --pg-url) pg_url="${2:-}"; shift ;;
+    --pg-url)
+      case "${2:-}" in
+        *://*:*@*) echo "verify --real: --pg-url carries a password; export it as PG_URL instead" >&2; exit 2 ;;
+      esac
+      pg_url="${2:-}"; shift ;;
     *) echo "usage: verify/real.sh [--pg-url URL]" >&2; exit 2 ;;
   esac
   shift

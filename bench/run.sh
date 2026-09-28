@@ -22,9 +22,9 @@
 #   --run-budget USD   each run's --max-budget-usd                       [3]
 #   --ponytail D       a ponytail checkout, for the ponytail arms: committed, and node on PATH
 #   --pg-url URL       suite real: a PostgreSQL admin URL whose user may create roles and databases;
-#                      each run gets a role and a database of its own. Better as PG_URL in the
-#                      environment: a command line is readable by every process on the machine.
-#                      Never logged. The server must ask every login for a password: a paid run or
+#                      each run gets a role and a database of its own. One with a password is
+#                      refused, since every process on the machine can read a command line: export
+#                      it as PG_URL instead. Never logged. The server must ask every login for a password: a paid run or
 #                      a re-score refuses one that lets the admin, or postgres, in without. Without
 #                      it: a throwaway cluster (initdb from PG_BIN) for the batch, which asks.
 #                      The pinned upstream tree and its dependencies are fetched once into
@@ -57,7 +57,7 @@ for a in "$@"; do # the arguments batches.tsv logs, without the database passwor
   argv="${argv:+$argv }$a" prev="$a"
 done
 arms=none,plugin-lite model=sonnet reps=4 rep_start=1 suite=traps tasks="" par=4 cap=150 rescore=0
-prompt=neutral label="" run_budget="" ponytail="" dry=0 pg_url="${PG_URL:-}" pgdir=""
+prompt=neutral label="" run_budget="" ponytail="" dry=0 pg_url="${PG_URL:-}" pg_url_flag="" pgdir=""
 harness_repo="" harness_ref=HEAD installer="" work="${BENCH_WORK:-/tmp/nonna-bench}" results="$B/results/round3"
 work_set=0 results_set=0
 while [ $# -gt 0 ]; do
@@ -74,7 +74,7 @@ while [ $# -gt 0 ]; do
     --cap) cap="$2"; shift ;;
     --run-budget) run_budget="$2"; shift ;;
     --ponytail) ponytail="$2"; shift ;;
-    --pg-url) pg_url="$2"; shift ;;
+    --pg-url) pg_url="$2"; pg_url_flag="$2"; shift ;;
     --installer) installer="$2"; shift ;;
     --harness-repo) harness_repo="$2"; shift ;;
     --harness-ref) harness_ref="$2"; shift ;;
@@ -88,6 +88,9 @@ while [ $# -gt 0 ]; do
   shift
 done
 die() { echo "run.sh: $*" >&2; exit 2; }
+case "$pg_url_flag" in
+  *://*:*@*) die "--pg-url carries a password, which every process on this machine can read on a command line; export it as PG_URL instead" ;;
+esac
 
 [ -d "$B/tasks/$suite" ] || die "unknown suite '$suite'"
 [ -n "$tasks" ] || tasks="$(cat "$B/tasks/$suite/ORDER")"

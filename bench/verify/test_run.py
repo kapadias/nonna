@@ -183,7 +183,7 @@ def test_the_database_url_is_never_logged(stub_path, tmp_path):
         "--reps",
         "1",
         "--pg-url",
-        "postgresql://admin:FAKE-pg-pw@127.0.0.1:1/postgres",
+        "postgresql://admin@127.0.0.1:1/postgres",
         "--work",
         str(tmp_path / "w"),
         "--results",
@@ -191,7 +191,19 @@ def test_the_database_url_is_never_logged(stub_path, tmp_path):
     )
     assert r.returncode == 0, r.stderr
     log = (res / "batches.tsv").read_text()
-    assert "--pg-url <given>" in log and "FAKE-pg-pw" not in log
+    assert "--pg-url <given>" in log and "admin@" not in log
+    # a password on a command line is readable by every process: it goes in PG_URL, or not at all
+    r = run(
+        stub_path,
+        "--dry-run",
+        "--pg-url",
+        "postgresql://admin:FAKE-pg-pw@127.0.0.1:1/postgres",
+        "--work",
+        str(tmp_path / "w2"),
+        "--results",
+        str(tmp_path / "r2"),
+    )
+    assert r.returncode == 2 and "export it as PG_URL" in r.stderr, r.stderr
     assert "FAKE-pg-pw" not in r.stdout + r.stderr
 
 

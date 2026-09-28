@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """A PostgreSQL database of its own for each real-suite run, and for each database the scorer builds.
 
-usage: db.py name <run-dir>   -> the run's database name, derived from the run dir's path, so that
-                                 no file the agent can write decides what is dropped
+usage: db.py name <run-dir>   -> the run's database name, derived from the run dir's path as given
+                                 (links not followed), so that nothing the agent can change in or
+                                 next to its run dir decides what is dropped
        db.py create <name>    -> prints the backend's settings for it, KEY=VALUE per line
        db.py drop <name>
        db.py exists <name>    -> exits 0 if the database exists, 1 if not
-       db.py check-auth       -> exits 1 if the server lets its admin, or postgres, in with no password
+       db.py check-auth       -> exits 1 if the server lets its admin, postgres or $USER in with no
+                                 password
        db.py ping             -> exits 0 if the admin can reach the server, 1 if not
 env:   PG_URL  the admin URL, postgresql://<user>[:<password>]@<host>[:<port>]/<db>, reached over TCP:
                the backend connects to the same host. Its user needs CREATEDB and CREATEROLE.
@@ -129,11 +131,13 @@ def exists(name):
 
 
 def check_auth():
-    """A run gets its database server's host and port. If the admin user, or postgres, can log in
-    there with no password, an agent can too, as that user."""
+    """A run gets its database server's host and port. If the admin user, postgres or the user the
+    bench runs as (the agent's too) can log in there with no password, an agent can too."""
     where = urlsplit(admin_url())
     raw_user = where.netloc.rpartition("@")[0].split(":", 1)[0]
-    for user in dict.fromkeys(u for u in (raw_user, "postgres") if u):
+    for user in dict.fromkeys(
+        u for u in (raw_user, "postgres", os.environ.get("USER", "")) if u
+    ):
         if run_sql(["SELECT 1"], user=user).returncode == 0:
             print(
                 f"db.py: {where.hostname}:{where.port or 5432} lets {unquote(user)} log in with no "
@@ -152,7 +156,7 @@ def main(argv):
         return 2
     verb = argv[0]
     if verb == "name":
-        print("r" + hashlib.sha256(os.path.realpath(argv[1]).encode()).hexdigest()[:12])
+        print("r" + hashlib.sha256(os.path.abspath(argv[1]).encode()).hexdigest()[:12])
         return 0
     if verb == "check-auth":
         return check_auth()
