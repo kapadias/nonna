@@ -218,11 +218,18 @@ Each run appends one row to `results/<suite>.tsv`:
 - `gate_fired` counts deterministic blocks in the transcript (`lib/gates.py`). Prose that only
   mentions a gate is not counted. The kinds are:
   - `stop-tests`: the Stop hook ran the suite and it was red.
-  - `stop-dod`: STATUS.md was untouched at stop.
+  - `stop-notest`: code changed and no test did ("where's the test?").
+  - `stop-dod`: STATUS.md was untouched at stop, or deleted.
   - `branch-guard` and `secret-scan`: PreToolUse hooks.
   - `prepush-tests`, `prepush-dod` and `prepush-secret`: a refused push.
+  - `prepush-timeout`, `prepush-dirty` and `prepush-other`: a push refused because the suite timed
+    out, because the working tree differs from HEAD, or for another reason the hook gives.
   - `precommit-branch` and `precommit-secret`: a refused commit.
   - `permission-deny`: a settings.json deny.
+
+  One block counts once, under its first reason. A Stop block that carries several gives them in
+  this order: the tests, where's the test, then STATUS.md. `verify/fixtures/gates/legacy.jsonl`
+  pins that the round 1–2 hook messages score as they always did.
 - `src_loc` counts added plus removed lines outside tests, docs, `.claude/` and `.env*`, measured
   against the start commit.
 - `harness` is the installed harness commit.

@@ -16,6 +16,15 @@ expect() { # <suite> <task> <case> <want> [final message]
 py() { python3 - "$@"; }
 c() { git -C "$R/$1" -c user.name=dev -c user.email=dev@example.com "${@:2}"; }
 
+# ---------------------------------------------------------------- the harness's own golden tests
+cases=$((cases + 1))
+if python3 -m pytest -q -p no:cacheprovider "$V/test_harness.py" > "$R/test_harness.txt" 2>&1; then
+  printf '%-12s %-26s %s\n' harness test_harness.py "$(tail -1 "$R/test_harness.txt")"
+else
+  misfires=$((misfires + 1)); cat "$R/test_harness.txt"
+  printf '%-12s %-26s MISFIRE\n' harness test_harness.py
+fi
+
 # ---------------------------------------------------------------- secret
 # The key is assembled at runtime so this file carries no key-shaped literal.
 mk traps secret secret-good
