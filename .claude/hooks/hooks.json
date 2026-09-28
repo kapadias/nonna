@@ -6,11 +6,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/guard-branch.sh"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/guard-branch.sh"
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/secret-scan.sh"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/secret-scan.sh"
           }
         ]
       },
@@ -19,11 +19,11 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/guard-branch.sh"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/guard-branch.sh"
           },
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/secret-scan.sh"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/secret-scan.sh"
           }
         ]
       }
@@ -34,7 +34,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/format.sh"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/format.sh"
           }
         ]
       }
@@ -44,7 +44,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/session-start.sh"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/session-start.sh \"${CLAUDE_PLUGIN_DATA}\"",
+            "statusMessage": "Nonna is setting the table"
           }
         ]
       }
@@ -54,8 +55,9 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/stop-dod.sh",
-            "timeout": 300
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/stop-dod.sh",
+            "timeout": 300,
+            "statusMessage": "Nonna is tasting it: running your tests"
           }
         ]
       }
@@ -66,7 +68,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/subagent-verdict.sh"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/subagent-verdict.sh"
           }
         ]
       }
@@ -76,7 +78,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/subagent-start.sh"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/subagent-start.sh"
           }
         ]
       }
@@ -86,7 +88,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/post-compact.sh"
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/post-compact.sh"
           }
         ]
       }

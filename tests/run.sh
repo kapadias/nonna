@@ -1128,6 +1128,33 @@ printf '# Changelog\n\n## [1x0x0] - x\n\nwrong section\n' > "$TMP/CH2.md"
 bash "$RN" 1.0.0 "$TMP/CH2.md" >/dev/null 2>&1; check "version matches literally, not as a regex" 1 "$?"
 rm -rf "$TMP"
 
+echo "== hook wiring (every command survives a path with a space) =="
+# Claude Code puts the plugin root or the project dir into each hook command and hands it to a
+# shell. Under an unquoted root, "/Users/a b/..." splits into words: the shell reports "not
+# found" (126/127) and the gate silently never runs. Run every wired command from such a path.
+SP="$(mktemp -d)/with space"; mkdir -p "$SP"; cp -R "$ROOT/.claude" "$SP/.claude"; "${GIT[@]}" -C "$SP" init -q
+unrunnable() { # <json file>: prints "ran:" per command started, and each command the shell could not start
+  python3 -c 'import json,sys
+for es in json.load(open(sys.argv[1]))["hooks"].values():
+    for e in es:
+        for h in e["hooks"]: print(h["command"])' "$1" | while IFS= read -r cmd; do
+    printf 'ran:\n'
+    (cd "$SP" && printf '{}' | CLAUDE_PLUGIN_ROOT="$SP/.claude" CLAUDE_PROJECT_DIR="$SP" bash -c "$cmd" >/dev/null 2>&1)
+    case $? in 126 | 127) printf '%s\n' "$cmd" ;; esac
+  done
+}
+space_run() { # <json file>: sets ran (commands started), bad_cmds (could not start) and rc
+  local res; res="$(unrunnable "$1")"
+  ran="$(printf '%s\n' "$res" | grep -c '^ran:$')"
+  bad_cmds="$(printf '%s\n' "$res" | grep -v '^ran:$' | grep . || true)"
+  if [ "$ran" -ge 10 ] && [ -z "$bad_cmds" ]; then rc=0; else rc=1; fi
+}
+space_run "$SP/.claude/hooks/hooks.json"
+check "hooks.json: every command runs from a plugin root with a space (ran $ran)${bad_cmds:+ (not: $bad_cmds)}" 0 "$rc"
+space_run "$SP/.claude/settings.json"
+check "settings.json: every command runs from a project dir with a space (ran $ran)${bad_cmds:+ (not: $bad_cmds)}" 0 "$rc"
+rm -rf "$(dirname "$SP")"
+
 echo "== harness_lint.py (the linter is itself a gate) =="
 # A linter with no failing-case test is an unverified gate: it would still print
 # "OK" if a check silently stopped firing. Each case copies the real tree, breaks
@@ -1199,17 +1226,17 @@ cfg["hooks"]["PreToolUse"][0]["hooks"].pop()          # drop secret-scan from th
 json.dump(cfg, open(p, "w"), indent=2)
 PY
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a gate wired in settings.json but not hooks.json" 1 "$?"
-contains "lint: names the desynced event" "PreToolUse" "$out"
+contains "lint: names the desynced event" "hook wiring: 'PreToolUse' differs" "$out"
 rm -rf "$FX"
 FX="$(lint_fixture)"
 python3 - "$FX/.claude/hooks/hooks.json" <<'PY'
 import json, sys
 p = sys.argv[1]; cfg = json.load(open(p))
-cfg["hooks"]["SessionEnd"] = [{"hooks": [{"type": "command", "command": "${CLAUDE_PLUGIN_ROOT}/hooks/x.sh"}]}]
+cfg["hooks"]["SessionEnd"] = [{"hooks": [{"type": "command", "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/format.sh"}]}]
 json.dump(cfg, open(p, "w"), indent=2)
 PY
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks an event present in only one wiring" 1 "$?"
-contains "lint: names the one-sided event" "SessionEnd" "$out"
+contains "lint: names the one-sided event" "hook wiring: 'SessionEnd' is in hooks.json but not settings.json" "$out"
 rm -rf "$FX"
 
 # Descriptions load on every turn and had no budget until now; prove it bites.
@@ -1310,6 +1337,94 @@ FX="$(lint_fixture)"
 sed -i 's/Does the fix add code?/Is it nice?/' "$FX/.claude/skills/code-review/references/severity-rubric.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks the rubric losing the adds-code calibration" 1 "$?"
 contains "lint: names the rubric for the review-inflation rule" "missing 'Does the fix add code?'" "$out"
+rm -rf "$FX"
+
+# Hook commands quote their root. Claude Code puts the path into a shell command, and an
+# unquoted path with a space splits into words: the script is never found and the gate never runs.
+set_hook_cmd() { # <json file> <event> <command>: rewrite that event's first hook command
+  python3 - "$@" <<'PY'
+import json, sys
+path, event, cmd = sys.argv[1:4]
+cfg = json.load(open(path, encoding="utf-8"))
+cfg["hooks"][event][0]["hooks"][0]["command"] = cmd
+json.dump(cfg, open(path, "w", encoding="utf-8"), indent=2)
+PY
+}
+FX="$(lint_fixture)"
+set_hook_cmd "$FX/.claude/hooks/hooks.json" PostToolUse '${CLAUDE_PLUGIN_ROOT}/hooks/format.sh'
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks an unquoted plugin root in hooks.json" 1 "$?"
+contains "lint: says to quote the plugin root" '"${CLAUDE_PLUGIN_ROOT}"/' "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+set_hook_cmd "$FX/.claude/settings.json" PostToolUse '$CLAUDE_PROJECT_DIR/.claude/hooks/format.sh'
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks an unquoted project dir in settings.json" 1 "$?"
+contains "lint: says to quote the project dir" '"$CLAUDE_PROJECT_DIR"/' "$out"
+rm -rf "$FX"
+# The quoted form must not blind the wired-script checks: a script that is gone is still reported.
+FX="$(lint_fixture)"
+rm "$FX/.claude/hooks/format.sh"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a wired hook script that is missing" 1 "$?"
+contains "lint: settings.json names the missing script" "settings.json: wired hook missing on disk: .claude/hooks/format.sh" "$out"
+contains "lint: hooks.json names the missing script" "hooks.json: wired hook missing on disk: hooks/format.sh" "$out"
+rm -rf "$FX"
+# Nothing may follow the script: `|| true` turns the gate's block (exit 2) into a pass, in one mode only.
+FX="$(lint_fixture)"
+set_hook_cmd "$FX/.claude/hooks/hooks.json" PreToolUse '"${CLAUDE_PLUGIN_ROOT}"/hooks/guard-branch.sh || true'
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a tail that turns a plugin gate's block into a pass" 1 "$?"
+contains "lint: names the tailed hooks.json command" "PreToolUse hook '\"\${CLAUDE_PLUGIN_ROOT}\"/hooks/guard-branch.sh || true'" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+set_hook_cmd "$FX/.claude/settings.json" PreToolUse '"$CLAUDE_PROJECT_DIR"/.claude/hooks/guard-branch.sh; exit 0'
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a tail on a settings.json gate" 1 "$?"
+contains "lint: names the tailed settings.json command" "PreToolUse hook '\"\$CLAUDE_PROJECT_DIR\"/.claude/hooks/guard-branch.sh; exit 0'" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+set_hook_cmd "$FX/.claude/hooks/hooks.json" Stop '"${CLAUDE_PLUGIN_ROOT}"/hooks/stop-dod.sh "${CLAUDE_PLUGIN_DATA}"'
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: only SessionStart may take the plugin data dir" 1 "$?"
+contains "lint: names the event given the data dir" "Stop hook" "$out"
+rm -rf "$FX"
+# Keys other than the command decide whether a hook can block at all: async cannot, a timeout lets
+# the action through, and a non-command type hands the decision to a model. Each is refused.
+set_hook_key() { # <json file> <event> <key> <json value>: set a key on that event's first hook
+  python3 - "$@" <<'PY'
+import json, sys
+path, event, key, value = sys.argv[1:5]
+cfg = json.load(open(path, encoding="utf-8"))
+cfg["hooks"][event][0]["hooks"][0][key] = json.loads(value)
+json.dump(cfg, open(path, "w", encoding="utf-8"), indent=2)
+PY
+}
+FX="$(lint_fixture)"
+set_hook_key "$FX/.claude/hooks/hooks.json" PreToolUse async true
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks an async gate (it cannot block)" 1 "$?"
+contains "lint: names the async key" "has keys ['async']" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+set_hook_key "$FX/.claude/hooks/hooks.json" PreToolUse timeout 0.001
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a gate timeout short enough to let everything through" 1 "$?"
+contains "lint: names the short timeout" "timeout 0.001 is under 10s" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+set_hook_key "$FX/.claude/hooks/hooks.json" PreToolUse type '"prompt"'
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a gate handed to a model" 1 "$?"
+contains "lint: says a gate is a command" 'must be type "command"' "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+set_hook_key "$FX/.claude/hooks/hooks.json" Stop timeout 30
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a gate timed differently in the two install modes" 1 "$?"
+contains "lint: names the event whose timeout differs" "hook wiring: 'Stop' differs" "$out"
+rm -rf "$FX"
+# One settings key turns every gate off at once.
+FX="$(lint_fixture)"
+python3 -c 'import json,sys; p=sys.argv[1]; c=json.load(open(p)); c["disableAllHooks"]=True; json.dump(c,open(p,"w"),indent=2)' "$FX/.claude/settings.json"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks disableAllHooks in settings.json" 1 "$?"
+contains "lint: names the kill switch" "disableAllHooks is set" "$out"
+rm -rf "$FX"
+# Arguments after the script (SessionStart gets the plugin data dir) are not part of the gate's identity.
+FX="$(lint_fixture)"
+set_hook_cmd "$FX/.claude/settings.json" Stop '"$CLAUDE_PROJECT_DIR"/.claude/hooks/format.sh'
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a gate wired differently in the two install modes" 1 "$?"
+contains "lint: names the event that differs" "hook wiring: 'Stop' differs" "$out"
 rm -rf "$FX"
 
 printf '\n%s passed, %s failed\n' "$PASS" "$FAIL"

@@ -199,17 +199,70 @@ with open(f"{ROOT}/.claude/rules/dev-process.md", encoding="utf-8") as fh:
     if "Assumptions" not in fh.read():
         bad(".claude/rules/dev-process.md: A/C/V/R reporting convention missing")
 
-# --- settings.json wired hooks exist on disk ---
+# --- hook commands: one exact form each, and the wired script exists ---
+# A hook command is its quoted root, the script, and nothing else. The root is quoted because Claude
+# Code puts the path into a shell command, and an unquoted path with a space ("Application Support")
+# splits: the script is never found and the gate silently never runs. Nothing may follow the script,
+# because a tail changes what the gate does: `|| true` turns a block (exit 2) into a pass. SessionStart
+# alone may pass the plugin data dir, and only in hooks.json. `claude plugin validate` checks the
+# quoting in hooks.json only; settings.json has no validator, so the lint holds both.
+HOOK_FORMS = {
+    ".claude/hooks/hooks.json": (
+        re.compile(r'^"\$\{CLAUDE_PLUGIN_ROOT\}"/(hooks/[A-Za-z0-9_.-]+\.sh)(?P<data> "\$\{CLAUDE_PLUGIN_DATA\}")?$'),
+        '"${CLAUDE_PLUGIN_ROOT}"/hooks/<script>.sh',
+    ),
+    ".claude/settings.json": (
+        re.compile(r'^"\$CLAUDE_PROJECT_DIR"/\.claude/(hooks/[A-Za-z0-9_.-]+\.sh)$'),
+        '"$CLAUDE_PROJECT_DIR"/.claude/hooks/<script>.sh',
+    ),
+}
+
+
+def hook_script(rel: str, event: str, cmd: str):
+    """The script a hook command runs (relative to .claude/), or None if the command is not in its one form."""
+    m = HOOK_FORMS[rel][0].fullmatch(cmd)
+    if not m or (m.groupdict().get("data") and event != "SessionStart"):
+        return None
+    return m.group(1)
+
+
+# The other keys decide whether a hook can block at all, so they are pinned too: an async hook
+# cannot block, a timeout counts as a non-blocking error (a tiny one fails the gate open), and any
+# type but "command" hands the decision to a model. statusMessage only sets the spinner text.
+HOOK_KEYS = {"type", "command", "timeout", "statusMessage"}
+MIN_HOOK_TIMEOUT = 10  # seconds
+
+
+def check_hook_forms(rel: str, cfg: dict) -> None:
+    for event, entries in (cfg.get("hooks") or {}).items():
+        for entry in entries:
+            for hook in entry.get("hooks", []):
+                cmd = hook.get("command", "")
+                script = hook_script(rel, event, cmd)
+                if script is None:
+                    bad(
+                        f"{rel}: {event} hook '{cmd}' must be exactly {HOOK_FORMS[rel][1]} "
+                        f"(quoted root, then the script, then nothing: a tail like '|| true' turns a block into a pass)"
+                    )
+                elif not os.path.isfile(os.path.join(ROOT, ".claude", script)):
+                    shown = script if rel.endswith("hooks.json") else f".claude/{script}"
+                    bad(f"{os.path.basename(rel)}: wired hook missing on disk: {shown}")
+                if hook.get("type") != "command":
+                    bad(f"{rel}: {event} hook '{cmd}' must be type \"command\" (a gate is a script, not a model's judgment)")
+                extra = sorted(set(hook) - HOOK_KEYS)
+                if extra:
+                    bad(f"{rel}: {event} hook '{cmd}' has keys {extra} (allowed: {sorted(HOOK_KEYS)}; an async hook cannot block)")
+                t = hook.get("timeout")
+                if "timeout" in hook and (isinstance(t, bool) or not isinstance(t, (int, float)) or t < MIN_HOOK_TIMEOUT):
+                    bad(f"{rel}: {event} hook '{cmd}' timeout {t!r} is under {MIN_HOOK_TIMEOUT}s (a timeout lets the action through)")
+
+
 with open(f"{ROOT}/.claude/settings.json", encoding="utf-8") as fh:
     settings = json.load(fh)
-for _event, entries in (settings.get("hooks") or {}).items():
-    for entry in entries:
-        for hook in entry.get("hooks", []):
-            m = re.search(
-                r"\$\{?CLAUDE_PROJECT_DIR\}?/(\S+\.sh)", hook.get("command", "")
-            )
-            if m and not os.path.isfile(os.path.join(ROOT, m.group(1))):
-                bad(f"settings.json: wired hook missing on disk: {m.group(1)}")
+check_hook_forms(".claude/settings.json", settings)
+# One settings key turns every hook off at once; pinning each gate means nothing if it is set.
+if settings.get("disableAllHooks"):
+    bad(".claude/settings.json: disableAllHooks is set, which turns every Nonna gate off")
 
 # --- cross-links: intra-repo markdown links must resolve ---
 LINK = re.compile(r"\]\(([^)]+)\)")
@@ -507,8 +560,8 @@ for jf in (plugin_manifest, marketplace, plugin_hooks):
 # is live in one install mode and absent in the other — the exact asymmetry
 # ADR-0007 was written about. Generating one from the other would need a build
 # step ADR-0006 rejected, so assert equivalence instead.
-def hook_shape(cfg: dict) -> dict:
-    """Event -> matcher -> ordered script names, with the path prefix normalized away."""
+def hook_shape(rel: str, cfg: dict) -> dict:
+    """Event -> matcher -> ordered scripts. A command outside its one form stays whole, so it differs."""
     shape: dict[str, dict[str, list[str]]] = {}
     for event, entries in (cfg.get("hooks") or {}).items():
         by_matcher: dict[str, list[str]] = {}
@@ -516,9 +569,10 @@ def hook_shape(cfg: dict) -> dict:
             scripts = []
             for hook in entry.get("hooks", []):
                 cmd = hook.get("command", "")
-                cmd = re.sub(r"^\$\{?CLAUDE_PLUGIN_ROOT\}?/", "", cmd)
-                cmd = re.sub(r"^\$\{?CLAUDE_PROJECT_DIR\}?/\.claude/", "", cmd)
-                scripts.append(cmd)
+                # The whole hook, with the command reduced to its script: a timeout or type set in
+                # one mode only changes what the gate does in that mode, so it must differ here too.
+                rest = {k: v for k, v in hook.items() if k not in ("command", "statusMessage")}
+                scripts.append(json.dumps({**rest, "script": hook_script(rel, event, cmd) or cmd}, sort_keys=True))
             by_matcher.setdefault(entry.get("matcher", "*"), []).extend(scripts)
         shape[event] = by_matcher
     return shape
@@ -527,7 +581,7 @@ def hook_shape(cfg: dict) -> dict:
 if os.path.isfile(plugin_hooks):
     with open(plugin_hooks, encoding="utf-8") as fh:
         ph = json.load(fh)
-    a, b = hook_shape(settings), hook_shape(ph)
+    a, b = hook_shape(".claude/settings.json", settings), hook_shape(".claude/hooks/hooks.json", ph)
     for event in sorted(set(a) | set(b)):
         if event not in a:
             bad(f"hook wiring: '{event}' is in hooks.json but not settings.json")
@@ -539,15 +593,8 @@ if os.path.isfile(plugin_hooks):
                 f"(settings={a[event]}, plugin={b[event]}) — a gate wired in one "
                 f"install mode and not the other"
             )
-    for _event, entries in (ph.get("hooks") or {}).items():
-        for entry in entries:
-            for hook in entry.get("hooks", []):
-                # The nonna plugin's root is .claude/ (marketplace source "./.claude").
-                m = re.search(
-                    r"\$\{CLAUDE_PLUGIN_ROOT\}/(\S+\.sh)", hook.get("command", "")
-                )
-                if m and not os.path.isfile(os.path.join(ROOT, ".claude", m.group(1))):
-                    bad(f"hooks.json: wired hook missing on disk: {m.group(1)}")
+    # The nonna plugin's root is .claude/ (marketplace source "./.claude").
+    check_hook_forms(".claude/hooks/hooks.json", ph)
 
 if offenders:
     print("Harness lint FAILED:")

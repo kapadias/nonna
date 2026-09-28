@@ -42,14 +42,32 @@ descriptions (5,600-char budget), both enforced by the linter.
 - **Tests** — `tests/run.sh` (gate golden tests; the count is derived and drift-linted, never
   hardcoded) + `tests/harness_lint.py` (self-validation).
 - **Stacks** — `stacks/{python,typescript,go,rust}` wiring the test gate.
-- **Plugin** — `.claude/.claude-plugin/plugin.json` + `.claude-plugin/marketplace.json`.
+- **Plugin** — `.claude/.claude-plugin/plugin.json` (2.0.0, `displayName`, `userConfig`:
+  `run_tests`, `mode`) + `.claude-plugin/marketplace.json`. Both validate with `--strict`.
 - **Docs** — this `STATUS.md`, `INSTALL.md`, `OVERVIEW.md`, `docs/benchmarks/`, `CHANGELOG.md`, the
   `docs/adr/` index, and ADRs 0001–0008.
-- **CI** — `.github/workflows/ci.yml`: shellcheck (all scripts) + harness-lint + gate self-tests.
+- **CI** — `.github/workflows/ci.yml`: shellcheck (all scripts) + harness-lint + gate self-tests +
+  plugin manifest (`claude plugin validate --strict`, pinned CLI).
 
 ## Recently changed
 
 History lives in `CHANGELOG.md` and `git log`. Entries here describe the current unit of work.
+
+- **2026-09-25** — 2.0 packaging, the first unit of the launch plan (#17). Both manifests say 2.0.0;
+  the plugin shows as "Nonna" and declares two install options, `run_tests` and `mode`. The hooks
+  begin reading these options in the plugin-defaults unit (#17), so for now declaring them changes
+  nothing. `claude plugin validate --strict` passes on both manifests and runs in CI at a pinned
+  CLI version. Every hook command quotes its root, so a path with a space no longer skips the
+  gate. The linter enforces the quoting in both files, and a golden test runs every wired command
+  from such a path. SessionStart receives the plugin data dir, and the Stop and SessionStart
+  spinners name Nonna. The CHANGELOG's `[Unreleased]` section is now `[2.0.0]`, with an upgrade
+  block. Issue templates and a code of conduct are added.
+  Review round: the linter now holds every hook command to one exact form (quoted root, script,
+  nothing after it), because a `|| true` tail in one install mode would turn a gate's block into a
+  pass and still lint clean. The only argument allowed is SessionStart's plugin data dir. The
+  other keys are pinned the same way: a gate is type "command", never async, with no timeout under
+  10 s, and timed the same in both install modes. `disableAllHooks` in settings.json is refused.
+  399 tests.
 
 - **2026-09-24** — README answers an outside review. A bridge sentence says the 8 of 8 task is
   the worst case (a third of runs on average); the break-even is a four-row table so readers can pick

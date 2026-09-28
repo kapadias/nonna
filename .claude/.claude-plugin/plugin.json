@@ -1,19 +1,38 @@
 {
   "name": "nonna",
-  "description": "Nonna: she doesn't care that it compiled. Hooks and scripts that make the agent test first, pass a machine-checked review, keep secrets and main safe, and keep the docs honest. Rules, agents, skills and workflows in one installable unit.",
-  "version": "1.0.0",
+  "displayName": "Nonna",
+  "version": "2.0.0",
+  "description": "Your agent says done; Nonna makes it prove it. Runs your test suite before the agent can stop, blocks commits and pushes to main, and blocks secrets in files. Deterministic hooks, no model judges.",
   "author": {
-    "name": "Shashank Kapadia"
+    "name": "Shashank Kapadia",
+    "url": "https://github.com/kapadias"
   },
   "homepage": "https://github.com/kapadias/nonna",
   "repository": "https://github.com/kapadias/nonna",
   "license": "MIT",
   "keywords": [
     "claude-code",
-    "harness",
+    "hooks",
     "tdd",
-    "code-review",
-    "safety",
-    "hooks"
-  ]
+    "testing",
+    "git-hooks",
+    "guardrails",
+    "secret-scanning",
+    "code-review"
+  ],
+  "userConfig": {
+    "run_tests": {
+      "type": "boolean",
+      "title": "Run your project's tests before the agent can say done",
+      "description": "When code changed, Nonna runs the repo's test command (pytest, npm test, go test or cargo test, detected; or git config nonna.testCmd) at the end of the agent's turn and blocks on red. Turn off to keep only the branch and secret guards.",
+      "default": true
+    },
+    "mode": {
+      "type": "string",
+      "title": "Default mode",
+      "description": "lite: test gate, branch guard, secret guard, short rules. full: adds the docs/STATUS.md gate, the full rules and the develop/main flow. Override per repo with /nonna lite|full|off.",
+      "options": ["lite", "full"],
+      "default": "lite"
+    }
+  }
 }

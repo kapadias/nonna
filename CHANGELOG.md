@@ -3,7 +3,13 @@
 All notable changes to Nonna. Format follows [Keep a Changelog](https://keepachangelog.com/1.1.0/);
 versioning is [SemVer](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2.0.0] — 2026-10-08 — "Tests Decide Done"
+
+### Upgrading from 1.x (Keel)
+
+- Reinstall: `/plugin uninstall keel@keel`, then `/plugin marketplace add kapadias/nonna` and
+  `/plugin install nonna@nonna`.
+- Environment variables are now `NONNA_*` (for example `NONNA_CRITICAL_PATHS`).
 
 ### Added
 
@@ -27,6 +33,15 @@ versioning is [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **2.0 packaging.** Both manifests say 2.0.0. The plugin shows as "Nonna" in `/plugin` and asks
+  two things at install: whether to run the project's tests (`run_tests`, default on) and the
+  default mode (`mode`, default lite); the hooks read both from the plugin-defaults change on, and
+  until then they are declared only. The marketplace and plugin carry descriptions, a category and
+  keywords, and `claude plugin validate --strict` passes on both, now in CI. Every hook command
+  quotes its root (`"${CLAUDE_PLUGIN_ROOT}"/...`, `"$CLAUDE_PROJECT_DIR"/...`), so a path with a
+  space no longer splits and silently skips the gate; the linter holds both files to it. While the
+  Stop hook runs your tests the spinner says so. Issue templates (false block, missed, bug, new
+  agent) and a code of conduct.
 - **Security review of the installer and the new hooks.** `install.sh` merges into an existing
   `.claude/`, never writes through a symlink, chmods only what it copied, and exits non-zero rather
   than linking a git hook to a missing script. `pre-commit` reads staged file names literally and

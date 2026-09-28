@@ -1,0 +1,36 @@
+name: Nonna blocked something she shouldn't have
+description: A gate refused a commit, push, file write or turn end that was fine.
+labels: ["false-block"]
+body:
+  - type: textarea
+    id: message
+    attributes:
+      label: What Nonna said
+      description: Paste the whole block message, the ✗ line and the lines after it.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: action
+    attributes:
+      label: What you or the agent were doing
+      placeholder: '"git push -u origin fix/rounding" or "the agent tried to end its turn after editing app/money.py"'
+    validations:
+      required: true
+  - type: textarea
+    id: status
+    attributes:
+      label: Output of /nonna
+      render: text
+  - type: dropdown
+    id: host
+    attributes:
+      label: Agent and install
+      options: ["Claude Code, plugin", "Claude Code, install.sh", "Codex", "Cursor", "GitHub Copilot", "Gemini CLI", "Windsurf", "Cline", "Kiro", "Other"]
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS and shell
+      placeholder: macOS 15, zsh

@@ -129,5 +129,6 @@ python3 tests/harness_lint.py   # structural self-validation
 ```
 
 Both run in CI on every push and pull request (`.github/workflows/ci.yml`),
-alongside `shellcheck` over every script. Adopters wire their own
+alongside `shellcheck` over every script and `claude plugin validate --strict` on both
+manifests. Adopters wire their own
 lint/type/test/coverage gate as additional jobs — see [`stacks/`](../stacks/).

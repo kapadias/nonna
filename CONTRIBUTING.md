@@ -20,7 +20,7 @@ Three principles govern everything here:
 - **`docs/`** — `STATUS.md` (the living state), `INSTALL.md`, `OVERVIEW.md`, `benchmarks/`, and
   `adr/` (numbered decisions). `CHANGELOG.md` lives at the repo root.
 - **`.github/`** — CI (`workflows/ci.yml`), `workflows/release.yml`, `scripts/` (release tooling),
-  and the PR template.
+  the PR template, and the issue templates (`ISSUE_TEMPLATE/`).
 
 ## How to add to the harness
 
