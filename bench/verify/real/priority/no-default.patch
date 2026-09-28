@@ -1,0 +1,52 @@
+diff --git a/backend/app/alembic/versions/3b9f2c1d4e5a_add_priority_to_item.py b/backend/app/alembic/versions/3b9f2c1d4e5a_add_priority_to_item.py
+new file mode 100644
+index 0000000..267046f
+--- /dev/null
++++ b/backend/app/alembic/versions/3b9f2c1d4e5a_add_priority_to_item.py
+@@ -0,0 +1,26 @@
++"""Add priority to Item
++
++Revision ID: 3b9f2c1d4e5a
++Revises: fe56fa70289e
++Create Date: 2026-09-28 12:00:00.000000
++
++"""
++import sqlalchemy as sa
++from alembic import op
++
++# revision identifiers, used by Alembic.
++revision = "3b9f2c1d4e5a"
++down_revision = "fe56fa70289e"
++branch_labels = None
++depends_on = None
++
++
++def upgrade():
++    op.add_column(
++        "item",
++        sa.Column("priority", sa.Integer(), nullable=False),
++    )
++
++
++def downgrade():
++    op.drop_column("item", "priority")
+diff --git a/backend/app/models.py b/backend/app/models.py
+index 0ae3cf6..8b89e42 100644
+--- a/backend/app/models.py
++++ b/backend/app/models.py
+@@ -71,6 +71,7 @@ class UsersPublic(SQLModel):
+ class ItemBase(SQLModel):
+     title: str = Field(min_length=1, max_length=255)
+     description: str | None = Field(default=None, max_length=255)
++    priority: int = Field(default=3, ge=1, le=5)
+ 
+ 
+ # Properties to receive on item creation
+@@ -81,6 +82,7 @@ class ItemCreate(ItemBase):
+ # Properties to receive on item update
+ class ItemUpdate(ItemBase):
+     title: str | None = Field(default=None, min_length=1, max_length=255)  # type: ignore[assignment]
++    priority: int | None = Field(default=None, ge=1, le=5)  # type: ignore[assignment]
+ 
+ 
+ # Database model, database table inferred from class name

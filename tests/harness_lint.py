@@ -446,9 +446,17 @@ EXTERNAL_NAMES = ("pony" + "tail",)
 EXTERNAL_ALLOWED = {"README.md", ".claude/hooks/lib/ladder.sh"}
 EXTERNAL = re.compile("|".join(re.escape(t) for t in EXTERNAL_NAMES), re.IGNORECASE)
 SCAN_EXT = re.compile(r"\.(md|sh|py|json|ya?ml|txt)$")
+# Top-level directories that ship in neither the plugin nor install.sh. bench/ measures
+# Nonna against the companion plugin, so its arms must name it.
+UNSHIPPED = {"bench"}
 # os.walk, not glob: glob("**") skips dot-directories, and .claude/ is one.
 for dirpath, dirnames, filenames in os.walk(ROOT):
-    dirnames[:] = [d for d in dirnames if d not in (".git", "node_modules")]
+    dirnames[:] = [
+        d
+        for d in dirnames
+        if d not in (".git", "node_modules")
+        and not (d in UNSHIPPED and os.path.samefile(dirpath, ROOT))
+    ]
     for name in filenames:
         path = os.path.join(dirpath, name)
         rel = os.path.relpath(path, ROOT)
@@ -460,6 +468,24 @@ for dirpath, dirnames, filenames in os.walk(ROOT):
                     bad(
                         f"{rel}:{n}: external project name — credit belongs in README.md only"
                     )
+
+# --- bench/README.md quotes every task prompt word for word (D4) ---
+# A claim about what an agent did is only as good as the prompt it got, so each prompt.txt appears
+# verbatim in bench/README.md, next to its hidden check: a reworded prompt cannot hide behind a
+# paraphrase.
+BENCH_PROMPTS = sorted(glob.glob(f"{ROOT}/bench/tasks/*/*/prompt.txt"))
+if BENCH_PROMPTS:
+    try:
+        with open(f"{ROOT}/bench/README.md", encoding="utf-8") as fh:
+            BENCH_README = fh.read()
+    except FileNotFoundError:
+        BENCH_README = ""
+    for p in BENCH_PROMPTS:
+        with open(p, encoding="utf-8") as fh:
+            if fh.read().strip() not in BENCH_README:
+                bad(
+                    f"{os.path.relpath(p, ROOT)}: not quoted word for word in bench/README.md (D4)"
+                )
 
 # --- the ladder: one ruleset, two copies (always-on rungs; on-demand depth) ---
 # The seven rungs are pinned by keyword because the copies differ in depth by design.

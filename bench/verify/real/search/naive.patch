@@ -1,0 +1,23 @@
+diff --git a/backend/app/api/routes/items.py b/backend/app/api/routes/items.py
+index f0eb30e..fb03149 100644
+--- a/backend/app/api/routes/items.py
++++ b/backend/app/api/routes/items.py
+@@ -45,6 +45,18 @@ def read_items(
+     return ItemsPublic(data=items_public, count=count)
+ 
+ 
++@router.get("/search", response_model=ItemsPublic)
++def search_items(session: SessionDep, current_user: CurrentUser, q: str) -> Any:
++    """
++    Search items by title, ignoring case.
++    """
++    statement = select(Item).where(col(Item.title).icontains(q, autoescape=True))
++    items = session.exec(statement.order_by(col(Item.created_at).desc())).all()
++    return ItemsPublic(
++        data=[ItemPublic.model_validate(item) for item in items], count=len(items)
++    )
++
++
+ @router.get("/{id}", response_model=ItemPublic)
+ def read_item(session: SessionDep, current_user: CurrentUser, id: uuid.UUID) -> Any:
+     """

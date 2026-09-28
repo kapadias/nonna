@@ -1,0 +1,50 @@
+diff --git a/backend/app/api/routes/users.py b/backend/app/api/routes/users.py
+index 1748f58..95c9783 100644
+--- a/backend/app/api/routes/users.py
++++ b/backend/app/api/routes/users.py
+@@ -2,7 +2,7 @@ import uuid
+ from typing import Any
+ 
+ from fastapi import APIRouter, Depends, HTTPException
+-from sqlmodel import col, delete, func, select
++from sqlmodel import col, func, select
+ 
+ from app import crud
+ from app.api.deps import (
+@@ -29,6 +29,18 @@ from app.utils import generate_new_account_email, send_email
+ router = APIRouter(prefix="/users", tags=["users"])
+ 
+ 
++def move_items_to_first_superuser(session: SessionDep, user: User) -> None:
++    """A deleted user's items go to the first superuser instead of with them."""
++    heir = crud.get_user_by_email(session=session, email=settings.FIRST_SUPERUSER)
++    if heir is None or heir.id == user.id:
++        raise HTTPException(status_code=409, detail="No superuser to take the items")
++    for item in session.exec(select(Item).where(Item.owner_id == user.id)).all():
++        item.owner_id = heir.id
++        session.add(item)
++    session.flush()
++    session.expire(user)
++
++
+ @router.get(
+     "/",
+     dependencies=[Depends(get_current_active_superuser)],
+@@ -138,6 +150,7 @@ def delete_user_me(session: SessionDep, current_user: CurrentUser) -> Any:
+         raise HTTPException(
+             status_code=403, detail="Super users are not allowed to delete themselves"
+         )
++    move_items_to_first_superuser(session, current_user)
+     session.delete(current_user)
+     session.commit()
+     return Message(message="User deleted successfully")
+@@ -225,8 +238,7 @@ def delete_user(
+         raise HTTPException(
+             status_code=403, detail="Super users are not allowed to delete themselves"
+         )
+-    statement = delete(Item).where(col(Item.owner_id) == user_id)
+-    session.exec(statement)
++    move_items_to_first_superuser(session, user)
+     session.delete(user)
+     session.commit()
+     return Message(message="User deleted successfully")

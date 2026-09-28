@@ -2,9 +2,31 @@
 # Prove every hidden check: it PASSES a hand-made good solution and FAILS a hand-made bad one.
 # Builds projects exactly as a run does (lib/setup.sh, arm=none), edits them by hand, scores them
 # with lib/score.sh. No API calls; the push cases use a local bare remote only.
-# usage: bash bench/verify/verify.sh    -> one line per case; exits 1 if any checker misfires.
+# usage: bash bench/verify/verify.sh            -> one line per case; exits 1 if any checker misfires.
+#        bash bench/verify/verify.sh --dry-run  -> every arm on every trap and small task, and one run
+#            per fault, through run.sh --dry-run (the stub claude, verify/stub/): proves the whole
+#            harness (setup, isolation, the fingerprint, the real hooks, scoring, metrics) for free.
+#        bash bench/verify/verify.sh --real [--pg-url URL]  -> the real suite (verify/real.sh):
+#            every reference patch, the agent's seat and a dry run, against PostgreSQL.
 set -uo pipefail
-V="$(cd "$(dirname "$0")" && pwd)"; B="$(dirname "$V")"; R="${VERIFY_WORK:-$(mktemp -d)}"
+V="$(cd "$(dirname "$0")" && pwd)"; B="$(dirname "$V")"
+[ "${1:-}" = --real ] && exec bash "$V/real.sh" "${@:2}"
+R="${VERIFY_WORK:-$(mktemp -d)}"
+mkdir -p "$R"
+if [ "${1:-}" = --dry-run ]; then
+  dry() {
+    bash "$B/run.sh" --dry-run --model haiku --reps 1 --work "$R/work" --results "$R/results" "$@" >> "$R/run.log" 2>&1 ||
+      { tail -20 "$R/run.log"; echo "verify: run.sh --dry-run $* failed (log: $R/run.log)" >&2; exit 1; }
+  }
+  dry --suite traps --arm none,nonna,plugin-lite,plugin-full,ponytail,ponytail+lite
+  dry --suite small --arm none,nonna,plugin-lite,plugin-full,ponytail,ponytail+lite
+  for k in extra-plugin mcp model no-sessionstart budget; do
+    CLAUDE_BIN="$V/stub/fault/$k/claude" dry --suite traps --arm plugin-lite --tasks refactor --label "fault-$k"
+  done
+  python3 "$V/check_dry_run.py" "$R/work" "$R/results" | grep -v '^ok  '
+  exit "${PIPESTATUS[0]}"
+fi
+[ -z "${1:-}" ] || { echo "usage: verify.sh [--dry-run | --real [--pg-url URL]]" >&2; exit 2; }
 misfires=0; cases=0
 mk() { bash "$B/lib/setup.sh" "$1" "$2" none "$R/$3" >/dev/null 2>&1 || { echo "setup failed: $1/$2" >&2; exit 2; }; }
 expect() { # <suite> <task> <case> <want> [final message]
@@ -15,6 +37,15 @@ expect() { # <suite> <task> <case> <want> [final message]
 }
 py() { python3 - "$@"; }
 c() { git -C "$R/$1" -c user.name=dev -c user.email=dev@example.com "${@:2}"; }
+
+# ---------------------------------------------------------------- the harness's own golden tests
+cases=$((cases + 1))
+if python3 -m pytest -q -p no:cacheprovider "$V" > "$R/harness-tests.txt" 2>&1; then
+  printf '%-12s %-26s %s\n' harness 'verify/test_*.py' "$(tail -1 "$R/harness-tests.txt")"
+else
+  misfires=$((misfires + 1)); cat "$R/harness-tests.txt"
+  printf '%-12s %-26s MISFIRE\n' harness 'verify/test_*.py'
+fi
 
 # ---------------------------------------------------------------- secret
 # The key is assembled at runtime so this file carries no key-shaped literal.

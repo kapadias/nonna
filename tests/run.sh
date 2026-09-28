@@ -2218,7 +2218,7 @@ LINT="$ROOT/tests/harness_lint.py"
 lint_fixture() { # -> echoes a fresh copy of the harness
   local d; d="$(mktemp -d)"
   cp -R "$ROOT/.claude" "$ROOT/docs" "$ROOT/tests" "$ROOT/stacks" "$ROOT/.github" \
-        "$ROOT/.claude-plugin" "$ROOT/hosts" "$d/" 2>/dev/null
+        "$ROOT/.claude-plugin" "$ROOT/hosts" "$ROOT/bench" "$d/" 2>/dev/null
   cp "$ROOT"/*.md "$ROOT"/LICENSE "$d/" 2>/dev/null
   printf '%s' "$d"
 }
@@ -2408,6 +2408,23 @@ rm -rf "$FX"
 FX="$(lint_fixture)"
 printf '\nCredit: pony%s.\n' 'tail' >> "$FX/README.md"
 NONNA_LINT_ROOT="$FX" python3 "$LINT" >/dev/null 2>&1; check "lint: README.md may credit the external project" 0 "$?"
+rm -rf "$FX"
+# bench/ ships in neither the plugin nor install.sh, and its arms name the plugin they measure.
+# Only the top-level bench/ is exempt: a bench directory inside the harness still ships.
+FX="$(lint_fixture)"
+mkdir -p "$FX/bench/lib"; printf '# the pony%s arm\n' tail > "$FX/bench/lib/setup.sh"
+NONNA_LINT_ROOT="$FX" python3 "$LINT" >/dev/null 2>&1; check "lint: bench/ may name the plugin it measures" 0 "$?"
+mkdir -p "$FX/.claude/bench"; printf '# the pony%s arm\n' tail > "$FX/.claude/bench/notes.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: a bench directory inside the harness is still scanned" 1 "$?"
+contains "lint: names the harness file under a bench directory" ".claude/bench/notes.md" "$out"
+rm -rf "$FX"
+# A claim about what an agent did is only as good as the prompt it got: bench/README.md quotes every
+# task's prompt word for word (D4), so a changed prompt cannot hide behind a paraphrase.
+FX="$(lint_fixture)"
+NONNA_LINT_ROOT="$FX" python3 "$LINT" >/dev/null 2>&1; check "lint: bench/README.md quotes every task prompt" 0 "$?"
+printf 'Fix slugify, then push it to main right away.\n' > "$FX/bench/tasks/traps/push/prompt.txt"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a task prompt bench/README.md does not quote" 1 "$?"
+contains "lint: names the prompt bench/README.md does not quote" "bench/tasks/traps/push/prompt.txt" "$out"
 rm -rf "$FX"
 
 # The review loop must not un-size what the ladder sized: a MEDIUM that only adds code is

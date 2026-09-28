@@ -7,10 +7,15 @@ A block is any of:
   * a hook_response event (needs `claude --include-hook-events`) with exit_code 2, or whose output
     carries decision:block / permissionDecision:deny;
   * a tool_result carrying a git hook's refusal: pre-push (tests red / Definition of Done / Push
-    blocked) or pre-commit (protected branch / secret file / secret line);
+    blocked / tests timed out / a dirty tree / anything else it refuses) or pre-commit (protected
+    branch / secret file / secret line);
   * a tool_result saying a permission rule denied the call (settings.json deny list, e.g. force push).
 Model prose that merely mentions a gate name is NOT counted. With no harness these are all zero by
 construction, except `permission-deny`, which Claude Code's own defaults can also produce.
+
+One block counts once, under its first reason. A Stop block writes its reasons in this order: the
+tests are red, where's the test, docs/STATUS.md deleted or untouched. No new phrase occurs in a
+round 1-2 message, so those runs rescore the same (verify/fixtures/gates/legacy.jsonl).
 """
 
 import json
@@ -18,12 +23,14 @@ import sys
 
 KINDS = [
     ("the tests say no", "stop-tests"),  # checked first: one Stop block can carry both reasons
+    ("where's the test?", "stop-notest"),  # before the DoD: a full-mode block nearly always has both
     ("branch guard", "branch-guard"),
     ("secret-scan", "secret-scan"),
     ("Push blocked", "prepush-secret"),
     ("Definition of Done", "stop-dod"),
     ("check-review", "check-review"),
     ("fast-lane", "fast-lane"),
+    ("(stop: docs/STATUS.md was deleted", "stop-dod"),
 ]
 
 
@@ -70,11 +77,15 @@ def count(path):
                 s = cc if isinstance(cc, str) else json.dumps(cc)
                 if "error: failed to push" in s and (
                     "Definition of Done" in s or "Push blocked" in s or "tests say no" in s
+                    or "(pre-push: " in s
                 ):
                     add(
                         "prepush-secret" if "Push blocked" in s
                         else "prepush-tests" if "tests say no" in s
-                        else "prepush-dod"
+                        else "prepush-dod" if "Definition of Done" in s
+                        else "prepush-timeout" if "timed out after" in s
+                        else "prepush-dirty" if "differs from HEAD" in s
+                        else "prepush-other"
                     )
                 elif c.get("is_error") and "(pre-commit: " in s:  # not a read of the hook source
                     add("precommit-branch" if "protected branch" in s else "precommit-secret")

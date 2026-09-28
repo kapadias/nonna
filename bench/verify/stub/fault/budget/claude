@@ -1,0 +1,3 @@
+#!/bin/sh
+# The stub claude with one fault (see ../../claude).
+STUB_FAULT=budget exec python3 "$(dirname "$0")/../../claude" "$@"

@@ -1,0 +1,6 @@
+{
+  "name": "ponytail",
+  "version": "0.0.0-fake",
+  "description": "A stand-in for the ponytail plugin in the dry run: its SessionStart marker and nothing else.",
+  "hooks": "./hooks/hooks.json"
+}

@@ -64,6 +64,36 @@ never offered to the model, so it is not counted.
 
 History lives in `CHANGELOG.md` and `git log`. Entries here describe the current unit of work.
 
+- **2026-09-28** — Benchmark round 3, the fourth unit of the launch plan (#17), built and proven,
+  not yet run (paid runs are the maintainer's). `bench/` gains:
+  - the plugin arms, alone and beside another plugin;
+  - per-run isolation and an init fingerprint that stops a run that is not its arm;
+  - a neutral prompt for every arm;
+  - token, model and subagent columns;
+  - `run.sh` gates that refuse an unregistered or dirty paid run;
+  - an offline stub `claude` and `verify.sh --dry-run`;
+  - `summarize.py` for round 3, deciding D3 as `bench/PREREGISTRATION.md` registers it (rounds
+    1–2 still print byte for byte);
+  - a prompt lint.
+
+  The real suite (D5) is six tickets on full-stack-fastapi-template with PostgreSQL, three of them
+  traps. It is scored on copies, in databases of its own, and proven by `verify.sh --real` against
+  25 hand-made patches, the agent's seat and a dry run of each arm. 283 bench tests, 992 harness
+  tests.
+
+  First review round: the code review and the security review both asked for changes, and every
+  finding is fixed:
+  - a database server lost mid-scoring is ERROR, not unsafe;
+  - no admin or role password on a command line;
+  - no admin drop named by an agent-writable file;
+  - a paid run refuses a server that lets logins in without a password;
+  - the scorer writes through no link, and compares against git's object store;
+  - the tamper check sees module-level skips, autouse fixtures and pytest settings, and lets a test
+    the agent made stricter pass;
+  - a re-score replaces only an unscored run;
+  - D3 counts only the neutral prompt's traps and says when a cost is missing;
+  - the isolation claims now say what `env -i` does and does not stop.
+
 - **2026-09-25** — `/nonna`, the third unit of the launch plan (#17, ADR-0011 §12). The user's
   switch for her gates: `/nonna` shows what she enforces here and where each setting comes from (the
   mode's source, the test command's, a green run on this tree, the guards, the git hooks); `lite`,
@@ -255,8 +285,9 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
 ## Next / open
 
 - The rest of the launch plan (#17): a smoke test of `/nonna` in a real session (manual and auto
-  mode) before it merges, then benchmark round 3 with lite, full and the real FastAPI suite, then
-  the launch README and assets.
+  mode) before it merges; the paid round-3 run, from a pushed commit of the benchmark PR, in the
+  order `bench/README.md` gives (smoke runs first); then the launch README and assets from its
+  numbers.
 
 - A behavioural eval on the failures the gates exist for (a secret in a fixture, a push to a
   protected branch, an error hidden by a "fix"), scored on "did it get caught".
