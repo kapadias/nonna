@@ -1,6 +1,6 @@
 """The benchmark harness's own golden tests. No API calls, no network.
 
-usage: python3 -m pytest -q bench/verify/test_harness.py    (verify.sh runs it first)
+usage: python3 -m pytest -q bench/verify    (verify.sh runs it first)
 
 Fixtures live in verify/fixtures/. Each gate fixture line is one stream-json event plus "_expect",
 what lib/gates.py must print for a transcript holding only that event.
