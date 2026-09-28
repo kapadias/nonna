@@ -1,0 +1,292 @@
+#!/usr/bin/env python3
+"""An offline stand-in for `claude -p`, for the dry run (verify.sh --dry-run). No model, no network.
+
+It takes exactly the flags lib/run-one.sh passes and refuses anything else (exit 2), and refuses a
+leaked or missing variable or a config dir that is not fresh (exit 3), as a real run must never see
+them. It records its argv, cwd and environment keys (never values) in
+$CLAUDE_CONFIG_DIR/stub-invocation.json, then plays a fixed session with the real hooks:
+  1. SessionStart and UserPromptSubmit hooks of every --plugin-dir, and of the project's settings
+     when `project` is a setting source, with the environment Claude Code gives them;
+  2. an init event with the real field set (model claude-<alias>-stub, version "stub");
+  3. one Agent call (SubagentStart hooks), then a one-line edit of the first tracked source file
+     (PreToolUse and PostToolUse hooks);
+  4. the Stop hooks, and again with stop_hook_active when one blocks;
+  5. a result with fixed usage and cost, and the transcript where Claude Code writes it.
+STUB_FAULT, set only by the wrappers in fault/, breaks one thing: extra-plugin, mcp, model,
+no-sessionstart (a bad start), or budget (the run stops at its budget). After a bad start the stub
+waits 10 s and touches stub-survived in the config dir, so a watcher that failed to stop it shows.
+"""
+
+import glob
+import json
+import os
+import re
+import subprocess
+import sys
+import time
+import uuid
+
+VALUED = {"-p", "--model", "--plugin-dir", "--setting-sources", "--max-budget-usd", "--session-id",
+          "--output-format", "--permission-mode", "--allowedTools", "--max-turns"}
+BARE = {"--strict-mcp-config", "--verbose", "--include-hook-events"}
+REQUIRED = (VALUED | BARE) - {"--plugin-dir"}
+FIXED = {"--output-format": "stream-json", "--setting-sources": "project,local", "--permission-mode": "acceptEdits"}
+FRESH = {"gitconfig", ".ponytail-statusline-nudged"}
+LEAK = re.compile(
+    r"^(CLAUDECODE$|CLAUDE_CODE_|CLAUDE_PLUGIN_|NONNA_|PONYTAIL_|ANTHROPIC_(?!API_KEY$)|GIT_(?!CONFIG_GLOBAL$|CONFIG_NOSYSTEM$))"
+)
+FAULTS = {"extra-plugin", "mcp", "model", "no-sessionstart", "budget"}
+TOOLS = ["Task", "Bash", "Edit", "Glob", "Grep", "MultiEdit", "Read", "TodoWrite", "Write"]
+BUILTIN = {"name": "agents-md", "path": "builtin", "source": "agents-md@builtin"}
+
+
+def die(code, msg):
+    print(f"stub claude: {msg}", file=sys.stderr)
+    sys.exit(code)
+
+
+def parse(argv):
+    opts, dirs, i = {}, [], 0
+    while i < len(argv):
+        a = argv[i]
+        if a in BARE:
+            opts[a] = True
+            i += 1
+        elif a in VALUED and i + 1 < len(argv):
+            if a == "--plugin-dir":
+                dirs.append(os.path.abspath(argv[i + 1]))
+            elif a in opts:
+                die(2, f"{a} given twice")
+            else:
+                opts[a] = argv[i + 1]
+            i += 2
+        else:
+            die(2, f"unknown option or missing value: {a!r} (run-one passes only its own flags)")
+    missing = sorted(REQUIRED - set(opts))
+    if missing:
+        die(2, f"run-one did not pass {', '.join(missing)}")
+    for k, v in FIXED.items():
+        if opts[k] != v:
+            die(2, f"{k} is {opts[k]!r}, not {v!r}")
+    return opts, dirs
+
+
+def check_env():
+    env = os.environ
+    leaked = sorted(k for k in env if LEAK.match(k))
+    if leaked:
+        die(3, f"leaked into the run: {', '.join(leaked)}")
+    cfg = env.get("CLAUDE_CONFIG_DIR", "")
+    need = {
+        "ANTHROPIC_API_KEY": bool(env.get("ANTHROPIC_API_KEY")),
+        "DISABLE_AUTOUPDATER=1": env.get("DISABLE_AUTOUPDATER") == "1",
+        "CLAUDE_CONFIG_DIR": os.path.isdir(cfg),
+        "GIT_CONFIG_GLOBAL=$CLAUDE_CONFIG_DIR/gitconfig": cfg != ""
+        and env.get("GIT_CONFIG_GLOBAL") == os.path.join(cfg, "gitconfig")
+        and os.path.isfile(env["GIT_CONFIG_GLOBAL"]),
+        "GIT_CONFIG_NOSYSTEM=1": env.get("GIT_CONFIG_NOSYSTEM") == "1",
+        "XDG_CONFIG_HOME": bool(env.get("XDG_CONFIG_HOME")),
+    }
+    unmet = [k for k, ok in need.items() if not ok]
+    if unmet:
+        die(3, f"missing from the run: {', '.join(unmet)}")
+    extra = sorted(set(os.listdir(cfg)) - FRESH)
+    if extra:
+        die(3, f"the config dir is not fresh: {', '.join(extra)}")
+    return cfg
+
+
+def sources(dirs, cwd, setting_sources, cfg):
+    out = []
+    for pd in dirs:
+        with open(os.path.join(pd, ".claude-plugin", "plugin.json"), encoding="utf-8") as fh:
+            man = json.load(fh)
+        ref = man.get("hooks")
+        hooks = {}
+        if isinstance(ref, dict):
+            hooks = ref.get("hooks", ref)
+        else:
+            f = os.path.join(pd, ref) if isinstance(ref, str) else os.path.join(pd, "hooks", "hooks.json")
+            if os.path.isfile(f):
+                with open(f, encoding="utf-8") as fh:
+                    hooks = json.load(fh).get("hooks", {})
+        name = man["name"]
+        out.append({
+            "name": name, "version": man.get("version"), "root": pd, "hooks": hooks,
+            "data": os.path.join(cfg, "plugins", "data", f"{name}-inline"),
+            "skills": sorted(f"{name}:{os.path.basename(os.path.dirname(p))}" for p in glob.glob(os.path.join(pd, "skills", "*", "SKILL.md"))),
+            "agents": sorted(f"{name}:{os.path.basename(p)[:-3]}" for p in glob.glob(os.path.join(pd, "agents", "*.md"))),
+        })
+    for src, fname in (("project", "settings.json"), ("local", "settings.local.json")):
+        f = os.path.join(cwd, ".claude", fname)
+        if src in setting_sources.split(",") and os.path.isfile(f):
+            with open(f, encoding="utf-8") as fh:
+                hooks = json.load(fh).get("hooks", {})
+            out.append({
+                "name": None, "root": None, "data": None, "hooks": hooks,
+                "skills": sorted(os.path.basename(os.path.dirname(p)) for p in glob.glob(os.path.join(cwd, ".claude", "skills", "*", "SKILL.md"))) if src == "project" else [],
+                "agents": sorted(os.path.basename(p)[:-3] for p in glob.glob(os.path.join(cwd, ".claude", "agents", "*.md"))) if src == "project" else [],
+            })
+    return out
+
+
+class Session:
+    def __init__(self, cwd, sid, srcs):
+        self.cwd, self.sid, self.srcs, self.events = cwd, sid, srcs, []
+
+    def emit(self, ev):
+        ev.setdefault("uuid", str(uuid.uuid4()))
+        ev.setdefault("session_id", self.sid)
+        line = json.dumps(ev)
+        self.events.append(line)
+        sys.stdout.write(line + "\n")
+        sys.stdout.flush()
+
+    def hooks(self, event, query, payload):
+        """Run every hook for the event; -> the reasons of those that blocked."""
+        blocked = []
+        payload = dict(payload, session_id=self.sid, cwd=self.cwd, hook_event_name=event,
+                       transcript_path=os.path.join(transcript_dir(self.cwd), self.sid + ".jsonl"))
+        for s in self.srcs:
+            for group in s["hooks"].get(event, []):
+                m = group.get("matcher") or ""
+                if query is not None and m not in ("", "*") and not re.fullmatch(m, query):
+                    continue
+                for h in group.get("hooks", []):
+                    if h.get("type") != "command":
+                        continue
+                    hid = str(uuid.uuid4())
+                    name = f"{event}:{query}" if event == "SessionStart" or (query and m) else event
+                    self.emit({"type": "system", "subtype": "hook_started", "hook_id": hid, "hook_name": name, "hook_event": event})
+                    env = dict(os.environ, CLAUDE_PROJECT_DIR=self.cwd)
+                    if s["root"]:
+                        os.makedirs(s["data"], exist_ok=True)
+                        env.update(CLAUDE_PLUGIN_ROOT=s["root"], CLAUDE_PLUGIN_DATA=s["data"])
+                    try:
+                        r = subprocess.run(["bash", "-c", h["command"]], input=json.dumps(payload), capture_output=True,
+                                           text=True, cwd=self.cwd, env=env, timeout=h.get("timeout", 60))
+                        out, err, code = r.stdout, r.stderr, r.returncode
+                    except subprocess.TimeoutExpired:
+                        out, err, code = "", "hook timed out", 124
+                    decision = ""
+                    try:
+                        j = json.loads(out)
+                        decision = j.get("decision", "") if isinstance(j, dict) else ""
+                    except ValueError:
+                        pass
+                    blocking = code == 2 or decision == "block"
+                    self.emit({"type": "system", "subtype": "hook_response", "hook_id": hid, "hook_name": name,
+                               "hook_event": event, "output": out + err, "stdout": out, "stderr": err, "exit_code": code,
+                               "outcome": "blocking" if blocking else "success" if code == 0 else "non_blocking_error"})
+                    if blocking:
+                        blocked.append(err or out)
+        return blocked
+
+    def say(self, text):
+        self.emit({"type": "assistant", "message": {"role": "assistant", "content": [{"type": "text", "text": text}]}})
+
+    def call(self, tool, inp):
+        tid = "toolu_stub_" + uuid.uuid4().hex[:12]
+        self.emit({"type": "assistant", "message": {"role": "assistant", "content": [{"type": "tool_use", "id": tid, "name": tool, "input": inp}]}})
+        return tid
+
+    def result(self, tid, content, is_error=False):
+        self.emit({"type": "user", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": tid, "content": content, "is_error": is_error}]}})
+
+
+def transcript_dir(cwd):
+    return os.path.join(os.environ["CLAUDE_CONFIG_DIR"], "projects", re.sub(r"[^A-Za-z0-9]", "-", os.path.realpath(cwd)))
+
+
+def first_source(cwd):
+    r = subprocess.run(["git", "ls-files", "*.py"], cwd=cwd, capture_output=True, text=True)
+    for f in sorted(r.stdout.split()):
+        parts = f.split("/")
+        if not any(p in ("tests", "test") for p in parts[:-1]) and not parts[-1].startswith("test_") and parts[-1] != "__init__.py":
+            return f
+    return None
+
+
+def main(argv):
+    if argv == ["--version"]:
+        print("0.0.0-stub (the offline stand-in for Claude Code)")
+        return 0
+    opts, dirs = parse(argv)
+    fault = os.environ.get("STUB_FAULT", "")
+    if fault and fault not in FAULTS:
+        die(2, f"unknown STUB_FAULT {fault!r}")
+    cfg = check_env()
+    cwd = os.getcwd()
+    with open(os.path.join(cfg, "stub-invocation.json"), "w", encoding="utf-8") as fh:
+        json.dump({"argv": argv, "cwd": cwd, "env": sorted(os.environ)}, fh, indent=1)
+    sid = opts["--session-id"]
+    srcs = sources(dirs, cwd, opts["--setting-sources"], cfg)
+    s = Session(cwd, sid, srcs)
+
+    if fault != "no-sessionstart":
+        s.hooks("SessionStart", "startup", {"source": "startup"})
+    s.hooks("UserPromptSubmit", None, {"prompt": opts["-p"]})
+    alias = opts["--model"]
+    fam = next((f for f in ("fable", "opus", "sonnet", "haiku") if f in alias.lower()), alias)
+    model = f"claude-{fam}-stub"
+    plugins = [{"name": x["name"], "path": x["root"], "source": f"{x['name']}@inline", "version": x["version"]}
+               for x in srcs if x["root"]] + [BUILTIN]
+    init = {"type": "system", "subtype": "init", "cwd": cwd, "session_id": sid, "tools": TOOLS,
+            "mcp_servers": [], "model": model, "permissionMode": opts["--permission-mode"],
+            "slash_commands": sorted(k for x in srcs for k in x["skills"]), "apiKeySource": "ANTHROPIC_API_KEY",
+            "betas": [], "claude_code_version": "stub", "output_style": "default",
+            "agents": ["general-purpose", "Explore"] + [k for x in srcs for k in x["agents"]],
+            "skills": sorted(k for x in srcs for k in x["skills"]), "plugins": plugins}
+    if fault == "extra-plugin":
+        init["plugins"].insert(0, {"name": "extra", "path": "/nonexistent/extra", "source": "extra@inline", "version": "0.0.1"})
+    elif fault == "mcp":
+        init["mcp_servers"] = [{"name": "github", "status": "connected"}]
+    elif fault == "model":
+        init["model"] = "claude-opus-stub" if fam != "opus" else "claude-haiku-stub"
+    s.emit(init)
+
+    tid = s.call("Agent", {"subagent_type": "Explore", "description": "Look around", "prompt": "Find the code the task is about."})
+    if fault in ("extra-plugin", "mcp", "model", "no-sessionstart"):
+        time.sleep(10)  # a watcher that works has stopped this run by now
+        open(os.path.join(cfg, "stub-survived"), "w").close()
+    s.hooks("SubagentStart", "Explore", {"agent_id": "stub", "agent_type": "Explore"})
+    s.result(tid, "The code is in the files the task names.")
+
+    target = first_source(cwd)
+    if target:
+        inp = {"file_path": os.path.join(cwd, target), "old_string": "", "new_string": "# stub\n"}
+        tid = s.call("Edit", inp)
+        blocked = s.hooks("PreToolUse", "Edit", {"tool_name": "Edit", "tool_input": inp})
+        if blocked:
+            s.result(tid, blocked[0], is_error=True)
+        else:
+            with open(os.path.join(cwd, target), "a", encoding="utf-8") as fh:
+                fh.write("\n# stub\n")
+            s.hooks("PostToolUse", "Edit", {"tool_name": "Edit", "tool_input": inp, "tool_response": {"filePath": inp["file_path"]}})
+            s.result(tid, f"The file {inp['file_path']} has been updated.")
+
+    for active in (False, True):
+        if not s.hooks("Stop", None, {"stop_hook_active": active}):
+            break
+        s.say("(stub) Understood; leaving it as it is.")
+
+    budget = float(opts["--max-budget-usd"])
+    subtype, cost = ("error_max_budget_usd", budget + 0.01) if fault == "budget" else ("success", 0.0123)
+    per_model = {"inputTokens": 1000, "outputTokens": 200, "cacheReadInputTokens": 5000, "cacheCreationInputTokens": 800,
+                 "webSearchRequests": 0, "costUSD": cost}
+    s.emit({"type": "result", "subtype": subtype, "is_error": subtype != "success", "duration_ms": 1234, "num_turns": 3,
+            "result": "Done (stub).", "total_cost_usd": cost,
+            "usage": {"input_tokens": 1000, "output_tokens": 200, "cache_read_input_tokens": 5000, "cache_creation_input_tokens": 800},
+            "modelUsage": {model: per_model}})
+
+    tdir = transcript_dir(cwd)
+    os.makedirs(os.path.join(tdir, sid, "subagents"), exist_ok=True)
+    with open(os.path.join(tdir, sid + ".jsonl"), "w", encoding="utf-8") as fh:
+        fh.write("\n".join(s.events) + "\n")
+    with open(os.path.join(tdir, sid, "subagents", "agent-stub.jsonl"), "w", encoding="utf-8") as fh:
+        fh.write(json.dumps({"type": "assistant", "agent": "Explore", "text": "stub"}) + "\n")
+    return 1 if subtype != "success" else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))
