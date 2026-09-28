@@ -171,6 +171,30 @@ def test_a_paid_run_needs_the_preregistration_a_clean_bench_and_an_api_key(
     )
 
 
+def test_the_database_url_is_never_logged(stub_path, tmp_path):
+    res = tmp_path / "r"
+    r = run(
+        stub_path,
+        "--dry-run",
+        "--arm",
+        "none",
+        "--tasks",
+        "refactor",
+        "--reps",
+        "1",
+        "--pg-url",
+        "postgresql://admin:FAKE-pg-pw@127.0.0.1:1/postgres",
+        "--work",
+        str(tmp_path / "w"),
+        "--results",
+        str(res),
+    )
+    assert r.returncode == 0, r.stderr
+    log = (res / "batches.tsv").read_text()
+    assert "--pg-url <given>" in log and "FAKE-pg-pw" not in log
+    assert "FAKE-pg-pw" not in r.stdout + r.stderr
+
+
 def test_a_dry_run_end_to_end(stub_path, tmp_path):
     res = tmp_path / "r"
     r = run(

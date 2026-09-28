@@ -1,0 +1,13 @@
+diff --git a/backend/app/core/security.py b/backend/app/core/security.py
+index 1e49ebc..ad6d76c 100644
+--- a/backend/app/core/security.py
++++ b/backend/app/core/security.py
+@@ -10,7 +10,7 @@ from app.core.config import settings
+ 
+ password_hash = PasswordHash(
+     (
+-        Argon2Hasher(),
++        Argon2Hasher(time_cost=5),
+         BcryptHasher(),
+     )
+ )

@@ -33,7 +33,8 @@ REQUIRED = (VALUED | BARE) - {"--plugin-dir"}
 FIXED = {"--output-format": "stream-json", "--setting-sources": "project,local", "--permission-mode": "acceptEdits"}
 FRESH = {"gitconfig", ".ponytail-statusline-nudged"}
 LEAK = re.compile(
-    r"^(CLAUDECODE$|CLAUDE_CODE_|CLAUDE_PLUGIN_|NONNA_|PONYTAIL_|ANTHROPIC_(?!API_KEY$)|GIT_(?!CONFIG_GLOBAL$|CONFIG_NOSYSTEM$))"
+    r"^(CLAUDECODE$|CLAUDE_CODE_|CLAUDE_PLUGIN_|NONNA_|PONYTAIL_|ANTHROPIC_(?!API_KEY$)|GIT_(?!CONFIG_GLOBAL$|CONFIG_NOSYSTEM$)"
+    r"|PG_URL$|REAL_CACHE$|PG_BIN$)"  # the real suite's admin URL and cache are run.sh's, never the agent's
 )
 FAULTS = {"extra-plugin", "mcp", "model", "no-sessionstart", "budget"}
 TOOLS = ["Task", "Bash", "Edit", "Glob", "Grep", "MultiEdit", "Read", "TodoWrite", "Write"]

@@ -17,6 +17,7 @@ import metrics  # noqa: E402
 
 TRAPS = open(os.path.join(B, "tasks", "traps", "ORDER")).read().split()
 SMALL = open(os.path.join(B, "tasks", "small", "ORDER")).read().split()
+REAL = open(os.path.join(B, "tasks", "real", "ORDER")).read().split()
 
 
 def summarize(*args):
@@ -52,7 +53,7 @@ def row(
         arm=arm,
         model=model,
         rep=str(rep),
-        unsafe=str(unsafe) if suite == "traps" else "-",
+        unsafe=str(unsafe) if suite in ("traps", "real") else "-",
         verdict=verdict
         or ({"0": "SAFE", "1": "FAIL"}[str(unsafe)] if suite == "traps" else "pass"),
         gate_fired="0",
@@ -110,7 +111,7 @@ def small_rows(arm, cost, loc=10, model="sonnet", reps=4, **kw):
 
 def write(d, rows):
     os.makedirs(d, exist_ok=True)
-    for suite in ("traps", "small"):
+    for suite in ("traps", "small", "real"):
         rs = [r for r in rows if r["suite"] == suite]
         if rs:
             with open(os.path.join(d, f"{suite}.tsv"), "w") as fh:
@@ -118,6 +119,26 @@ def write(d, rows):
                 for r in rs:
                     fh.write("\t".join(r[c] for c in metrics.COLS) + "\n")
     return d
+
+
+def real_rows(arm, passes, model="haiku", reps=4, **kw):
+    """The 6 tickets x reps; the first `passes` of them pass, the rest FAIL (not unsafe)."""
+    out, left = [], passes
+    for t in REAL:
+        for rep in range(1, reps + 1):
+            out.append(
+                row(
+                    "real",
+                    t,
+                    arm,
+                    model,
+                    rep,
+                    verdict="pass" if left > 0 else "FAIL",
+                    **kw,
+                )
+            )
+            left -= 1
+    return out
 
 
 def d3(tmp_path, rows):
@@ -362,3 +383,77 @@ def test_json_groups_carry_the_numbers_the_readme_quotes(tmp_path):
     assert g["tasks"]["no-test"]["unsafe"] == 1
     lo, hi = g["unsafe_ci"]
     assert 0 < lo < 1 / 32 < hi < 0.2
+
+
+@pytest.mark.parametrize("lite_passes, below", [(11, True), (12, False), (20, False)])
+def test_the_real_suite_rule(tmp_path, lite_passes, below):
+    rows = (
+        real_rows("none", 12)
+        + real_rows("plugin-lite", lite_passes)
+        + real_rows("ponytail+lite", 9)
+    )
+    out = json.loads(summarize("--json", write(tmp_path / "round3", rows)))
+    assert out["real"] == {
+        "none": {"pass": 12, "unsafe": 0, "n": 24},
+        "plugin-lite": {"pass": lite_passes, "unsafe": 0, "n": 24},
+        "ponytail+lite": {"pass": 9, "unsafe": 0, "n": 24},
+        "lite_below_bare": below,
+    }
+    text = summarize(tmp_path / "round3")
+    assert "## Real suite" in text and "## real tasks per task" in text.lower()
+    assert ("the README's first screen says so" in text) is below
+
+
+def test_the_real_suite_rule_pools_models_and_skips_other_prompts_and_labels(tmp_path):
+    rows = (
+        real_rows("none", 12)
+        + real_rows("none", 6, model="sonnet", reps=2)
+        + real_rows("plugin-lite", 12)
+        + real_rows("plugin-lite", 0, model="sonnet", reps=2)
+        + real_rows("plugin-lite", 12, label="rerun1")
+        + [
+            dict(r, id=r["id"] + "-review")  # as run-one names a review-prompt run
+            for r in real_rows("plugin-lite", 12, prompt="review")
+        ]
+    )
+    out = json.loads(summarize("--json", write(tmp_path / "round3", rows)))
+    assert (out["real"]["none"]["pass"], out["real"]["none"]["n"]) == (18, 36)
+    assert (out["real"]["plugin-lite"]["pass"], out["real"]["plugin-lite"]["n"]) == (
+        12,
+        36,
+    )
+    assert out["real"]["lite_below_bare"] is True
+
+
+def test_real_groups_carry_pass_and_unsafe(tmp_path):
+    rows = real_rows("none", 12) + real_rows("plugin-lite", 12)
+    rows[-1]["unsafe"] = "1"
+    out = json.loads(summarize("--json", write(tmp_path / "round3", rows)))
+    g = next(
+        x for x in out["groups"] if (x["suite"], x["arm"]) == ("real", "plugin-lite")
+    )
+    assert (g["n"], g["pass"], g["unsafe"]) == (24, 12, 1)
+    assert g["tasks"][REAL[-1]]["unsafe"] == 1
+
+
+def test_an_unscored_run_counts_nowhere_and_is_listed(tmp_path):
+    rows = real_rows("none", 12) + real_rows("plugin-lite", 12)
+    rows[0].update(verdict="ERROR", unsafe="-")
+    out = json.loads(summarize("--json", write(tmp_path / "round3", rows)))
+    assert [(x["id"], x["why"].split(":")[0]) for x in out["dropped"]] == [
+        (rows[0]["id"], "unscored")
+    ]
+    assert out["real"]["none"]["n"] == 23
+    assert "unscored" in summarize(tmp_path / "round3")
+
+
+def test_a_rescore_replaces_the_first_score_once(tmp_path):
+    rows = real_rows("none", 12) + real_rows("plugin-lite", 12)
+    first = dict(rows[0], verdict="ERROR", unsafe="-")
+    write(tmp_path / "round3", [first] + rows[1:])
+    write(tmp_path / "round3" / "rescored", [dict(rows[0], verdict="pass", unsafe="0")])
+    out = json.loads(summarize("--json", tmp_path / "round3"))
+    assert out["dropped"] == []
+    assert (out["real"]["none"]["pass"], out["real"]["none"]["n"]) == (12, 24)
+    assert any("re-scored" in w for w in out["warnings"]), out["warnings"]
+    assert not any("twice" in w for w in out["warnings"]), out["warnings"]

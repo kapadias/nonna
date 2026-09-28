@@ -2,7 +2,7 @@
 # usage: run-one.sh <suite> <task> <arm> <model> <rep>
 # env (set by run.sh): WORK RESULTS CAP TIMEOUT MAX_TURNS RUN_BUDGET PROMPT_MODE LABEL RESCORE CLAUDE_BIN,
 #   HARNESS_REPO HARNESS_REF INSTALLER (arm nonna), NONNA_SNAP NONNA_SHA PONYTAIL_SNAP PONYTAIL_SHA
-#   (the plugin snapshots run.sh took)
+#   (the plugin snapshots run.sh took), PG_URL REAL_CACHE PG_BIN (suite real)
 # One run: build the project, run headless Claude Code in it, score it with the hidden check,
 # append one row to $RESULTS/<suite>.tsv. RESCORE=1 skips setup and the agent and re-scores an
 # existing run dir (no API calls).
@@ -10,7 +10,9 @@
 # The run sees none of this machine's Claude Code or git setup. It starts under env -i with only the
 # variables kept below, a fresh config dir ($d.cfg: its global git config and its transcripts too),
 # no user settings and no MCP servers. lib/fingerprint.py launches it, and stops it as soon as its
-# first events show it is not the arm it claims to be (exit 86), or at TIMEOUT (exit 124).
+# first events show it is not the arm it claims to be (exit 86), or at TIMEOUT (exit 124). A real-suite
+# run also gets its own database's settings ($d.env), never the admin URL; the database and the
+# run's venv go once the agent is done, since the scorer builds its own.
 set -uo pipefail
 B="$(cd "$(dirname "$0")/.." && pwd)"
 suite="$1"; t="$2"; arm="$3"; model="$4"; rep="$5"
@@ -60,6 +62,9 @@ PY
     SSL_CERT_FILE SSL_CERT_DIR NODE_EXTRA_CA_CERTS REQUESTS_CA_BUNDLE ANTHROPIC_API_KEY; do
     [ -n "${!v:-}" ] && keep+=("$v=${!v}")
   done
+  if [ -f "$d.env" ]; then
+    while IFS= read -r kv; do keep+=("$kv"); done < "$d.env"
+  fi
   start=$(date +%s)
   # No user settings (--setting-sources) and no MCP servers (--strict-mcp-config, none given).
   # acceptEdits + an explicit tool allowlist: --dangerously-skip-permissions is refused as root.
@@ -83,6 +88,10 @@ PY
   mkdir -p "$d.transcripts"
   cp "$proj/$sid.jsonl" "$d.transcripts/" 2>/dev/null
   [ -d "$proj/$sid" ] && cp -r "$proj/$sid" "$d.transcripts/"
+  if [ -f "$d.db" ]; then
+    python3 "$B/lib/real/db.py" drop "$PG_URL" "$(cat "$d.db")" && rm -f "$d.db" "$d.env"
+    rm -rf "$d/.venv"
+  fi
 fi
 
 [ -f "$d.meta" ] || { echo "NO RUN $id" >&2; exit 1; }

@@ -10,7 +10,8 @@
 #   --model M          any `claude --model` value: sonnet, haiku, ...    [sonnet]
 #   --reps N           runs per task per arm                             [4]
 #   --rep-start K      first rep number (to add reps to an earlier run)  [1]
-#   --suite S          traps (8 failure-mode tasks) | small (6 features) [traps]
+#   --suite S          traps (8 failure-mode tasks) | small (6 features) | real (6 tickets on
+#                      full-stack-fastapi-template: needs uv and psql)  [traps]
 #   --tasks T[,T]      subset of the suite's tasks                       [all in the suite]
 #   --prompt P         neutral: every arm is asked to review in words; review: Nonna's arms get
 #                      her /review command (the rounds 1-2 prompt)       [neutral]
@@ -20,6 +21,12 @@
 #   --cap USD          stop launching runs once logged spend reaches it  [150]
 #   --run-budget USD   each run's --max-budget-usd                       [3]
 #   --ponytail D       a ponytail checkout, for the ponytail arms: committed, and node on PATH
+#   --pg-url URL       suite real: a PostgreSQL admin URL whose user may create roles and databases
+#                      (or PG_URL in the environment); each run gets a role and a database of its
+#                      own. Without it: a throwaway cluster (initdb from PG_BIN) for the batch.
+#                      Never logged.
+#                      The pinned upstream tree and its dependencies are fetched once into
+#                      $REAL_CACHE                        [~/.cache/nonna-bench/real]
 #   --installer D      arm nonna: install the harness by running D/install.sh (NONNA_SRC=D) in each
 #                      project, which also wires the git pre-commit and pre-push hooks. D is a
 #                      checkout of the harness at the commit to test. Without it: copy-in via git archive:
@@ -40,9 +47,13 @@
 # Each run appends one row to <results>/<suite>.tsv. `python3 bench/summarize.py` prints the tables.
 set -uo pipefail
 B="$(cd "$(dirname "$0")" && pwd)"
-argv="$*"
+argv="" prev=""
+for a in "$@"; do # the arguments batches.tsv logs, without the database password
+  [ "$prev" = --pg-url ] && a="<given>"
+  argv="${argv:+$argv }$a" prev="$a"
+done
 arms=none,plugin-lite model=sonnet reps=4 rep_start=1 suite=traps tasks="" par=4 cap=150 rescore=0
-prompt=neutral label="" run_budget="" ponytail="" dry=0
+prompt=neutral label="" run_budget="" ponytail="" dry=0 pg_url="${PG_URL:-}" pgdir=""
 harness_repo="" harness_ref=HEAD installer="" work="${BENCH_WORK:-/tmp/nonna-bench}" results="$B/results/round3"
 work_set=0 results_set=0
 while [ $# -gt 0 ]; do
@@ -59,6 +70,7 @@ while [ $# -gt 0 ]; do
     --cap) cap="$2"; shift ;;
     --run-budget) run_budget="$2"; shift ;;
     --ponytail) ponytail="$2"; shift ;;
+    --pg-url) pg_url="$2"; shift ;;
     --installer) installer="$2"; shift ;;
     --harness-repo) harness_repo="$2"; shift ;;
     --harness-ref) harness_ref="$2"; shift ;;
@@ -125,6 +137,11 @@ needs="git python3 jq flock"
 for tool in $needs; do command -v "$tool" >/dev/null || die "needs $tool"; done
 python3 -c "import pytest" 2>/dev/null || die "needs python3 -m pytest"
 [[ "$tasks" == *d2* ]] && { command -v node >/dev/null || die "task d2 needs node"; }
+if [ "$suite" = real ]; then
+  command -v uv >/dev/null || die "the real suite needs uv"
+  PG_BIN="${PG_BIN:-$(pg_config --bindir 2>/dev/null || echo /usr/lib/postgresql/16/bin)}"
+  [ -x "$PG_BIN/psql" ] || command -v psql >/dev/null || die "the real suite needs psql (set PG_BIN)"
+fi
 
 mkdir -p "$work" "$results"
 WORK="$(cd "$work" && pwd)"
@@ -172,6 +189,20 @@ elif [ "$rescore" = 0 ] && { has ponytail || has ponytail+lite; }; then
   PONYTAIL_SNAP="$B/verify/fixtures/ponytail-fake" PONYTAIL_SHA=fake
 fi
 
+if [ "$suite" = real ]; then
+  REAL_CACHE="${REAL_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/nonna-bench/real}"
+  bash "$B/lib/real/cache.sh" "$REAL_CACHE" > /dev/null || die "could not fill the real suite's cache, $REAL_CACHE"
+  if [ -z "$pg_url" ]; then
+    # Postgres runs as the postgres user when this runs as root, so the cluster lives where that
+    # user can reach: the temporary directory, not WORK.
+    pgdir="$(mktemp -d "${TMPDIR:-/tmp}/nonna-pg.XXXXXX")" || die "no temporary directory for PostgreSQL"
+    trap 'bash "$B/lib/real/pg.sh" stop "$pgdir"; rm -rf "$pgdir"' EXIT
+    pg_url="$(PG_BIN="$PG_BIN" bash "$B/lib/real/pg.sh" start "$pgdir")" ||
+      die "could not start a throwaway PostgreSQL (give --pg-url)"
+  fi
+  export PG_URL="$pg_url" REAL_CACHE PG_BIN
+fi
+
 export WORK RESULTS CAP="$cap" RESCORE="$rescore" PROMPT_MODE="$prompt" LABEL="$label" RUN_BUDGET="$run_budget"
 export HARNESS_REPO="$harness_repo" HARNESS_REF="$harness_ref" INSTALLER="$installer" CLAUDE_BIN="${CLAUDE_BIN:-claude}"
 export NONNA_SNAP NONNA_SHA PONYTAIL_SNAP PONYTAIL_SHA
@@ -179,6 +210,7 @@ echo "suite=$suite arms=[$arms] model=$model reps=$rep_start..$((rep_start + rep
 if [ -n "$installer" ]; then h="install.sh from $installer@$(git -C "$installer" rev-parse --short HEAD)"; else h="${harness_repo:--}@$harness_ref"; fi
 echo "work=$WORK results=$RESULTS harness=$h${NONNA_SHA:+ nonna@$NONNA_SHA}${PONYTAIL_SHA:+ ponytail@$PONYTAIL_SHA}${ponytail:+ ($ponytail)}"
 [ "$dry" = 1 ] && echo "dry run: $CLAUDE_BIN, no model, no network"
+[ "$suite" = real ] && echo "real suite: cache $REAL_CACHE, PostgreSQL ${pgdir:+a throwaway cluster in $pgdir}${pgdir:-from --pg-url}"
 
 if [ "$rescore" = 0 ]; then
   [ -s "$RESULTS/batches.tsv" ] || printf 'started\tbench_sha\tclaude_version\targv\n' > "$RESULTS/batches.tsv"

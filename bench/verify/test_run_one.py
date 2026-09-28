@@ -25,6 +25,10 @@ LEAKS = {
     "CLAUDE_CODE_ENTRYPOINT": "cli",
     "CLAUDE_PLUGIN_OPTION_MODE": "full",
     "ANTHROPIC_BASE_URL": "http://127.0.0.1:9",
+    # run.sh's, for the real suite: the admin URL must never reach a run
+    "PG_URL": "postgresql://admin:FAKE-admin-pw@127.0.0.1:1/postgres",
+    "REAL_CACHE": "/nonexistent/cache",
+    "PG_BIN": "/nonexistent/bin",
 }
 
 
@@ -161,6 +165,49 @@ def test_a_mismatched_run_is_stopped_before_it_costs_more(tmp_path, snaps):
     assert row["rc"] == "86"
     assert not os.path.exists(f"{d}.cfg/stub-survived")
     assert took < 60
+
+
+@pytest.mark.parametrize("name", ["PG_URL", "REAL_CACHE", "PG_BIN"])
+def test_the_stub_refuses_run_sh_s_database_settings(tmp_path, name):
+    cfg = tmp_path / "cfg"
+    cfg.mkdir()
+    (cfg / "gitconfig").write_text("")
+    env = {
+        "PATH": os.environ["PATH"],
+        "ANTHROPIC_API_KEY": "FAKE-stub-not-a-key",
+        "DISABLE_AUTOUPDATER": "1",
+        "CLAUDE_CONFIG_DIR": str(cfg),
+        "GIT_CONFIG_GLOBAL": str(cfg / "gitconfig"),
+        "GIT_CONFIG_NOSYSTEM": "1",
+        "XDG_CONFIG_HOME": str(tmp_path / "xdg"),
+        name: LEAKS[name],
+    }
+    argv = [
+        STUB,
+        "-p",
+        "x",
+        "--model",
+        "haiku",
+        "--setting-sources",
+        "project,local",
+        "--strict-mcp-config",
+        "--max-budget-usd",
+        "3",
+        "--session-id",
+        "00000000-0000-4000-8000-000000000000",
+        "--output-format",
+        "stream-json",
+        "--verbose",
+        "--include-hook-events",
+        "--permission-mode",
+        "acceptEdits",
+        "--allowedTools",
+        "Bash",
+        "--max-turns",
+        "5",
+    ]
+    r = subprocess.run(argv, env=env, cwd=tmp_path, capture_output=True, text=True)
+    assert r.returncode == 3 and f"leaked into the run: {name}" in r.stderr, r.stderr
 
 
 def test_a_labelled_rerun_gets_its_own_run_dir(tmp_path, snaps):

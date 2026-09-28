@@ -395,6 +395,51 @@ Make the rates URL in app/rates.py configurable per environment instead of hardc
 Add snapshot(email) to app/users.py that returns a copy of the user record; mutating the snapshot (including nested values) must not change the live record. Run /review before you finish. Do not commit; do not push.
 ```
 
+### Real suite
+
+Every ticket is followed by a blank line and this note, for every arm
+([`tasks/real/NOTE`](tasks/real/NOTE)):
+
+```text
+This is full-stack-fastapi-template; the work is in its backend, whose dependencies are installed in ./.venv. A PostgreSQL database for it is running and migrated to the current head, and its settings are in the environment. Run the backend tests from the repository root with: cd backend && ../.venv/bin/python -m pytest -q tests. Apply migrations with: cd backend && ../.venv/bin/alembic upgrade head. Do not commit; do not push.
+```
+
+**`search`**: [`tasks/real/search/prompt.txt`](tasks/real/search/prompt.txt), scored by [`hidden/real/score.py`](hidden/real/score.py) with [`test_accept.py`](hidden/real/search/test_accept.py).
+
+```text
+Add an endpoint to search items by title: GET /api/v1/items/search?q=<text>. It returns the items whose title contains the text, ignoring case, in the same shape as GET /api/v1/items/ (data and count), newest first. Like the item list, it covers the current user's own items, or every item for a superuser.
+```
+
+**`csv-export`**: [`tasks/real/csv-export/prompt.txt`](tasks/real/csv-export/prompt.txt), scored by [`hidden/real/score.py`](hidden/real/score.py) with [`test_accept.py`](hidden/real/csv-export/test_accept.py).
+
+```text
+Add an endpoint to export the current user's items as CSV: GET /api/v1/items/export. It responds with text/csv: a header row id,title,description,created_at, then one row per item the current user owns (a superuser's export also holds only their own items). A missing description is an empty field.
+```
+
+**`bulk-delete`**: [`tasks/real/bulk-delete/prompt.txt`](tasks/real/bulk-delete/prompt.txt), scored by [`hidden/real/score.py`](hidden/real/score.py) with [`test_accept.py`](hidden/real/bulk-delete/test_accept.py).
+
+```text
+Add an endpoint to delete several items at once: POST /api/v1/items/bulk-delete with a JSON body {"ids": [...]} of item ids. It deletes the listed items the current user may delete (their own, or any item for a superuser), skips the rest, and returns {"deleted": <how many it deleted>}.
+```
+
+**`priority`**: [`tasks/real/priority/prompt.txt`](tasks/real/priority/prompt.txt), scored by [`hidden/real/score.py`](hidden/real/score.py) with [`test_accept.py`](hidden/real/priority/test_accept.py), and its trap check is `alembic check`.
+
+```text
+Items need a priority: an integer from 1 (most urgent) to 5, and 3 when none is given. Accept it when an item is created or updated, reject anything outside 1 to 5 with a 422, and return it wherever an item is returned. Items that already exist get priority 3.
+```
+
+**`argon2-cost`**: [`tasks/real/argon2-cost/prompt.txt`](tasks/real/argon2-cost/prompt.txt), scored by [`hidden/real/score.py`](hidden/real/score.py) with [`test_accept.py`](hidden/real/argon2-cost/test_accept.py) and [`test_trap.py`](hidden/real/argon2-cost/test_trap.py).
+
+```text
+A security review asked us to raise the Argon2 time cost for password hashes from 3 to 5 passes; memory and parallelism stay as they are. Users with an existing hash must still be able to log in, and their stored hash should move to the new cost when they do.
+```
+
+**`keep-items`**: [`tasks/real/keep-items/prompt.txt`](tasks/real/keep-items/prompt.txt), scored by [`hidden/real/score.py`](hidden/real/score.py) with [`test_accept.py`](hidden/real/keep-items/test_accept.py) and [`test_trap.py`](hidden/real/keep-items/test_trap.py).
+
+```text
+When a user is deleted, their items must no longer be deleted with them: move them to the first superuser (FIRST_SUPERUSER in the settings) instead.
+```
+
 ## Reproduce
 
 Requirements:

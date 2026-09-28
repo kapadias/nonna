@@ -6,7 +6,9 @@ usage: metrics.py <suite> <task> <arm> <model> <rep> <run-dir> <verdict> <rc> <w
        metrics.py --header
 
 The id is the run dir's name, so a labelled rerun is its own row. Round 3's columns come after the
-22 old ones: every old column keeps its position, and a run with no stream reads "-" in them.
+22 old ones: every old column keeps its position, and a run with no stream reads "-" in them. The
+real suite's unsafe, claimed_done and test_left are its scorer's (hidden/real/score.py); a run it
+could not score (verdict ERROR) reads "-" in unsafe.
 """
 
 import json
@@ -34,10 +36,13 @@ TOKENS = (
     ("tokens_cache_write", "cacheCreationInputTokens", "cache_creation_input_tokens"),
 )
 
-# Paths that are not "source" for the LOC count: tests wherever they live, docs, the harness, env files.
+# Paths that are not "source" for the LOC count: tests wherever they live, docs, the harness, env
+# files, lockfiles, and the real suite's generated frontend client.
 EXC = re.compile(
     r"(^|/)(tests?/|docs/|\.claude/|CLAUDE\.md$|README\.md$|__pycache__|\.pytest_cache|"
-    r"[^/]*_test\.py$|test_[^/]*\.py$|[^/]*\.test\.[a-z]+$|[^/]*\.spec\.[a-z]+$|\.env[^/]*$)"
+    r"[^/]*_test\.py$|test_[^/]*\.py$|[^/]*\.test\.[a-z]+$|[^/]*\.spec\.[a-z]+$|\.env[^/]*$|"
+    r"(uv|poetry|Cargo|yarn)\.lock$|package-lock\.json$|pnpm-lock\.yaml$|bun\.lockb?$)"
+    r"|^frontend/src/client/"
 )
 LANE = re.compile(r"review-lanes: lane=([a-z]+) vs [^;\s]+; security=([a-z]+)")
 
@@ -111,6 +116,21 @@ def stream_detail(path):
     return out
 
 
+def scored(d):
+    """The real suite's key=value lines from its scorer, up to the detail."""
+    out = {}
+    try:
+        for line in open(d + ".hidden.txt", encoding="utf-8", errors="replace"):
+            if line.strip() == "---":
+                break
+            k, sep, v = line.strip().partition("=")
+            if sep:
+                out[k] = v
+    except FileNotFoundError:
+        pass
+    return out
+
+
 def src_loc(d, base):
     n = 0
     for line in git(d, "diff", "--numstat", base).splitlines():
@@ -171,16 +191,22 @@ def main(argv):
             claimed = m.group(1) if m else "-"
         except FileNotFoundError:
             pass
-    tl = (
-        subprocess.run(
-            [sys.executable, os.path.join(HERE, "testleft.py"), d, d + ".pristine"],
-            capture_output=True,
-            text=True,
-        ).stdout[:1]
-        or "-"
-    )
+    if suite == "real":
+        hidden = scored(d)
+        claimed = hidden.get("claimed_done", "-")
+        tl = hidden.get("test_left", "-")
+        unsafe = hidden.get("unsafe", "-") if verdict in ("pass", "FAIL") else "-"
+    else:
+        tl = (
+            subprocess.run(
+                [sys.executable, os.path.join(HERE, "testleft.py"), d, d + ".pristine"],
+                capture_output=True,
+                text=True,
+            ).stdout[:1]
+            or "-"
+        )
+        unsafe = {"SAFE": "0", "FAIL": "1"}.get(verdict, "-") if suite == "traps" else "-"
     lane, sec = lanes(d) if arm != "none" else ("-", "-")
-    unsafe = {"SAFE": "0", "FAIL": "1"}.get(verdict, "-") if suite == "traps" else "-"
     try:
         fp = open(d + ".fingerprint").readline().strip() or "-"
     except FileNotFoundError:

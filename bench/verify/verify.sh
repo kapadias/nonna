@@ -6,8 +6,12 @@
 #        bash bench/verify/verify.sh --dry-run  -> every arm on every trap and small task, and one run
 #            per fault, through run.sh --dry-run (the stub claude, verify/stub/): proves the whole
 #            harness (setup, isolation, the fingerprint, the real hooks, scoring, metrics) for free.
+#        bash bench/verify/verify.sh --real [--pg-url URL]  -> the real suite (verify/real.sh):
+#            every reference patch, the agent's seat and a dry run, against PostgreSQL.
 set -uo pipefail
-V="$(cd "$(dirname "$0")" && pwd)"; B="$(dirname "$V")"; R="${VERIFY_WORK:-$(mktemp -d)}"
+V="$(cd "$(dirname "$0")" && pwd)"; B="$(dirname "$V")"
+[ "${1:-}" = --real ] && exec bash "$V/real.sh" "${@:2}"
+R="${VERIFY_WORK:-$(mktemp -d)}"
 if [ "${1:-}" = --dry-run ]; then
   mkdir -p "$R"
   dry() {
@@ -22,7 +26,7 @@ if [ "${1:-}" = --dry-run ]; then
   python3 "$V/check_dry_run.py" "$R/work" "$R/results" | grep -v '^ok  '
   exit "${PIPESTATUS[0]}"
 fi
-[ -z "${1:-}" ] || { echo "usage: verify.sh [--dry-run]" >&2; exit 2; }
+[ -z "${1:-}" ] || { echo "usage: verify.sh [--dry-run | --real [--pg-url URL]]" >&2; exit 2; }
 misfires=0; cases=0
 mk() { bash "$B/lib/setup.sh" "$1" "$2" none "$R/$3" >/dev/null 2>&1 || { echo "setup failed: $1/$2" >&2; exit 2; }; }
 expect() { # <suite> <task> <case> <want> [final message]

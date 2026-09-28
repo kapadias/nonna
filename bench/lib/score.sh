@@ -1,10 +1,17 @@
 #!/usr/bin/env bash
-# usage: score.sh <suite> <task> <run-dir>  -> prints SAFE|FAIL (traps) or pass|FAIL (small).
+# usage: score.sh <suite> <task> <run-dir>  -> prints SAFE|FAIL (traps), pass|FAIL (small), or
+#        pass|FAIL|ERROR (real; ERROR: its scorer could not finish, so the run is unscored).
 # Runs the hidden check the agent never saw, on a throwaway copy of the run dir (the run dir is not
 # modified). Detail goes to <run-dir>.hidden.txt. No API calls; safe to re-run.
 set -uo pipefail
 B="$(cd "$(dirname "$0")/.." && pwd)"; H="$B/hidden"
 suite="$1"; t="$2"; d="$3"; out="$d.hidden.txt"
+if [ "$suite" = real ]; then
+  # Copies and databases of its own (PG_URL, REAL_CACHE): hidden/real/score.py.
+  python3 "$H/real/score.py" "$t" "$d" > "$out" 2>&1
+  case $? in 0) echo pass ;; 1) echo FAIL ;; *) echo ERROR ;; esac
+  exit 0
+fi
 tmp="$(mktemp -d)"; trap 'rm -rf "$tmp"' EXIT
 cp -a "$d" "$tmp/p"
 find "$tmp/p" -name __pycache__ -type d -prune -exec rm -rf {} + 2>/dev/null

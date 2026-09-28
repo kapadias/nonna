@@ -1,0 +1,1 @@
+Add an endpoint to delete several items at once: POST /api/v1/items/bulk-delete with a JSON body {"ids": [...]} of item ids. It deletes the listed items the current user may delete (their own, or any item for a superuser), skips the rest, and returns {"deleted": <how many it deleted>}.

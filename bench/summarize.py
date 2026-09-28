@@ -9,10 +9,13 @@ two-sided Fisher exact p for none vs each harness version, mean cost and wall ti
 gate fired. Then per-task unsafe counts, gate kinds, and the small-task cost table with review lanes.
 
 Rounds 1-2 print exactly as they always did. A results dir named round<N> (or inside one) is round N:
-its rows are grouped by suite, model, arm, prompt and label; a run whose fingerprint is not ok is
-dropped and listed; a group that mixes resolved models, CLI versions, harness commits or
-configurations is flagged. Round 3 adds cost relative to none, per-task tables for every suite and
-the D3 decision registered in bench/PREREGISTRATION.md. --json prints all of it as one document.
+its rows are grouped by suite, model, arm, prompt and label; a run whose fingerprint is not ok, or
+whose scorer could not finish (verdict ERROR), is dropped and listed; a group that mixes resolved
+models, CLI versions, harness commits or configurations is flagged. The round's rescored/ rows
+(run.sh --rescore) replace the first score of the same run. Round 3 adds cost relative to none,
+per-task tables for every suite, the real suite's pass and unsafe rates, and the decisions
+registered in bench/PREREGISTRATION.md: D3, and the real suite's rule. --json prints all of it as
+one document.
 """
 
 import csv
@@ -60,7 +63,11 @@ NEW_COLS = (
 ).split()
 
 
-def load(path, rnd="1-2"):
+SUITES = ("traps", "small", "real")
+SCORED_UNSAFE = ("traps", "real")  # the suites whose rows carry an unsafe verdict
+
+
+def load(path, rnd="1-2", rescored=False):
     if not os.path.exists(path):
         return []
     with open(path, newline="") as fh:
@@ -73,6 +80,7 @@ def load(path, rnd="1-2"):
             if r.get(c) in (None, ""):
                 r[c] = "-"
         r["round"] = rnd
+        r["rescored"] = rescored
     return rows
 
 
@@ -374,24 +382,39 @@ def print_d3(d):
     print(f"\nHolding: {', '.join(map(str, d['holding'])) or 'none'}\n")
 
 
+def dropped_why(r):
+    """Round 3 on: a run whose fingerprint is not ok is not its arm, and a run its scorer could not
+    finish is unscored: either counts nowhere. None for a row that counts."""
+    if r["round"] == "1-2":
+        return None
+    if not r["fingerprint"].startswith("ok:"):
+        return r["fingerprint"]
+    if r["verdict"] == "ERROR":
+        return "unscored: its scorer could not finish (run.sh --rescore scores it again)"
+    return None
+
+
 def split_dropped(rows):
-    """Round 3 on: a run whose fingerprint is not ok is not its arm, so it counts nowhere."""
     kept, dropped = [], []
     for r in rows:
-        (kept if r["round"] == "1-2" or r["fingerprint"].startswith("ok:") else dropped).append(r)
+        (dropped if dropped_why(r) else kept).append(r)
     return kept, dropped
 
 
 def last_per_id(rows):
     """Round 3 on, a run dropped for its fingerprint is run again under the same id, and the last ok
     row for an id is the one that counts. Rounds 1-2 reused ids across harness commits: kept as they are."""
-    last, twice = {}, []
+    last, twice, rescored = {}, [], Counter()
     for r in rows:
         key = (r["round"], r["suite"], r["id"])
-        if r["round"] != "1-2" and key in last:
+        if r["rescored"]:
+            rescored[(r["round"], r["suite"])] += 1
+        elif r["round"] != "1-2" and key in last:
             twice.append(f"round {r['round']} {r['suite']}/{r['id']} was counted twice; the last row counts")
         last[key if r["round"] != "1-2" else (key, len(last))] = r
-    return list(last.values()), twice
+    notes = [f"round {rnd} {suite}: {n} run(s) re-scored (rescored/{suite}.tsv); the re-score counts"
+             for (rnd, suite), n in sorted(rescored.items())]
+    return list(last.values()), twice + notes
 
 
 def warnings_for(rows):
@@ -427,8 +450,8 @@ def groups(rows):
         out.append({
             "round": rnd, "suite": suite, "model": model, "arm": rs[0]["arm"], "arm_label": label,
             "prompt": rs[0]["prompt"], "label": rs[0]["label"], "n": n,
-            "unsafe": k if suite == "traps" else None,
-            "unsafe_ci": list(wilson(k, n)) if suite == "traps" and n else None,
+            "unsafe": k if suite in SCORED_UNSAFE else None,
+            "unsafe_ci": list(wilson(k, n)) if suite in SCORED_UNSAFE and n else None,
             "pass": sum(r["verdict"] == "pass" for r in rs) if suite != "traps" else None,
             "mean_cost": mean(c) if c else None, "median_cost": st.median(c) if c else None, "total_cost": sum(c),
             "mean_wall": mean([f(r["wall_s"]) for r in rs]), "mean_turns": mean([f(r["turns"]) for r in rs]),
@@ -437,7 +460,7 @@ def groups(rows):
             "blocks": int(sum(max(0, f(r["gate_fired"])) for r in rs)),
             "harness": sorted({r["harness"] for r in rs}), "models_resolved": sorted({r["model_resolved"] for r in rs}),
             "cli": sorted({r["cc_version"] for r in rs}),
-            "tasks": {t: {"n": len(x), "unsafe": unsafe_count(x)[0] if suite == "traps" else None,
+            "tasks": {t: {"n": len(x), "unsafe": unsafe_count(x)[0] if suite in SCORED_UNSAFE else None,
                           "pass": sum(r["verdict"] == "pass" for r in x) if suite != "traps" else None,
                           "mean_cost": mean(costs(x)) if costs(x) else None,
                           "mean_loc": mean([f(r["src_loc"]) for r in x])}
@@ -452,6 +475,47 @@ def groups(rows):
                 if isinstance(v, float) and math.isnan(v):
                     t[key] = None
     return out
+
+
+def real(rows, w):
+    by = defaultdict(list)
+    for r in rows:
+        by[(r["model"], arm_label(r))].append(r)
+    print("## Real suite: the ticket done with nothing broken (pass), and unsafe (Wilson 95% CI)\n")
+    print(f"{'model':8} {'arm':{w}} {'pass (95% CI)':32} {'unsafe (95% CI)':32} {'mean $':>7} {'wall s':>7} {'turns':>6}")
+    for (m, a), rs in sorted(by.items(), key=lambda kv: (kv[0][0], kv[0][1] != "none", kv[0][1])):
+        c = costs(rs)
+        print(f"{m:8} {a:{w}} {pct(sum(r['verdict'] == 'pass' for r in rs), len(rs)):32} "
+              f"{pct(unsafe_count(rs)[0], len(rs)):32} {mean(c) if c else float('nan'):7.3f} "
+              f"{mean([f(r['wall_s']) for r in rs]):7.0f} {mean([f(r['turns']) for r in rs]):6.1f}")
+    print()
+
+
+def real_rule(rows):
+    """PREREGISTRATION.md, the real suite: the pass rate pooled over tickets and models (neutral prompt,
+    no label); if lite's is below the bare agent's, the README's first screen says so."""
+    base = [r for r in rows if r["suite"] == "real" and r["label"] in ("-", "") and r["prompt"] == "neutral"]
+    out = {}
+    for arm in ("none", "plugin-lite", "ponytail+lite"):
+        rs = [r for r in base if r["arm"] == arm]
+        out[arm] = {"pass": sum(r["verdict"] == "pass" for r in rs), "unsafe": unsafe_count(rs)[0], "n": len(rs)}
+    lite, bare = out["plugin-lite"], out["none"]
+    out["lite_below_bare"] = (lite["pass"] * bare["n"] < bare["pass"] * lite["n"]
+                              if lite["n"] and bare["n"] else None)
+    return out
+
+
+def print_real_rule(x):
+    print("## The real suite's rule, registered in bench/PREREGISTRATION.md\n")
+    print("Pass rate, pooled over tickets and models: " + ", ".join(
+        f"{arm} {x[arm]['pass']}/{x[arm]['n']}" + (f" ({100 * x[arm]['pass'] / x[arm]['n']:.1f}%)" if x[arm]["n"] else "")
+        for arm in ("none", "plugin-lite", "ponytail+lite")))
+    if x["lite_below_bare"] is None:
+        print("Not computable: no none or plugin-lite real-suite runs at the neutral prompt.\n")
+    elif x["lite_below_bare"]:
+        print("Lite's pass rate is below the bare agent's: the README's first screen says so.\n")
+    else:
+        print("Lite's pass rate is not below the bare agent's.\n")
 
 
 def rerun_label(rows):
@@ -498,9 +562,9 @@ def round_report(rnd, rows, dropped, warns):
         seen = sorted({r[col] for r in rows if r[col] not in ("-", "")})
         print(f"{what}: {', '.join(seen) or '-'}")
     if dropped:
-        print(f"\nDropped: {len(dropped)} run(s) whose fingerprint is not ok, counted nowhere:")
+        print(f"\nDropped: {len(dropped)} run(s) counted nowhere:")
         for r in sorted(dropped, key=lambda r: (r["suite"], r["id"])):
-            print(f"  {r['suite']}/{r['id']}: {r['fingerprint']}")
+            print(f"  {r['suite']}/{r['id']}: {dropped_why(r)}")
     for x in warns:
         print(f"WARNING: {x}")
     print()
@@ -511,12 +575,18 @@ def round_report(rnd, rows, dropped, warns):
     if s:
         small(s, w, per_run=False)
         per_task(s, "Small", w)
+    x = [r for r in rows if r["suite"] == "real"]
+    if x:
+        real(x, w)
+        per_task(x, "Real", w)
     relative_cost(rows, w)
     if rnd == "3":
         print_d3(d3(rows))
         again = rerun_label(rows)
         if again:
             print_d3(d3(rows, again))
+        if x:
+            print_real_rule(real_rule(rows))
     spent = sum(max(0, f(r["cost_usd"])) for r in rows + dropped)
     print(f"Total logged spend (round {rnd}): ${spent:.2f} over {len(rows) + len(dropped)} runs, "
           f"${sum(max(0, f(r['cost_usd'])) for r in dropped):.2f} of it on dropped runs")
@@ -531,10 +601,17 @@ def main(argv):
                                if os.path.isdir(p) and re.fullmatch(r"round\d+", os.path.basename(p)))
     rows = []
     for d in dirs:
-        for suite in ("traps", "small"):
-            rows += load(os.path.join(d, f"{suite}.tsv"), round_of(d))
+        rnd = round_of(d)
+        for suite in SUITES:
+            rows += load(os.path.join(d, f"{suite}.tsv"), rnd)
+            if rnd != "1-2" and os.path.basename(os.path.normpath(d)) != "rescored":
+                rows += load(os.path.join(d, "rescored", f"{suite}.tsv"), rnd, rescored=True)
     kept, dropped = split_dropped(rows)
     kept, twice = last_per_id(kept)
+    # An unscored run that was scored again counts once, as its re-score: not as dropped too.
+    scored = {(r["round"], r["suite"], r["id"]) for r in kept}
+    dropped = [r for r in dropped if not (r["verdict"] == "ERROR" and r["fingerprint"].startswith("ok:")
+                                          and (r["round"], r["suite"], r["id"]) in scored)]
     warns = twice + warnings_for(kept)
     later = sorted({r["round"] for r in kept + dropped if r["round"] != "1-2"}, key=int)
     if as_json:
@@ -542,12 +619,13 @@ def main(argv):
         again = rerun_label(r3)
         print(json.dumps({
             "rounds": sorted({r["round"] for r in rows}, key=lambda x: (x != "1-2", x)),
-            "dropped": [{"round": r["round"], "suite": r["suite"], "id": r["id"], "fingerprint": r["fingerprint"]}
-                        for r in dropped],
+            "dropped": [{"round": r["round"], "suite": r["suite"], "id": r["id"], "fingerprint": r["fingerprint"],
+                         "why": dropped_why(r)} for r in dropped],
             "warnings": warns,
             "groups": groups(kept),
             "d3": d3(r3) if r3 else None,
             "d3_rerun": d3(r3, again) if again else None,
+            "real": real_rule(r3) if any(r["suite"] == "real" for r in r3) else None,
         }, indent=1, allow_nan=False))
         return
     old = [r for r in kept if r["round"] == "1-2"]
