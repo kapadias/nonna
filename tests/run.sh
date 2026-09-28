@@ -2409,6 +2409,15 @@ FX="$(lint_fixture)"
 printf '\nCredit: pony%s.\n' 'tail' >> "$FX/README.md"
 NONNA_LINT_ROOT="$FX" python3 "$LINT" >/dev/null 2>&1; check "lint: README.md may credit the external project" 0 "$?"
 rm -rf "$FX"
+# bench/ ships in neither the plugin nor install.sh, and its arms name the plugin they measure.
+# Only the top-level bench/ is exempt: a bench directory inside the harness still ships.
+FX="$(lint_fixture)"
+mkdir -p "$FX/bench/lib"; printf '# the pony%s arm\n' tail > "$FX/bench/lib/setup.sh"
+NONNA_LINT_ROOT="$FX" python3 "$LINT" >/dev/null 2>&1; check "lint: bench/ may name the plugin it measures" 0 "$?"
+mkdir -p "$FX/.claude/bench"; printf '# the pony%s arm\n' tail > "$FX/.claude/bench/notes.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: a bench directory inside the harness is still scanned" 1 "$?"
+contains "lint: names the harness file under a bench directory" ".claude/bench/notes.md" "$out"
+rm -rf "$FX"
 
 # The review loop must not un-size what the ladder sized: a MEDIUM that only adds code is
 # answered with a debt marker, and a finding whose fix adds code names a failing input.

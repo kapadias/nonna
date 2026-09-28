@@ -446,9 +446,17 @@ EXTERNAL_NAMES = ("pony" + "tail",)
 EXTERNAL_ALLOWED = {"README.md", ".claude/hooks/lib/ladder.sh"}
 EXTERNAL = re.compile("|".join(re.escape(t) for t in EXTERNAL_NAMES), re.IGNORECASE)
 SCAN_EXT = re.compile(r"\.(md|sh|py|json|ya?ml|txt)$")
+# Top-level directories that ship in neither the plugin nor install.sh. bench/ measures
+# Nonna against the companion plugin, so its arms must name it.
+UNSHIPPED = {"bench"}
 # os.walk, not glob: glob("**") skips dot-directories, and .claude/ is one.
 for dirpath, dirnames, filenames in os.walk(ROOT):
-    dirnames[:] = [d for d in dirnames if d not in (".git", "node_modules")]
+    dirnames[:] = [
+        d
+        for d in dirnames
+        if d not in (".git", "node_modules")
+        and not (d in UNSHIPPED and os.path.samefile(dirpath, ROOT))
+    ]
     for name in filenames:
         path = os.path.join(dirpath, name)
         rel = os.path.relpath(path, ROOT)
