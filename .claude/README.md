@@ -22,24 +22,28 @@ discipline is **enforced by code, not prose**. Start with [`../CLAUDE.md`](../CL
   `security-reviewer` (read-only; same verdict contract), `explorer` (read-only fan-out, token-saver),
   `debugger`. Each pins a model tier; the five that own a playbook **preload it** via `skills:`
   (`implementer` ← `lean`), so the depth arrives deterministically instead of by description-trigger.
-- **`skills/`** — 27 entries, since Claude Code merged commands into skills. Two kinds:
+- **`skills/`** — 28 entries, since Claude Code merged commands into skills. Two kinds:
   - **12 playbooks** — knowledge Claude loads when the trigger matches, most bundling runnable
     scripts/templates/references that load only when opened: `tdd-workflow`, `code-review`,
     `debugging`, `refactoring`, `api-design`, `security-review`, `migration-safety`, `observability`,
     `concurrency-performance`, `supply-chain`, `fast-lane` (bundles `check-trivial.sh`), `lean`
     (the decision ladder in depth; bundles `check-debt.sh`, the debt-marker gate and ledger).
-  - **15 pipeline workflows** — `/plan`, `/tdd`, `/implement`, `/review`, `/audit`, `/test`,
-    `/coverage`, `/debug`, `/fix`, `/ship`, `/release`, `/rollback`, `/sync`, `/adr`, `/intake`. `/review` bundles
+  - **16 pipeline workflows** — `/plan`, `/tdd`, `/implement`, `/review`, `/audit`, `/test`,
+    `/coverage`, `/debug`, `/fix`, `/ship`, `/release`, `/rollback`, `/sync`, `/adr`, `/intake`, and
+    `/nonna`, the user's switch for her gates (status, setup, lite/full/off, test, uninstall; its
+    scripts in `skills/nonna/scripts/`, ADR-0011 §12). `/review` bundles
     `review-lanes.sh`, which sizes the review (ADR-0009). Each declares its
-    model tier; several use `!` bash injection / `@` refs to act on real repo state. The six with
-    side effects — `/ship`, `/release`, `/rollback`, `/adr`, `/sync`, `/intake` — set
+    model tier; several use `!` bash injection / `@` refs to act on real repo state. The seven with
+    side effects — `/ship`, `/release`, `/rollback`, `/adr`, `/sync`, `/intake`, `/nonna` — set
     **`disable-model-invocation: true`**: only a human can trigger them, and their descriptions stay
     out of context entirely. That is what makes "a human approves promotion to production"
     ([`rules/safety.md`](rules/safety.md)) a mechanism rather than a request; the linter asserts it.
 - **`hooks/`** — the gates, now **blocking**. Each reads the mode first (`nonna_mode`: `off`, `lite`
-  or `full`, ADR-0011) and `off` is silent. `guard-branch.sh` (blocks commits/pushes to
+  or `full`, ADR-0011) and `off` is silent, but for the branch guard, which still keeps her
+  settings. `guard-branch.sh` (blocks commits/pushes to
   `main`/`master`/`develop`, `--all`/`--mirror`, force pushes in `+refspec` and flag form,
-  `--no-verify` and hook-path overrides, and the agent's own changes to her settings or git hooks;
+  `--no-verify` and hook-path overrides, and the agent's own changes to her settings or git hooks
+  or runs of her `/nonna` scripts;
   it reads a command the way the shell will run it), `secret-scan.sh` (blocks writes that introduce
   a secret, and reads of secret files by Read, Grep or Bash, by any name that leads to one — parity
   with the Read deny list, linted), `format.sh` (post-edit auto-format),

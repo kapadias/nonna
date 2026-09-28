@@ -24,7 +24,7 @@
     "run_tests": {
       "type": "boolean",
       "title": "Run your project's tests before the agent can say done",
-      "description": "When code changed, Nonna runs the repo's test command at the end of the agent's turn and before a push, and blocks on red. The first session in a repo detects it (pytest, npm test, go test or cargo test) and records it in git config nonna.testCmd. This option decides only for repos Nonna has not met yet; in one she has, change or clear that git config (\"\" turns the gate off).",
+      "description": "When code changed, Nonna runs the repo's test command at the end of the agent's turn and before a push, and blocks on red. The first session in a repo detects it (pytest, npm test, go test or cargo test) and records it in git config nonna.testCmd. This option decides only for repos Nonna has not met yet; in one she has, change it with /nonna test '<command>' (/nonna test off turns the gate off).",
       "default": true
     },
     "mode": {

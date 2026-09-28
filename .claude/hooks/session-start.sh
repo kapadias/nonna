@@ -69,7 +69,7 @@ wire_hook() { # <git hook name> <script name>
       # Hers, but git skips a link that points at nothing without a word.
       [ -e "$dest" ] || hook_warns+=("$dest points at nothing, so her $1 gate is NOT enforced")
     else # the user's own, even when it shares her script's name, unless it chains hers
-      grep -qsF -e "$target" -e ".claude/hooks/$2" -e "current/hooks/$2" "$dest" \
+      nonna_hook_chains_hers "$dest" "$2" "$target" \
         || hook_warns+=("$dest is not Nonna's, so her $1 gate is NOT enforced; chain $target from it")
     fi
   fi
@@ -144,7 +144,7 @@ msg="Nonna is on (${mode}). Gates live: branch guard (no commits or pushes to ma
 if [ -n "$gate" ]; then
   msg="${msg} Test gate: ${gate} runs before a turn that changed code can end, and before a push; a red suite blocks."
 else
-  msg="${msg} Test gate: off, no test command found here. The user can set one: git config nonna.testCmd '<command>'."
+  msg="${msg} Test gate: off, no test command found here. The user can set one: /nonna test '<command>'."
 fi
 
 # 5. Plugin install: carry the constitution in (nonna_core_carrier, lib/core.sh —
@@ -163,7 +163,7 @@ if [ "$(nonna_config nonna.announced)" != 2 ] && git rev-parse --git-dir >/dev/n
   if [ -n "$gate" ]; then
     user_msg="$user_msg Before the agent can say done, Nonna runs: ${gate}."
   else
-    user_msg="$user_msg She found no test command here, so the test gate is off; set one with: git config nonna.testCmd '<command>'."
+    user_msg="$user_msg She found no test command here, so the test gate is off; set one with: /nonna test '<command>'."
   fi
   if [ "${#wired[@]}" -gt 0 ]; then
     added="${wired[0]}"

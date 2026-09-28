@@ -47,7 +47,8 @@ lighter mode to select". A plugin user's first day is that use.
    last what the repo carries (its hooks and its rules: full; otherwise lite). The settings live in
    git config because Claude Code hooks and git hooks can both read it, it is never committed, and a
    clone cannot carry it. A value nobody meant fails closed to full; it never weakens the gates. In
-   `off` every hook exits 0 and prints nothing.
+   `off` every hook exits 0 and prints nothing, with one exception: the branch guard still keeps her
+   settings (12).
 2. **The git hooks read git config alone.** A git hook runs in the environment of whoever ran git,
    and that can be the agent's own command. So pre-commit and pre-push take their mode and test
    command from the repo's own config, then the user's global config. They ignore a `git -c` flag,
@@ -86,6 +87,8 @@ lighter mode to select". A plugin user's first day is that use.
    `.git/config` and the git hooks. It is a speed bump, not a sandbox.
    These get past it:
    - a script file, or git under another name;
+   - another language's interpreter (`python3 -c`, `perl -e`), and code the test suite runs (a test
+     or a `conftest.py` the agent wrote), which the gates themselves run;
    - a value the shell computes when it runs (a variable, `$(…)`'s output, `xargs`);
    - a glob that a file the agent made completes;
    - git configuration already in place (the user's own `push.default`);
@@ -128,6 +131,47 @@ lighter mode to select". A plugin user's first day is that use.
 11. **The ladder is said once.** In full mode, when another enabled plugin already states the "reuse
     before you write" ladder, the carrier drops the constitution's copy. Only
     `.claude/hooks/lib/ladder.sh` names that plugin; `NONNA_LADDER=on|off` overrides it.
+12. **Her settings are the user's, and `/nonna` is how the user changes them.**
+    - `/nonna` (`.claude/skills/nonna/`) shows what she enforces and where each setting comes from.
+      It sets the mode and the test command, runs `setup`, and runs `uninstall`, which takes back
+      only what is hers and names each value. A change to the user's own files is only offered.
+    - It is the user's alone: `disable-model-invocation`, linted. Claude Code runs a skill's `!`
+      line through its permission check alone, with no PreToolUse hook in front of it. So
+      `allowed-tools` pre-approve exactly that line, and the lint holds them to it. A line not
+      pre-approved would ask; in auto mode it goes to the model, where the guard refuses it.
+    - The branch guard refuses the agent running her scripts. It refuses a command that names them
+      and runs a shell, however the two are joined:
+      - the naming: her skill's directory, `nonna.sh`, a glob that could be `skills/nonna/scripts`,
+        or any script run while the Bash tool is inside her directory;
+      - the shell: as the command (`sh`, `bash`, `source`, `.`, `exec`, `eval`, a `*.sh`, or any
+        program given by its path, as a copy would be), or through one that runs another (`env`,
+        `sudo`, `xargs`, `find -exec`…).
+
+      Reading, searching, linting and staging them run no shell. A part of the command that only
+      reads her files (`cat`, `grep`, `shellcheck`, `git add` or `diff`…, redirecting nothing) does
+      not name them, unless a pipe or a command or process substitution could carry what it read
+      into a shell; so reading or linting her scripts and then running the suite passes. Like any
+      script file (4), a copy run from elsewhere in a later command, another language's interpreter,
+      or a path computed at run time gets past it, and so does a reader made to start a program
+      through an option of its own: the reader list trusts readers to read (a `debt:` marker in
+      the guard names when to revisit it).
+
+    - **While she is off, the guard keeps her settings and nothing else.** It still refuses the
+      agent:
+      - writing `nonna.*` or config that routes git around her hooks;
+      - editing `.git/config` or the git hooks, by hand or with the file tools;
+      - setting the variables her gates read;
+      - running her scripts.
+
+      Otherwise an agent could ready the ground while she is off, a test command of `true` or a
+      hooks path around her, and the user who switches her back on would get a gate that no longer
+      bites, without a word. It reads each command as it does when she is on. What it cannot read
+      (too long, an expansion too large, quotes nested too deep) is refused only when it could touch
+      her settings: git or nonna in it, however quoted, a `$'…'` escape, or a run inside her
+      directory. So while she is off, an unreadable command that spells those names some other way
+      gets past; a readable one is still read in full. Force pushes, protected branches and
+      `--no-verify` are not hers to stop while she is off, and nothing else is said. The user chose
+      this over a silent off.
 
 ## Consequences
 
@@ -135,9 +179,10 @@ lighter mode to select". A plugin user's first day is that use.
 - **The git hooks now reach people, not only agents**: anyone who commits or pushes in a repository
   where a session ran. That is the point of a gate, and it is announced: the first session tells the
   user what Nonna added, once per repository per major version (`nonna.announced`). The ways out are
-  `nonna.mode off` (repo or `--global`) and the removal steps in [INSTALL.md](../INSTALL.md).
+  `/nonna off` or `nonna.mode off` (repo or `--global`), and `/nonna uninstall` or the removal steps
+  in [INSTALL.md](../INSTALL.md).
 - The environment no longer reaches the git hooks. Anyone who set `NONNA_TEST_CMD` for their own
-  pushes sets `git config nonna.testCmd` instead.
+  pushes sets the repository's command with `/nonna test` instead.
 - State lives in `.git/config`, `.git/hooks` and `.git/nonna/`, never in a commit. Uninstalling the
   plugin leaves the git hooks dangling, which git skips, so the removal steps come first.
 - `run_tests` decides only on first sight. Turning it off later does not reach a repository that

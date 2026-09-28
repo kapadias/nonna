@@ -6,15 +6,17 @@ pre-push hook (`require-status-sync.sh`) blocks code pushes that leave it stale.
 ## Current state
 
 Nonna's discipline is enforced by code at seven lifecycle events plus the git pre-commit and
-pre-push hooks. The harness tests its own gates and its own linter. The six workflows with side
-effects (`/ship`, `/release`, `/rollback`, `/adr`, `/sync`, `/intake`) are human-triggered only.
+pre-push hooks. The harness tests its own gates and its own linter. The seven workflows with side
+effects (`/ship`, `/release`, `/rollback`, `/adr`, `/sync`, `/intake`, `/nonna`) are
+human-triggered only.
 One switch per repo sets the mode (`off | lite | full`, ADR-0011). A plugin install defaults to
 lite: the test gate, the branch and secret guards, and six house rules carried into the session and
 every subagent; full carries the constitution (`00-core.md`) and adds the STATUS gate. Language-
 and domain-agnostic.
 
-Always-on surface: **3,681 words** of prose (3,700-word budget) plus 5,570 chars of skill/agent
-descriptions (5,600-char budget), both enforced by the linter.
+Always-on surface: **3,681 words** of prose (3,700-word budget) plus 4,684 chars of skill/agent
+descriptions (5,600-char budget), both enforced by the linter. A user-only skill's description is
+never offered to the model, so it is not counted.
 
 ## What exists
 
@@ -27,14 +29,15 @@ descriptions (5,600-char budget), both enforced by the linter.
 - **Skills ×12** — `tdd-workflow`, `code-review`, `debugging`, `refactoring`, `api-design`,
   `security-review`, `migration-safety`, `observability`, `concurrency-performance`, `supply-chain`,
   `fast-lane`, `lean` (bundles `check-debt.sh`) — most bundling runnable scripts/templates/references.
-- **Pipeline workflows ×15** — also under `skills/`, since Claude Code merged commands into skills:
+- **Pipeline workflows ×16** — also under `skills/`, since Claude Code merged commands into skills:
   `/plan`, `/tdd`, `/implement`, `/review`, `/audit`, `/test`, `/coverage`, `/debug`, `/fix`,
-  `/ship`, `/release`, `/rollback`, `/sync`, `/adr`, `/intake`. Model-tiered; several use `!`/`@` injection.
-  The six with side effects set `disable-model-invocation: true` — human-triggered only, and out of
-  context entirely.
-- **Hooks ×10** — each reads the mode first; `off` is silent. `guard-branch` (blocks protected-branch
-  commits/pushes, `--all`/`--mirror`, force pushes, `--no-verify`, hook-path overrides, and the
-  agent's writes to Nonna's own git config), `secret-scan` (blocks secret writes + reads of secret
+  `/ship`, `/release`, `/rollback`, `/sync`, `/adr`, `/intake`, and `/nonna`, the user's switch for
+  her gates. Model-tiered; several use `!`/`@` injection. The seven with side effects set
+  `disable-model-invocation: true` — human-triggered only, and out of context entirely.
+- **Hooks ×10** — each reads the mode first; `off` is silent, but for the branch guard, which still
+  keeps her settings. `guard-branch` (blocks protected-branch commits/pushes, `--all`/`--mirror`,
+  force pushes, `--no-verify`, hook-path overrides, the agent's writes to Nonna's own git config,
+  and its runs of her `/nonna` scripts), `secret-scan` (blocks secret writes + reads of secret
   files, Read, Grep or Bash), `format`, `require-status-sync` (pre-push: the test suite, a strict secret
   scan, and in full mode the DoD), `pre-commit` (no commit on a protected branch, no staged secret),
   `session-start` (wires both git hooks, through the plugin's data directory under a plugin install;
@@ -60,6 +63,32 @@ descriptions (5,600-char budget), both enforced by the linter.
 ## Recently changed
 
 History lives in `CHANGELOG.md` and `git log`. Entries here describe the current unit of work.
+
+- **2026-09-25** — `/nonna`, the third unit of the launch plan (#17, ADR-0011 §12). The user's
+  switch for her gates: `/nonna` shows what she enforces here and where each setting comes from (the
+  mode's source, the test command's, a green run on this tree, the guards, the git hooks); `lite`,
+  `full`, `off` and `test` change them; `setup` records the test command and wires the git hooks,
+  and only offers a change to the user's own files; `uninstall` takes back only what is hers, in
+  every worktree, naming each value. It is user-only, and its `!` line is pre-approved exactly by
+  its `allowed-tools`, both linted. The branch guard refuses the agent running her scripts (named,
+  globbed, or from inside her directory, when a shell runs them), and while she is off it still
+  keeps her settings, and nothing else. Shared helpers: `nonna_mode_source`, `nonna_green_key`,
+  `nonna_hook_chains_hers`. A lite copy-in brings `/nonna`. `install.sh` no longer takes a hook that
+  merely names her script's file as one that runs it. 968 tests.
+  First review round: both approve, and every finding is fixed.
+  - A read of her files beside an unrelated shell, such as linting her scripts and then running
+    the suite, is no longer refused. A copy, a pipe, a variable or a `cd` that carries her script
+    into a shell still is, and so are `eval` and a copy run by its path.
+  - While she is off, a command too large to read is refused only when it could touch her
+    settings.
+  - Detection finds pytest without importing anything from the repository, where a `pytest.py`
+    would have run.
+  - The lint holds a fenced `!` block to the same pre-approval as an inline one.
+
+  986 tests. Second round: both approve. The one open finding is a MEDIUM: a reader made to start
+  a program through an option of its own gets past the scripts rule. It is no stronger than the
+  script-file limit, so it is a named limit in ADR-0011 §12, with a `debt:` marker in the guard
+  that is revisited if that limit is ever closed.
 
 - **2026-09-25** — Plugin defaults, the second unit of the launch plan (#17, ADR-0011). One switch
   per repo, git config `nonna.mode` (`off | lite | full`), read by every Claude Code hook and git
@@ -225,8 +254,9 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
 
 ## Next / open
 
-- The rest of the launch plan (#17): `/nonna` (status, setup, `lite|full|off`, uninstall), then
-  benchmark round 3 with lite, full and the real FastAPI suite, then the launch README and assets.
+- The rest of the launch plan (#17): a smoke test of `/nonna` in a real session (manual and auto
+  mode) before it merges, then benchmark round 3 with lite, full and the real FastAPI suite, then
+  the launch README and assets.
 
 - A behavioural eval on the failures the gates exist for (a secret in a fixture, a push to a
   protected branch, an error hidden by a "fix"), scored on "did it get caught".

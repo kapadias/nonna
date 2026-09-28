@@ -11,22 +11,30 @@ versioning is [SemVer](https://semver.org/spec/v2.0.0.html).
   `/plugin install nonna@nonna`.
 - Environment variables are now `NONNA_*` (for example `NONNA_CRITICAL_PATHS`).
 - The plugin now starts in **lite** mode: the test gate, the branch and secret guards and six house
-  rules. For 1.x's behaviour (the constitution and the STATUS gate), run `git config nonna.mode full`
-  in a repository, add `--global` for all of them, or set the plugin's `mode` option to full.
+  rules. For 1.x's behaviour (the constitution and the STATUS gate), run `/nonna full` in a
+  repository, `git config --global nonna.mode full` for all of them, or set the plugin's `mode`
+  option to full.
 - The STATUS gate runs only in full mode, and only where `docs/STATUS.md` exists.
 - The plugin runs your tests before the agent can say done and before a push. The first session in a
-  repository records the command it detects in `git config nonna.testCmd`; set it to `""` there to
-  turn the gate off, or turn the `run_tests` option off before Nonna meets your repositories.
+  repository records the command it detects in `git config nonna.testCmd`. Change it with
+  `/nonna test '<command>'`, turn the gate off there with `/nonna test off`, or turn the `run_tests`
+  option off before Nonna meets your repositories.
 - The git hooks now read git config alone. `NONNA_TEST_CMD` and `NONNA_MODE` still steer Claude
   Code's hooks, but no longer the git hooks: for your own pushes, set `git config nonna.testCmd`.
 
 ### Added
 
+- **`/nonna`, the user's switch** (ADR-0011 §12). `/nonna` shows what she enforces in the repository
+  and where each setting comes from; `/nonna lite|full|off` and `/nonna test '<command>'` change it;
+  `/nonna setup` records the test command she finds, wires the git hooks and offers the rest;
+  `/nonna uninstall` takes back only what is hers, in every worktree, and names each value. It is
+  the user's alone: the agent cannot invoke it, and the branch guard refuses the agent running its
+  scripts. While she is off, the guard still keeps her settings, and nothing else.
 - **Modes: `off`, `lite` and `full`, one switch per repository** (ADR-0011). Every hook reads, in
   order: `NONNA_MODE` (Claude Code's hooks only), your `nonna.mode` (repository, then global), the
   plugin's `mode` option, `nonna.defaultMode`, and last what the repository carries (the hooks and
   the rules: full; otherwise lite). A value nobody meant fails closed to full; `off` enforces
-  nothing and says nothing. Nonna never writes `nonna.mode` herself: what she records goes in
+  nothing and says nothing, but for her settings (`/nonna`, above). Nonna never writes `nonna.mode` herself: what she records goes in
   `nonna.defaultMode`, below it, so `git config --global nonna.mode off` reaches every repository
   you have not set. The git hooks take nothing from the environment, a `git -c` flag or a file the
   config includes, so a command cannot switch them off for itself.

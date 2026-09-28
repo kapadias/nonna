@@ -61,6 +61,14 @@ nonna_hook_is_hers() {
   return 1
 }
 
+# nonna_hook_chains_hers <hook file> <script> [<her link now>]
+#   True when a hook that is not hers runs hers: its text names her script's path (the link she
+#   would make, .claude/hooks/<script> or current/hooks/<script>), not merely a file that shares
+#   the script's name.
+nonna_hook_chains_hers() {
+  grep -qsF -e ".claude/hooks/$2" -e "current/hooks/$2" -e "${3:-.claude/hooks/$2}" "$1"
+}
+
 # nonna_mode [git-hook]
 #   Prints off, lite or full: what Nonna enforces in the repo in the current directory.
 #   Precedence: NONNA_MODE > git config nonna.mode (repo, then global) > the plugin's `mode`
@@ -73,18 +81,38 @@ nonna_hook_is_hers() {
 #   agent's own command, so it takes nothing from the environment. Claude Code's hooks run in
 #   Claude Code's environment, which the user set.
 nonna_mode() {
-  local m=""
-  [ "${1:-}" = git-hook ] || m="${NONNA_MODE:-}"
-  [ -n "$m" ] || m="$(nonna_config nonna.mode)"
-  [ -n "$m" ] || [ "${1:-}" = git-hook ] || m="${CLAUDE_PLUGIN_OPTION_MODE:-}"
-  [ -n "$m" ] || m="$(nonna_config nonna.defaultMode)"
-  if [ -z "$m" ]; then
-    # A repo that carries the whole harness (its hooks and its rules) is a full copy-in; a lite
-    # copy-in carries no rules, and its clones have no nonna.defaultMode, since .git/config is not
-    # cloned. What a repo carries can only raise the mode to full, never lower it.
-    if [ -f .claude/hooks/require-status-sync.sh ] && [ -f .claude/rules/00-core.md ]; then m=full; else m=lite; fi
+  _nonna_mode_read "${1:-}"
+  case "$_nonna_mode" in off | lite | full) printf '%s' "$_nonna_mode" ;; *) printf 'full' ;; esac
+}
+
+# nonna_mode_source [git-hook]
+#   Prints where nonna_mode's answer comes from, as /nonna shows it: NONNA_MODE, git config
+#   nonna.mode, the plugin's mode option, git config nonna.defaultMode, the harness the repository
+#   carries, or the default.
+nonna_mode_source() {
+  _nonna_mode_read "${1:-}"
+  printf '%s' "$_nonna_from"
+}
+
+# _nonna_mode_read [git-hook]: the precedence itself, once. Sets _nonna_mode (as found) and _nonna_from.
+_nonna_mode_read() {
+  _nonna_mode="" _nonna_from=""
+  if [ "${1:-}" != git-hook ] && [ -n "${NONNA_MODE:-}" ]; then
+    _nonna_mode="$NONNA_MODE" _nonna_from=NONNA_MODE
+  elif _nonna_mode="$(nonna_config nonna.mode)" && [ -n "$_nonna_mode" ]; then
+    _nonna_from="git config nonna.mode"
+  elif [ "${1:-}" != git-hook ] && [ -n "${CLAUDE_PLUGIN_OPTION_MODE:-}" ]; then
+    _nonna_mode="$CLAUDE_PLUGIN_OPTION_MODE" _nonna_from="the plugin's mode option"
+  elif _nonna_mode="$(nonna_config nonna.defaultMode)" && [ -n "$_nonna_mode" ]; then
+    _nonna_from="git config nonna.defaultMode"
+  # A repo that carries the whole harness (its hooks and its rules) is a full copy-in; a lite
+  # copy-in carries no rules, and its clones have no nonna.defaultMode, since .git/config is not
+  # cloned. What a repo carries can only raise the mode to full, never lower it.
+  elif [ -f .claude/hooks/require-status-sync.sh ] && [ -f .claude/rules/00-core.md ]; then
+    _nonna_mode=full _nonna_from="the harness this repository carries"
+  else
+    _nonna_mode=lite _nonna_from="the default"
   fi
-  case "$m" in off | lite | full) printf '%s' "$m" ;; *) printf 'full' ;; esac
 }
 
 # nonna_core_carrier

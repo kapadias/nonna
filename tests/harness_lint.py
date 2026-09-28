@@ -107,7 +107,7 @@ for path in sorted(glob.glob(f"{ROOT}/.claude/agents/*.md")):
 # human to approve first promotion to production; disable-model-invocation is
 # what makes that a mechanism instead of a request, and it also drops the
 # description from every turn's context.
-USER_ONLY_SKILLS = {"ship", "release", "rollback", "adr", "sync", "intake"}
+USER_ONLY_SKILLS = {"ship", "release", "rollback", "adr", "sync", "intake", "nonna"}
 for path in sorted(glob.glob(f"{ROOT}/.claude/skills/*/SKILL.md")):
     name = os.path.basename(os.path.dirname(path))
     block = frontmatter(path)
@@ -362,6 +362,35 @@ for path in sorted(glob.glob(f"{ROOT}/.claude/skills/*/SKILL.md")):
             f"allowed-tools does not grant Bash(git {verb}:*)"
         )
 
+# --- a skill's ! line runs only as its allowed-tools pre-approve it ---
+# Claude Code runs a skill's !`command` line before the model sees the skill,
+# through the permission check alone: no PreToolUse hook sees it. A line the
+# rules do not pre-approve is not run as written (auto mode hands it to the
+# model, where the branch guard refuses her own scripts), and a rule wider than
+# the line pre-approves more than the line. So each ! line needs a rule that is
+# exactly it: Bash(<line>), or Bash(<line without its $ARGUMENTS>:*). Claude Code
+# runs two forms, an inline !`…` and a fenced ```! block; both are held to it.
+BANG = re.compile(r"(?:^|\s)!`([^`]+)`|```!\s*\n?([\s\S]*?)\n?```", re.M)
+for path in sorted(glob.glob(f"{ROOT}/.claude/skills/*/SKILL.md")):
+    raw = open(path, encoding="utf-8").read()
+    m = FRONT.match(raw)
+    if not m:
+        continue
+    at = re.search(r"^allowed-tools:\s*(.+)$", m.group(1), re.M)
+    rules = (
+        set(re.findall(r"Bash\(([^()]*(?:\([^()]*\)[^()]*)*)\)", at.group(1)))
+        if at
+        else set()
+    )
+    for inline, fenced in BANG.findall(raw[m.end() :]):
+        line = (inline or fenced).strip()
+        prefix = re.sub(r"\s+\$ARGUMENTS$", "", line)
+        if line not in rules and f"{prefix}:*" not in rules:
+            bad(
+                f"{os.path.relpath(path, ROOT)}: the ! line `{line}` is not pre-approved exactly "
+                f"by allowed-tools; grant Bash({prefix}:*) and nothing wider"
+            )
+
 # --- slash references: every `/name` the harness advertises must be invocable ---
 # Descriptions and rules route the agent by naming commands. A `/name` that no
 # longer exists is a routing dead end the agent cannot detect at runtime, so it
@@ -566,11 +595,15 @@ if always_on > MAX_ALWAYS_ON_WORDS:
 # command description into every turn so it can decide what to load. That made
 # them the one part of the surface with no budget at all, and they had grown to
 # ~7,000 chars. A description exists to support a load/route DECISION; prose
-# past that decision is paid every turn and buys nothing.
+# past that decision is paid every turn and buys nothing. A skill only the user
+# can invoke (disable-model-invocation) is not offered to the model, so its
+# description is not paid and not counted.
 MAX_DESCRIPTION_CHARS = 5600
 desc_chars = 0
 for patt in ("skills/*/SKILL.md", "agents/*.md"):
     for p in glob.glob(f"{ROOT}/.claude/{patt}"):
+        if fm_value(frontmatter(p) or [], "disable-model-invocation") == "true":
+            continue
         m = re.search(r"^description:\s*(.+)$", open(p, encoding="utf-8").read(), re.M)
         if m:
             desc_chars += len(m.group(1))

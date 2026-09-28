@@ -18,6 +18,22 @@ The first session in each repository tells you, once, what Nonna did there:
 Using another agent, or want the gates to travel with the repo for your whole team? Use
 [install.sh](#other-agents-or-a-whole-team-installsh).
 
+## `/nonna`: see or change what she enforces
+
+```
+/nonna                   what she enforces here, and where each setting comes from
+/nonna setup             record the test command she finds, wire the git hooks, offer the rest
+/nonna lite|full|off     this repository's mode
+/nonna test 'make test'  this repository's test command (/nonna test off turns the gate off)
+/nonna uninstall         take her git hooks, settings and state back out of this repository
+```
+
+`/nonna` is yours. Claude Code runs it when you type it; the agent cannot invoke it, and the branch
+guard refuses the agent running its scripts. If another command already has the name, type
+`/nonna:nonna`, which always works. `setup` changes your own files only when you say yes: it offers
+Claude Code's deny-list for secret files, and in full mode a `docs/STATUS.md`. With Claude Code's
+`disableSkillShellExecution` setting on, `/nonna` cannot run, and the git config below still works.
+
 ## Modes
 
 |                                                                                               | lite (default)                                              | full                                                           |
@@ -29,11 +45,15 @@ Using another agent, or want the gates to travel with the repo for your whole te
 | What rides into the session                                                                   | six house rules ([`lite.md`](../.claude/hooks/lib/lite.md)) | the constitution ([`00-core.md`](../.claude/rules/00-core.md)) |
 | `docs/STATUS.md` must change with the code (and stay), at turn end and pre-push               |                                                             | ✓, if the file exists                                          |
 
-`off` enforces nothing and says nothing, git hooks included. Nonna's agents and workflows (`/plan`,
-`/tdd`, `/review`, `/ship`…) are there in both modes; lite tells the agent to run them only when you
-ask.
+`off` enforces nothing and says nothing, git hooks included, with one exception: her settings.
+While she is off, the agent still may not change them (her git config, config that routes git
+around her hooks, the git hooks, the variables her gates read) or run `/nonna`'s scripts, so she
+comes back on, and with the test command you chose, only when you say so. Nonna's agents and
+workflows (`/plan`, `/tdd`, `/review`, `/ship`…) are there in both modes; lite tells the agent to
+run them only when you ask.
 
-Switch with git config, which your repository never commits and a clone never carries:
+Switch with `/nonna lite|full|off`, or with git config, which your repository never commits and a
+clone never carries:
 
 ```bash
 git config nonna.mode full            # this repository (lite, full or off)
@@ -46,7 +66,7 @@ git config alone, never the environment, a `git -c` flag or a file the config in
 cannot switch them off for itself.
 
 These switches are yours. The branch guard refuses an agent that tries to change Nonna's settings,
-edit `.git/config` or the git hooks, force a push, or skip the hooks, and it reads each command the
+run `/nonna`'s scripts, edit `.git/config` or the git hooks, force a push, or skip the hooks, and it reads each command the
 way the shell will run it, quotes, brace lists and globs and all. It is still a speed bump, not a
 sandbox: an agent that writes a script and runs it, runs git under another name, or computes a flag
 when the command runs, is past it. The wall is on the server: protect `main` with a branch
@@ -66,6 +86,8 @@ the first session in a repository, when `run_tests` is on, detects `pytest`, `np
 or `cargo test` and records it. That is the consent: nothing runs your repository's code unless
 `run_tests` allowed it or you set the command yourself, and a repository cannot choose the command,
 because `.git/config` is never cloned.
+
+Change it with `/nonna test 'make test'` (`/nonna test off` turns the gate off), or with git config:
 
 ```bash
 git config nonna.testCmd 'make test'   # your own command
@@ -103,7 +125,8 @@ In each repository where a session runs, and nowhere else:
 
 Nothing is committed, nothing is written outside `.git/`, and Nonna's hooks make no network calls.
 
-To take it all back out of a repository, then remove the plugin:
+To take it all back out of a repository, then remove the plugin: `/nonna uninstall` removes only
+what is hers, in every worktree, and names each thing with its value. By hand:
 
 ```bash
 ls -l .git/hooks/pre-push .git/hooks/pre-commit     # remove them only if they point at Nonna

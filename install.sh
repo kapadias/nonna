@@ -11,7 +11,7 @@
 #
 # Hosts: claude (default), agents (AGENTS.md: Codex, Zed, Amp, opencode, Roo, Jules, Junie…),
 #        cursor, copilot, gemini, windsurf, cline, kiro, all. Several: --host cursor,agents
-# Mode:  --mode lite  the gates and short house rules only (hooks, settings.json, git hooks)
+# Mode:  --mode lite  the gates and short house rules only (hooks, settings.json, git hooks, /nonna)
 #        --mode full  the whole harness: rules, agents, workflows, docs/STATUS.md (the default)
 # Env:   NONNA_REF  branch or tag to install (default: main)
 #        NONNA_SRC  install from a local checkout instead of cloning (used by the tests)
@@ -42,7 +42,7 @@ install.sh — Nonna in one command, for any agent host. Run it from the root of
 
 --host  claude (default), agents (AGENTS.md: Codex, Zed, Amp, opencode, Roo, Jules, Junie…),
         cursor, copilot, gemini, windsurf, cline, kiro, all. Several: --host cursor,agents
---mode  lite: the gates and short house rules only. full: the whole harness (the default).
+--mode  lite: the gates, /nonna and short house rules only. full: the whole harness (the default).
 Env:    NONNA_REF  branch or tag to install (default: main)
         NONNA_SRC  install from a local checkout instead of cloning
 USAGE
@@ -137,12 +137,13 @@ put() { # <source file> <dest>: copy unless dest exists; never through a symlink
 }
 
 # .claude/ is merged file by file: yours stay, what is missing arrives. Lite brings the gates and
-# their wiring only: the hooks and settings.json, never the rules, agents or workflows.
+# their wiring, and /nonna, the user's switch for them (with the manifest it reads her version
+# from): never the rules, agents or other workflows.
 n_before=${#kept_msgs[@]}
 while IFS= read -r -d '' rel; do
   rel="${rel#./}"
   if [ "$mode" = lite ]; then
-    case "$rel" in hooks/* | settings.json) ;; *) continue ;; esac
+    case "$rel" in hooks/* | settings.json | skills/nonna/* | .claude-plugin/plugin.json) ;; *) continue ;; esac
   fi
   put "$P/.claude/$rel" ".claude/$rel"
 done < <(cd "$P/.claude" && find . \( -type f -o -type l \) -print0)
@@ -204,7 +205,8 @@ link_hook() { # <git hook name> <script under .claude/hooks>
     return 0
   fi
   if [ -e "$dest" ] || [ -L "$dest" ]; then
-    grep -qs "$2" "$dest" || warn_msgs+=("$1: you already have a $1 hook — chain .claude/hooks/$2 from it, or my gates do not run")
+    # It runs hers only when it names her script's path, not a file that merely shares its name.
+    grep -qsF ".claude/hooks/$2" "$dest" || warn_msgs+=("$1: you already have a $1 hook — chain .claude/hooks/$2 from it, or my gates do not run")
     return 0
   fi
   if [ "$hooks_dir" = ".git/hooks" ]; then

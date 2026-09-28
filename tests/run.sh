@@ -484,6 +484,52 @@ check "blocks an Edit of a git hook" 2 "$(printf '{"tool_name":"Edit","tool_inpu
 check "allows a Write elsewhere" 0 "$(printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"src/git/config.py"}}' | CLAUDE_PROJECT_DIR="$TMP" "$GB" 2>/dev/null; echo $?)"
 out="$(printf '%s' '{"tool_name":"Bash","tool_input":{"command":"git commit --no-verify -m x"}}' | CLAUDE_PROJECT_DIR="$TMP" "$GB" 2>&1)"
 contains "bypass refusal is in her voice" "no sneaking past the kitchen door" "$out"
+# /nonna's scripts are the user's switch: the skill runs them when a person types /nonna. The agent
+# may not run them, by any path, glob or shell, just as it may not run git config nonna.*: they
+# change her settings. Reading, linting and staging them is fine, and so is any script of the user's.
+NSD=".claude/skills/nonna/scripts"; NPD="$CLAUDE_CONFIG_DIR/plugins/cache/nonna/nonna/2.0.0/skills/nonna/scripts"
+check "blocks the agent running her /nonna script" 2 "$(gb "bash $NSD/nonna.sh off")"
+check "blocks it through the plugin's own path" 2 "$(gb "bash $NPD/nonna.sh test true")"
+check "blocks sourcing it with ." 2 "$(gb ". $NSD/uninstall.sh")"
+check "blocks sourcing it with source" 2 "$(gb "source $NSD/setup.sh")"
+check "blocks running it as a program" 2 "$(gb "$NPD/nonna.sh off")"
+check "blocks it under another shell" 2 "$(gb "zsh $NSD/uninstall.sh")"
+check "blocks it by name after a cd into her directory" 2 "$(gb "cd $NPD && bash nonna.sh off")"
+check "blocks piping it into a shell" 2 "$(gb "cat $NSD/uninstall.sh | sh")"
+check "blocks handing it to a shell through xargs" 2 "$(gb "ls $NSD/*.sh | xargs -n1 bash")"
+check "blocks it inside bash -c" 2 "$(gb "bash -c 'bash $NSD/nonna.sh off'")"
+check "blocks her directory spelled as a glob" 2 "$(gb "bash .claude/skills/n*/scripts/n*.sh off")"
+check "blocks her directory with every part a glob" 2 "$(gb "bash .claude/*/*/*/unin*.sh")"
+check "blocks her directory spelled as a brace list" 2 "$(gb "bash .claude/skills/{nonna,x}/scripts/setup.sh")"
+check "allows reading her scripts" 0 "$(gb "cat $NSD/nonna.sh")"
+check "allows linting them" 0 "$(gb "shellcheck -x $NSD/*.sh")"
+check "allows staging them" 0 "$(gb "git add $NSD/nonna.sh")"
+check "allows a user's own setup script" 0 "$(gb "bash scripts/setup.sh")"
+check "allows a user's own uninstall script, run as a program" 0 "$(gb "./uninstall.sh --dry-run")"
+check "allows a glob over the user's own scripts" 0 "$(gb 'for f in scripts/*.sh; do bash "$f"; done')"
+check "blocks it through env" 2 "$(gb "env A=1 bash $NSD/nonna.sh off")"
+check "blocks it through find -exec" 2 "$(gb "find .claude/skills/nonna -name '*.sh' -exec bash {} \\;")"
+check "blocks it through timeout" 2 "$(gb "timeout 5 sh $NSD/setup.sh")"
+check "blocks her path given as a pattern to find -exec" 2 "$(gb "find ~/.claude -path '*skills/nonna*' -name uninstall.sh -exec sh {} +")"
+check "allows searching her scripts for a word like bash" 0 "$(gb "grep -rn bash $NSD")"
+check "allows linting them for bash" 0 "$(gb "shellcheck -s bash $NSD/nonna.sh")"
+check "allows a commit message that names them" 0 "$(gb 'git commit -m "fix: the agent may not run bash .claude/skills/nonna/scripts/nonna.sh"')"
+check "allows reading her files, then running the suite" 0 "$(gb "cat .claude/skills/nonna/SKILL.md && bash tests/run.sh")"
+check "allows linting her scripts, then running the suite" 0 "$(gb "shellcheck -x $NSD/*.sh && bash tests/run.sh")"
+check "allows staging them, then running the suite" 0 "$(gb "git add $NSD && bash tests/run.sh")"
+check "allows searching for her script's name, then an unrelated shell" 0 "$(gb "grep -n nonna.sh docs/INSTALL.md; sh -c 'echo ok'")"
+check "blocks copying it, then running the copy" 2 "$(gb "cp $NSD/uninstall.sh /tmp/u.sh && bash /tmp/u.sh")"
+check "blocks copying it under another name, then running the copy by its path" 2 "$(gb "install -m 755 $NSD/uninstall.sh /tmp/u && /tmp/u")"
+check "blocks writing it out with a read, then running the copy" 2 "$(gb "cat $NSD/uninstall.sh > /tmp/u.sh; bash /tmp/u.sh")"
+check "blocks her directory carried in a variable" 2 "$(gb "d=$NSD; bash \$d/setup.sh")"
+check "blocks a cd into her directory, then a shell" 2 "$(gb "cd $NSD && bash setup.sh")"
+check "blocks a read of it piped on into a shell" 2 "$(gb "grep -v '^#' $NSD/uninstall.sh | sh")"
+check "blocks it through process substitution" 2 "$(gb "bash <(cat $NSD/nonna.sh) off")"
+check "blocks it through eval" 2 "$(gb "eval \"\$(cat $NSD/nonna.sh)\"")"
+printf '{"tool_name":"Bash","cwd":"%s","tool_input":{"command":"bash ./setup.sh"}}' "$ROOT/$NSD" | CLAUDE_PROJECT_DIR="$TMP" "$GB" 2>/dev/null
+check "blocks a script run from inside her directory" 2 "$?"
+out="$(printf '%s' '{"tool_name":"Bash","tool_input":{"command":"bash .claude/skills/nonna/scripts/nonna.sh off"}}' | CLAUDE_PROJECT_DIR="$TMP" "$GB" 2>&1)"
+contains "says her settings are the user's, changed with /nonna" "they change them with /nonna" "$out"
 rm -rf "$TMP"
 
 echo "== require-status-sync.sh (pre-push Definition of Done) =="
@@ -843,17 +889,33 @@ TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
 n=0; for f in CLAUDE.md AGENTS.md GEMINI.md .cursor/rules/nonna.mdc .github/copilot-instructions.md .windsurf/rules/nonna.md .clinerules/nonna.md .kiro/steering/nonna.md; do [ -f "$TMP/$f" ] && n=$((n + 1)); done
 check "install: --host all writes all eight host files" 8 "$n"
 rm -rf "$TMP"
+# A hook of the user's that merely names a file called pre-commit.sh does not run hers: install says
+# to chain hers, as session start does.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
+printf '#!/bin/sh\n# lint staged files: scripts/pre-commit.sh\nexit 0\n' > "$TMP/.git/hooks/pre-commit"; chmod +x "$TMP/.git/hooks/pre-commit"
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"
+contains "install: a hook that merely names her script's file is told to chain hers" "chain .claude/hooks/pre-commit.sh from it" "$out"
+rm -rf "$TMP"
 # --mode lite: the gates and the house rules, nothing else; the mode is recorded for every hook.
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
 out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --mode lite 2>&1)"; check "install: --mode lite succeeds" 0 "$?"
 rc=0; [ -f "$TMP/.claude/hooks/stop-dod.sh" ] && [ -f "$TMP/.claude/hooks/lib/lite.md" ] && [ -f "$TMP/.claude/settings.json" ] || rc=1; check "install: lite brings the hooks and their wiring" 0 "$rc"
-rc=0; [ ! -e "$TMP/.claude/rules" ] && [ ! -e "$TMP/.claude/agents" ] && [ ! -e "$TMP/.claude/skills" ] && [ ! -e "$TMP/CLAUDE.md" ] && [ ! -e "$TMP/docs/STATUS.md" ] || rc=1
-check "install: lite brings no rules, agents, workflows, CLAUDE.md or STATUS.md" 0 "$rc"
+rc=0; [ ! -e "$TMP/.claude/rules" ] && [ ! -e "$TMP/.claude/agents" ] && [ "$(ls "$TMP/.claude/skills" 2>/dev/null)" = nonna ] && [ ! -e "$TMP/CLAUDE.md" ] && [ ! -e "$TMP/docs/STATUS.md" ] || rc=1
+check "install: lite brings no rules, agents, CLAUDE.md or STATUS.md, and no workflow but /nonna" 0 "$rc"
+rc=0; [ -f "$TMP/.claude/skills/nonna/SKILL.md" ] && [ -f "$TMP/.claude/skills/nonna/scripts/nonna.sh" ] && [ -f "$TMP/.claude/.claude-plugin/plugin.json" ] || rc=1
+check "install: lite brings /nonna, and the manifest her version is read from" 0 "$rc"
 check "install: lite records the mode as the repo's default" lite "$(git -C "$TMP" config --get nonna.defaultMode)"
 git -C "$TMP" config --get nonna.mode >/dev/null; check "install: leaves nonna.mode to the user" 1 "$?"
 rc=0; [ -x "$TMP/.git/hooks/pre-commit" ] && [ -x "$TMP/.git/hooks/pre-push" ] || rc=1; check "install: lite wires the git hooks" 0 "$rc"
 out="$(CLAUDE_PROJECT_DIR="$TMP" "$TMP/.claude/hooks/session-start.sh")"
 contains "install: a lite copy-in carries the house rules at session start" "Nonna is on (lite)" "$out"
+IVER="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$ROOT/.claude/.claude-plugin/plugin.json" | head -n 1)"
+out="$(cd "$TMP" && env -u NONNA_MODE CLAUDE_PROJECT_DIR="$TMP" bash .claude/skills/nonna/scripts/nonna.sh 2>&1)"
+contains "install: /nonna in a lite copy-in shows her version and mode" "Nonna $IVER · lite (git config nonna.defaultMode)" "$out"
+contains "install: ...and her guards on, since settings.json wires them" "branch guard  on" "$out"
+printf '{}\n' > "$TMP/.claude/settings.json"
+out="$(cd "$TMP" && env -u NONNA_MODE CLAUDE_PROJECT_DIR="$TMP" bash .claude/skills/nonna/scripts/nonna.sh 2>&1)"
+contains "install: /nonna says the guards are off when settings.json does not wire them" "not in .claude/settings.json" "$out"
 rm -rf "$TMP"
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
 ( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --mode lite --host cursor >/dev/null 2>&1 ); check "install: --mode lite --host cursor succeeds" 0 "$?"
@@ -1225,6 +1287,29 @@ if [ -e "$OFF/.git/hooks/pre-push" ]; then rc=1; else rc=0; fi; check "off: sess
 check "off: subagent-start carries nothing" 0 "$(off_rc subagent-start.sh '{}')"
 check "off: subagent-verdict judges nothing" 0 "$(off_rc subagent-verdict.sh '{"agent_type":"code-reviewer","last_assistant_message":"prose, no verdict"}')"
 check "off: post-compact says nothing" 0 "$(off_rc post-compact.sh '{}')"
+# One thing she guards while off: her settings. The user switched her off, so only the user switches
+# her on again or changes what she will run then (ADR-0011): nonna.* and the config that routes git
+# around her, her git hooks, what her gates read from the environment, and her /nonna scripts.
+off_gb() { # <command>: the guard's exit code for it in $OFF, with NONNA_MODE=off
+  printf '{"tool_name":"Bash","tool_input":{"command":%s}}' "$(printf '%s' "$1" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')" \
+    | (cd "$OFF" && NONNA_MODE=off CLAUDE_PROJECT_DIR="$OFF" "$HOOKS/guard-branch.sh" 2>/dev/null); echo $?
+}
+check "off: the guard still refuses the agent setting her test command" 2 "$(off_gb 'git config nonna.testCmd true')"
+check "off: ...or switching her mode" 2 "$(off_gb 'git config nonna.mode full')"
+check "off: ...or routing git around her hooks" 2 "$(off_gb 'git config core.hooksPath /dev/null')"
+check "off: ...or rewriting her git hooks by hand" 2 "$(off_gb 'rm .git/hooks/pre-push')"
+check "off: ...or setting what her gates read" 2 "$(off_gb 'export NONNA_TEST_CMD=true')"
+check "off: ...or running her /nonna scripts" 2 "$(off_gb 'bash .claude/skills/nonna/scripts/nonna.sh uninstall')"
+check "off: ...or editing her git hooks with the file tools" 2 "$(printf '{"tool_name":"Edit","tool_input":{"file_path":"%s/.git/hooks/pre-commit"}}' "$OFF" | (cd "$OFF" && NONNA_MODE=off CLAUDE_PROJECT_DIR="$OFF" "$HOOKS/guard-branch.sh" 2>/dev/null); echo $?)"
+check "off: a force push is not hers to stop" 0 "$(off_gb 'git push --force origin main')"
+check "off: nor is --no-verify" 0 "$(off_gb 'git commit --no-verify -m x')"
+check "off: an edit on main is not warned about" 0 "$(off_rc guard-branch.sh '{"tool_name":"Edit","tool_input":{"file_path":"app.py"}}')"
+OFFBIG="$(python3 -c 'print("cat > big.txt <<EOF\n" + "x" * 300000 + "\nEOF")')"
+check "off: a command too long to read passes when it names nothing of hers" 0 "$(off_gb "$OFFBIG")"
+OFFJS="$(python3 -c 'import json; print("curl -d " + chr(39) + json.dumps([{"a": i, "b": i} for i in range(20)], separators=(",", ":")) + chr(39) + " https://example.com")')"
+check "off: so does one whose expansion is too large to read" 0 "$(off_gb "$OFFJS")"
+check "off: a command too long to read that names her settings is still refused" 2 "$(off_gb "$OFFBIG
+git config nonna.testCmd true")"
 rm -rf "$OFF"
 
 echo "== session-start.sh (SessionStart) =="
@@ -1419,7 +1504,7 @@ rm -rf "$TMP"
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
 out="$(CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$ROOT/.claude" "$HOOKS/session-start.sh")"
 git -C "$TMP" config --get nonna.testCmd >/dev/null; check "plugin: no suite found, no test command recorded" 1 "$?"
-contains "plugin: says the test gate is off and how to turn it on" "git config nonna.testCmd" "$out"
+contains "plugin: says the test gate is off and how to turn it on" "/nonna test '<command>'" "$out"
 rm -rf "$TMP"
 # The first session in a repo tells the USER what Nonna did (systemMessage), not only the agent:
 # the mode, what the test gate runs, the git hooks she added. Once per repo per major version.
@@ -1437,7 +1522,7 @@ printf '%s' "$out" | grep -q '"systemMessage"'; check "notice: is not repeated" 
 rm -rf "$TMP"
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
 um="$(CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$ROOT/.claude" "$HOOKS/session-start.sh" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("systemMessage",""))' 2>/dev/null)"
-contains "notice: says when there is no test gate, and how to set one" "git config nonna.testCmd" "$um"
+contains "notice: says when there is no test gate, and how to set one" "/nonna test '<command>'" "$um"
 rm -rf "$TMP"
 # A copy-in install detects at run time; its session start records neither.
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; copy_in "$TMP"
@@ -1475,6 +1560,136 @@ link="$(readlink "$TMP/.git/hooks/pre-push" 2>/dev/null || printf 'copied-not-sy
 case "$link" in /*) target="absolute" ;; *) target="relative-or-copied" ;; esac
 check "standalone: pre-push target is not absolute (survives a repo move)" "relative-or-copied" "$target"
 rm -rf "$TMP"
+
+echo "== /nonna (skills/nonna: the user's switch) =="
+# /nonna is the user's: the skill runs these scripts when a person types it, and the guard refuses
+# the agent running them. Status reads; lite, full, off and test change this repository's git
+# config; setup records the test command and wires the git hooks, and only offers what else would
+# help; uninstall takes back only what is hers, and names it.
+NS="$SKILLS/nonna/scripts/nonna.sh"
+VER="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$ROOT/.claude/.claude-plugin/plugin.json" | head -n 1)"
+ns() { # <repo> [words]: /nonna run there, as the skill runs it, with no mode or command in the environment
+  local d="$1"; shift
+  (cd "$d" && env -u NONNA_MODE -u NONNA_TEST_CMD -u CLAUDE_PLUGIN_OPTION_MODE CLAUDE_PROJECT_DIR="$d" bash "$NS" "$@") 2>&1
+}
+gp() { # <repo> <name>: where git keeps it for that repo, as a path from here (git prints it from the repo)
+  local p; p="$(git -C "$1" rev-parse --git-path "$2")"
+  case "$p" in /*) printf '%s' "$p" ;; *) printf '%s/%s' "$1" "$p" ;; esac
+}
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; "${GIT[@]}" -C "$TMP" commit -q --allow-empty -m init --no-verify
+out="$(ns "$TMP")"
+contains "/nonna: the status names her version, mode and where it comes from" "Nonna $VER · lite (the default)" "$out"
+contains "/nonna: ...and the branch" " on main" "$out"
+contains "/nonna: says plainly there is no test command" "no test command here" "$out"
+contains "/nonna: shows the guards on where her hooks are wired" "branch guard  on" "$out"
+contains "/nonna: shows the git hooks' state" "pre-push missing" "$out"
+out="$(ns "$TMP" full)"
+check "/nonna full: records the mode in this repository" full "$(git -C "$TMP" config --get nonna.mode)"
+contains "/nonna full: says so" "Nonna is full in this repository now" "$out"
+contains "/nonna full: then shows the status" "full (git config nonna.mode)" "$out"
+out="$(cd "$TMP" && env NONNA_MODE=off CLAUDE_PROJECT_DIR="$TMP" bash "$NS" lite 2>&1)"
+contains "/nonna lite: says when NONNA_MODE still overrides it here" "NONNA_MODE=off" "$out"
+ns "$TMP" off >/dev/null; check "/nonna off: records off" off "$(git -C "$TMP" config --get nonna.mode)"
+contains "/nonna: off shows every gate off" "(Nonna is off here)" "$(ns "$TMP")"
+ns "$TMP" lite >/dev/null; check "/nonna lite: records lite" lite "$(git -C "$TMP" config --get nonna.mode)"
+contains "/nonna test: with no command, says what to give it" "/nonna test '<command>'" "$(ns "$TMP" test)"
+ns "$TMP" test make check >/dev/null; check "/nonna test: records the command" "make check" "$(git -C "$TMP" config --get nonna.testCmd)"
+contains "/nonna: shows the command and where it comes from" "make check (git config nonna.testCmd)" "$(ns "$TMP")"
+ns "$TMP" test pytest -k "not slow" >/dev/null
+check "/nonna test: keeps a quoted word whole when the words arrive apart" 'pytest -k not\ slow' "$(git -C "$TMP" config --get nonna.testCmd)"
+ns "$TMP" test 'pytest -k "not slow"' >/dev/null
+check "/nonna test: takes one quoted command as it is" 'pytest -k "not slow"' "$(git -C "$TMP" config --get nonna.testCmd)"
+out="$(cd "$TMP" && env NONNA_TEST_CMD=false CLAUDE_PROJECT_DIR="$TMP" bash "$NS" test make 2>&1)"
+contains "/nonna test: says when NONNA_TEST_CMD still overrides it here" "NONNA_TEST_CMD" "$out"
+ns "$TMP" test off >/dev/null; check "/nonna test off: turns the gate off" "" "$(git -C "$TMP" config --get nonna.testCmd)"
+git -C "$TMP" config --get nonna.testCmd >/dev/null; check "/nonna test off: recorded as empty, so nothing re-detects it" 0 "$?"
+contains "/nonna: a gate turned off says so, not that there is no command" "as you set it" "$(ns "$TMP")"
+contains "/nonna: an unknown word says what she knows" "Nonna does not know 'spicy'" "$(ns "$TMP" spicy)"
+mkdir -p "$TMP/.claude"; printf '{"disableAllHooks": true}\n' > "$TMP/.claude/settings.local.json"
+contains "/nonna: says the guards are off when Claude Code runs no hooks" "disableAllHooks" "$(ns "$TMP")"
+rm -rf "$TMP"
+TMP="$(mktemp -d)"
+contains "/nonna: outside a git repository, says so" "not a git repository" "$(ns "$TMP" off)"
+rm -rf "$TMP"
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
+out="$(ns "$TMP")"
+contains "/nonna: a branch with no commits yet is named" " on main" "$out"
+printf '%s\n' "$out" | head -n 1 | grep -qE 'on HEAD|\?'; check "/nonna: ...with nothing unknown in its first line" 1 "$?"
+rm -rf "$TMP"
+# Detection looks for pytest without importing anything from the repository: a pytest.py it ships
+# does not run.
+TMP="$(mktemp -d)"; mkdir -p "$TMP/tests"; : > "$TMP/tests/test_x.py"
+printf 'open("ran", "w").write("x")\n' > "$TMP/pytest.py"
+(cd "$TMP" && bash -c '. "$1/lib/tests.sh"; nonna_detect_test_cmd' _ "$HOOKS" >/dev/null 2>&1)
+if [ -e "$TMP/ran" ] || [ -e /ran ]; then rc=1; else rc=0; fi; check "detection does not run a pytest.py the repository ships" 0 "$rc"
+rm -rf "$TMP"
+# A suite Stop saw pass on this exact tree shows as green; a changed tree does not.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; "${GIT[@]}" -C "$TMP" commit -q --allow-empty -m init --no-verify
+git -C "$TMP" config nonna.testCmd true
+key="$(cd "$TMP" && bash -c '. "$1/lib/tests.sh"; nonna_green_key true' _ "$HOOKS")"
+rc=0; [ -n "$key" ] || rc=1; check "/nonna: the green key is readable" 0 "$rc"
+printf '%s\n' "$key" > "$(gp "$TMP" nonna-green)"
+contains "/nonna: a suite that passed on this tree shows as green" "green on this tree" "$(ns "$TMP")"
+printf 'x = 1\n' > "$TMP/app.py"
+out="$(ns "$TMP")"; printf '%s' "$out" | grep -q "green on this tree"; check "/nonna: ...and not once the tree changed" 1 "$?"
+rm -rf "$TMP"
+# setup: records the detected command, wires the git hooks, offers the rest, never replaces a choice.
+TMP="$(mktemp -d)"; PD="$CLAUDE_CONFIG_DIR/plugins/data/nonna-nonna"; mkdir -p "$PD"; "${GIT[@]}" -C "$TMP" init -q; printf '{"scripts":{"test":"node t.js"}}\n' > "$TMP/package.json"
+out="$(cd "$TMP" && env -u NONNA_MODE CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_DATA="$PD" bash "$NS" setup 2>&1)"
+check "/nonna setup: records the detected command" "npm test --silent" "$(git -C "$TMP" config --get nonna.testCmd)"
+contains "/nonna setup: says so" "npm test --silent, detected and recorded" "$out"
+check "/nonna setup: wires pre-push through the plugin's data dir" "$PD/current/hooks/require-status-sync.sh" "$(readlink "$TMP/.git/hooks/pre-push")"
+check "/nonna setup: ...and pre-commit" "$PD/current/hooks/pre-commit.sh" "$(readlink "$TMP/.git/hooks/pre-commit")"
+contains "/nonna setup: offers the deny-list" "OFFER: add Nonna's permissions.deny list" "$out"
+contains "/nonna setup: ...and shows its entries" "Read(./**/.env)" "$out"
+contains "/nonna setup: ends with the status" "pre-push ✓  pre-commit ✓" "$out"
+ns "$TMP" full >/dev/null; out="$(ns "$TMP" setup)"
+contains "/nonna setup: in full mode, offers a STATUS record" "OFFER: create docs/STATUS.md" "$out"
+contains "/nonna setup: never replaces a recorded command" "npm test --silent, already recorded" "$out"
+ns "$TMP" off >/dev/null; out="$(ns "$TMP" setup)"
+contains "/nonna setup: while she is off, says so and wires nothing" "Nonna is off in this repository" "$out"
+# uninstall: her hooks, her config and her state go, each named with its value; nothing else does.
+mkdir -p "$(gp "$TMP" nonna)"; : > "$(gp "$TMP" nonna)/base-x"
+: > "$(gp "$TMP" nonna-green)"
+out="$(ns "$TMP" uninstall)"
+if [ -e "$TMP/.git/hooks/pre-push" ] || [ -e "$TMP/.git/hooks/pre-commit" ]; then rc=1; else rc=0; fi; check "/nonna uninstall: removes her git hooks" 0 "$rc"
+git -C "$TMP" config --get-regexp '^nonna\.' >/dev/null; check "/nonna uninstall: leaves no nonna.* config" 1 "$?"
+contains "/nonna uninstall: names each setting it removes, with its value" "nonna.testCmd=npm test --silent" "$out"
+if [ -e "$TMP/.git/nonna" ] || [ -e "$TMP/.git/nonna-green" ]; then rc=1; else rc=0; fi; check "/nonna uninstall: leaves none of her state" 0 "$rc"
+contains "/nonna uninstall: says a new session would set her up again" "/plugin uninstall nonna@nonna" "$out"
+rm -rf "$TMP" "$PD"
+# A linked worktree keeps state of its own: uninstall takes that too.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; "${GIT[@]}" -C "$TMP" commit -q --allow-empty -m init --no-verify
+"${GIT[@]}" -C "$TMP" worktree add -q "$TMP/wt" -b feature/wt 2>/dev/null
+: > "$(gp "$TMP/wt" nonna-green)"
+ns "$TMP" uninstall >/dev/null
+if [ -e "$(gp "$TMP/wt" nonna-green)" ]; then rc=1; else rc=0; fi; check "/nonna uninstall: takes her state from every worktree" 0 "$rc"
+rm -rf "$TMP"
+# A hook that is not hers stays, named; so does the user's own link named like her script, and a
+# hook of the user's that chains hers is left for the user to edit.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; mkdir -p "$TMP/scripts"
+printf '#!/bin/sh\nexit 0\n' > "$TMP/.git/hooks/pre-push"; chmod +x "$TMP/.git/hooks/pre-push"
+printf '#!/bin/sh\nexit 0\n' > "$TMP/scripts/pre-commit.sh"; ln -s ../../scripts/pre-commit.sh "$TMP/.git/hooks/pre-commit"
+out="$(ns "$TMP" uninstall)"
+if [ -e "$TMP/.git/hooks/pre-push" ]; then rc=0; else rc=1; fi; check "/nonna uninstall: leaves a hook that is not hers" 0 "$rc"
+contains "/nonna uninstall: ...and names it" "pre-push is not hers" "$out"
+check "/nonna uninstall: leaves the user's own link named like her script" ../../scripts/pre-commit.sh "$(readlink "$TMP/.git/hooks/pre-commit")"
+printf '#!/bin/sh\n.claude/hooks/require-status-sync.sh "$@" || exit 1\n' > "$TMP/.git/hooks/pre-push"
+contains "/nonna uninstall: leaves a hook that chains hers to the user, and says so" "still runs her require-status-sync.sh" "$(ns "$TMP" uninstall)"
+rm -rf "$TMP"
+# Her link in .git/hooks goes even when core.hooksPath now points elsewhere.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
+ln -s "$CLAUDE_CONFIG_DIR/plugins/cache/nonna/nonna/2.0.0/hooks/require-status-sync.sh" "$TMP/.git/hooks/pre-push"
+git -C "$TMP" config core.hooksPath .husky
+ns "$TMP" uninstall >/dev/null
+if [ -L "$TMP/.git/hooks/pre-push" ]; then rc=1; else rc=0; fi; check "/nonna uninstall: takes her link from .git/hooks when core.hooksPath points elsewhere" 0 "$rc"
+rm -rf "$TMP"
+# The skill runs exactly what its allowed-tools pre-approve: Claude Code runs a skill's ! line
+# without the hooks only when the permission check allows it.
+SK="$SKILLS/nonna/SKILL.md"
+check "/nonna: the skill is the user's alone" 0 "$(grep -q '^disable-model-invocation: true$' "$SK"; echo $?)"
+check "/nonna: its ! line is what allowed-tools pre-approve" 'bash "${CLAUDE_SKILL_DIR}/scripts/nonna.sh"' \
+  "$(sed -n 's/^allowed-tools: Bash(\(.*\):\*)$/\1/p' "$SK")"
 
 echo "== check-review.sh (review verdict gate) =="
 CR="$SKILLS/code-review/scripts/check-review.sh"
@@ -2086,6 +2301,35 @@ import sys,re; p=sys.argv[1]; t=open(p).read()
 open(p,'w').write(re.sub(r'^description: .*\$', 'description: ' + 'x'*4000, t, count=1, flags=re.M))" "$FX/.claude/skills/refactoring/SKILL.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: description budget blocks metadata creep" 1 "$?"
 contains "lint: says descriptions load every turn" "every turn" "$out"
+rm -rf "$FX"
+# /nonna changes her settings: it is the user's alone, like /ship and /release.
+FX="$(lint_fixture)"
+sed -i '/^disable-model-invocation: true$/d' "$FX/.claude/skills/nonna/SKILL.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks /nonna losing disable-model-invocation" 1 "$?"
+contains "lint: names /nonna as the user's" "'nonna' has side effects" "$out"
+rm -rf "$FX"
+# A skill's ! line runs with no hook in front of it only when its allowed-tools pre-approve exactly
+# that line: a wider rule pre-approves more than the line, and a narrower one hands it to the model.
+FX="$(lint_fixture)"
+sed -i 's|^allowed-tools: .*|allowed-tools: Bash(bash:*)|' "$FX/.claude/skills/nonna/SKILL.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a ! line pre-approved by a wider rule" 1 "$?"
+contains "lint: names the ! line" "! line" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+sed -i 's|scripts/nonna.sh" \$ARGUMENTS|scripts/other.sh" $ARGUMENTS|' "$FX/.claude/skills/nonna/SKILL.md"
+NONNA_LINT_ROOT="$FX" python3 "$LINT" >/dev/null 2>&1; check "lint: blocks a ! line its allowed-tools do not pre-approve" 1 "$?"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+printf '\n```!\nbash "${CLAUDE_SKILL_DIR}/scripts/other.sh"\n```\n' >> "$FX/.claude/skills/nonna/SKILL.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: holds a fenced ! block to the same pre-approval" 1 "$?"
+contains "lint: names the fenced block" "other.sh" "$out"
+rm -rf "$FX"
+# A user-only skill's description never rides the model's turn, so the every-turn budget skips it.
+FX="$(lint_fixture)"
+python3 -c "
+import sys,re; p=sys.argv[1]; t=open(p).read()
+open(p,'w').write(re.sub(r'^description: .*\$', 'description: ' + 'x'*4000, t, count=1, flags=re.M))" "$FX/.claude/skills/nonna/SKILL.md"
+NONNA_LINT_ROOT="$FX" python3 "$LINT" >/dev/null 2>&1; check "lint: a user-only skill's description is outside the every-turn budget" 0 "$?"
 rm -rf "$FX"
 # skills: preload is what makes depth outside an always-on rule deterministic --
 # a name that does not resolve silently removes the depth it was trusted to carry.

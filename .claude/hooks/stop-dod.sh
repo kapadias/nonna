@@ -64,13 +64,7 @@ if ! printf '%s' "$payload" | grep -qE '"stop_hook_active"[[:space:]]*:[[:space:
   cmd="$(nonna_test_cmd)"
   if [ -n "$cmd" ]; then
     green_file="$(git rev-parse --git-path nonna-green 2>/dev/null || true)"
-    idx="$(mktemp 2>/dev/null || true)"
-    key=""
-    if [ -n "$idx" ] && cp "$(git rev-parse --git-path index)" "$idx" 2>/dev/null \
-      && tree="$(GIT_INDEX_FILE="$idx" git add -A . >/dev/null 2>&1 && GIT_INDEX_FILE="$idx" git write-tree 2>/dev/null)"; then
-      key="$(printf '%s\n%s' "$tree" "$cmd" | git hash-object --stdin 2>/dev/null || true)"
-    fi
-    [ -n "$idx" ] && rm -f "$idx"
+    key="$(nonna_green_key "$cmd")"
     if [ -n "$key" ] && [ -n "$green_file" ] && [ "$(cat "$green_file" 2>/dev/null)" = "$key" ]; then
       : # this exact tree already passed this exact command
     else

@@ -136,7 +136,7 @@ nonna/
 │   ├── .claude-plugin/        # plugin manifest (plugin.json)
 │   ├── rules/                 # 9 always-on rules (00-core is the constitution)
 │   ├── agents/                # 8 specialists
-│   ├── skills/                # 12 playbooks + 15 pipeline workflows (6 human-only)
+│   ├── skills/                # 12 playbooks + 16 pipeline workflows (7 human-only)
 │   └── hooks/                 # 9 hooks: 8 on 7 Claude Code events + the git pre-push hook
 ├── tests/                     # gate golden tests + harness self-validation
 ├── stacks/                    # python · typescript · go · rust gate packs

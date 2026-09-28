@@ -11,7 +11,9 @@
 #
 # A glob is read as what it could match of what the guard looks for, never as what the disk holds:
 # a path component (between / : or =) that could be git or git-<command>, main, master or develop
-# is that name, and .git before hooks or config is that path. A glob group counts: bash's @(…) +(…)
+# is that name, .git before hooks or config is that path, and skills/nonna/scripts (her /nonna
+# scripts) is that path; nonna.sh is no name of its own, or every *.sh would be her script. A glob
+# group counts: bash's @(…) +(…)
 # ?(…) *(…) !(…) and zsh's (a|b). Case is ignored, as macOS's disk ignores it. A name a glob could
 # match counts as matched, which can only refuse more.
 #
@@ -241,6 +243,11 @@ function globs(w,   n, ch, i, c, d, cur, m, cp, sp, nc, j, k, changed) {
   }
   changed = 0
   for (j = 1; j <= nc; j++) {
+    if (j + 1 < nc && sp[j] == "/" && sp[j + 1] == "/" && (isglob(cp[j]) || isglob(cp[j + 1]) || isglob(cp[j + 2])) \
+      && could(cp[j], "skills") && could(cp[j + 1], "nonna") && could(cp[j + 2], "scripts")) {
+      cp[j] = "skills"; cp[j + 1] = "nonna"; cp[j + 2] = "scripts"; changed = 1; j += 2
+      continue
+    }
     if (j < nc && sp[j] == "/" && (isglob(cp[j]) || isglob(cp[j + 1])) && could(cp[j], ".git") \
       && (could(cp[j + 1], "hooks") || could(cp[j + 1], "config"))) {
       cp[j] = ".git"; cp[j + 1] = (could(cp[j + 1], "hooks") ? "hooks" : "config"); changed = 1; j++

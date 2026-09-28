@@ -4,7 +4,8 @@
 #       Editing is fine; committing is what's forbidden. Editing .git/config or .git/hooks -> BLOCK.
 #   • Bash `git commit`/`git merge` on a protected branch, or any `git push`
 #     that is on/targets a protected branch (or pushes --all/--mirror) -> BLOCK. So is a force
-#     push, skipping the git hooks, and changing what Nonna's gates read.
+#     push, skipping the git hooks, changing what Nonna's gates read, and running her /nonna
+#     scripts. While she is off, only her settings (the last two, and her git hooks) are kept.
 # The command is read the way the shell will run it: continued lines joined, a quoted commit message
 # masked, quotes and backslashes removed, and ( ), $( ) and backticks opened into commands of their
 # own. The git matcher tolerates a path prefix (/usr/bin/git) and global options (`-C <dir>`,
@@ -21,7 +22,11 @@ root="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 cd "$root" 2>/dev/null || exit 0
 # shellcheck source=/dev/null
 . "$here/lib/core.sh"
-[ "$(nonna_mode)" = off ] && exit 0 # off means off: nothing enforced, nothing said
+# Off means off, but for her settings: the user switched her off, so the agent may still not change
+# what she reads, run her /nonna scripts or touch her git hooks. The user switches her on again, and
+# decides what she runs then (ADR-0011). Nothing else is checked while she is off, and nothing said.
+off=0
+[ "$(nonna_mode)" = off ] && off=1
 # The full ref, prefix stripped: --short gives heads/main once a tag named main exists, and the
 # branch is named before its first commit too.
 ref="$(git symbolic-ref --quiet HEAD 2>/dev/null || true)"
@@ -51,12 +56,21 @@ kitchen_door() { # <technical reason>: the git hooks are the gate
   exit 2
 }
 
+# Could what the guard cannot read touch her settings? Git or nonna in it however quoted, a $'…'
+# escape, or a run inside her /nonna directory. While she is off, only such a command is refused
+# for being unreadable; she keeps her settings then, and nothing else.
+could_be_hers() { # <raw text>
+  local bsnl=$'\\\n' # a continued line: the shell joins g\<newline>it into git
+  [ "${in_hers:-0}" = 1 ] || printf '%s' "${1//"$bsnl"/}" | grep -qiE "g[\\'\"]*i[\\'\"]*t|n[\\'\"]*o[\\'\"]*n[\\'\"]*n[\\'\"]*a|\\$'"
+}
 unread() { # <what could not be read>: fail closed, never guess
+  [ "$off" = 0 ] || could_be_hers "${cmd:-$payload}" || exit 0
   echo "✗ Nonna: I can't taste what I can't read. (branch guard: $1, so it is refused, not guessed at.)" >&2
   echo "  Run it again; if this repeats, check that awk and jq work in this shell." >&2
   exit 2
 }
 too_long() { # <reason>: a hook that outruns its timeout does not block, so what it cannot read in time is refused
+  [ "$off" = 0 ] || could_be_hers "${cmd:-$payload}" || exit 0
   echo "✗ Nonna: that's too much to taste in one bite. (branch guard: $1)" >&2
   echo "  Write the content with the Write tool, or split the command." >&2
   exit 2
@@ -78,6 +92,7 @@ case "$tool" in
       */.git/config | */.git/hooks/* | */.git/nonna/* | */.git/nonna-green)
         recipe "refusing to edit ${file}: her settings and git hooks live there." ;;
     esac
+    [ "$off" = 0 ] || exit 0
     if is_protected "$branch"; then
       marker="$root/.git/.nonna-branch-warned-$branch"
       if [ ! -f "$marker" ]; then
@@ -91,6 +106,8 @@ case "$tool" in
     cmd="$(printf '%s' "$payload" | nonna_json_field '.tool_input.command')"
     [ -n "$cmd" ] || ! has_field command || unread "the command could not be read"
     [ -n "$cmd" ] || exit 0
+    cwd="$(printf '%s' "$payload" | nonna_json_field '.cwd')" # where the Bash tool will run it
+    case "/$cwd/" in */skills/nonna/*) in_hers=1 ;; *) in_hers=0 ;; esac
     [ "${#cmd}" -le 262144 ] || too_long "the command is over 256 KB, too long to read before the hook times out."
     # How the shell will see it (lib/shell-words.awk). Readings, checked together: A keeps each word
     # whole, so a quoted value with a space cannot shift the words after it; B exposes what a quoted
@@ -103,10 +120,7 @@ case "$tool" in
     words() { printf '%s\n' "$cmd" | LC_ALL=C awk -v out="$1" -f "$here/lib/shell-words.awk" 2>/dev/null; }
     quoted() { case "$1" in *[\'\"\\]*) return 0 ;; esac; return 1; }
     cant_read() {
-      local bsnl=$'\\\n' # a continued line: the shell joins g\<newline>it into git
-      if printf '%s' "${cmd//"$bsnl"/}" | grep -qiE "g[\\'\"]*i[\\'\"]*t|n[\\'\"]*o[\\'\"]*n[\\'\"]*n[\\'\"]*a|\\$'"; then
-        unread "the command reader (awk) failed"
-      fi
+      could_be_hers "$cmd" && unread "the command reader (awk) failed"
       exit 0
     }
     lvl="$(words B)" || cant_read
@@ -123,6 +137,7 @@ case "$tool" in
       n=$((n + 1))
     done
     if [ "$n" -ge 6 ] && quoted "$lvl"; then
+      [ "$off" = 0 ] || could_be_hers "$cmd" || exit 0
       kitchen_door "refusing quotes nested deeper than the guard reads; run the inner command itself."
     fi
 
@@ -228,6 +243,32 @@ case "$tool" in
       | grep -qiE '(^|[^A-Za-z0-9_.-])\.git/(hooks(/[^[:space:]]*)?|config)[[:space:]]*$|(^|[[:space:]])(-[A-Za-z]*t[[:space:]]*|--ta[a-z-]*[=[:space:]]+)[^[:space:]]*\.git/(hooks|config)'; then
       recipe "refusing to change .git/config or .git/hooks by hand."
     fi
+
+    # Her /nonna scripts are the user's switch, run by the skill when a person types /nonna: they
+    # change her settings, as git config nonna.* does. A command that names them (her skill's
+    # directory, nonna.sh, or any script when it runs inside her directory) and runs a shell is
+    # refused, however the two are joined. A shell runs as a command (sh, bash, source, ., exec,
+    # eval, a *.sh, or any program given by its path, as a copy would be) or through one that runs
+    # another (env, sudo, xargs, find -exec, …); a shell's name as a word to grep for runs nothing.
+    # A part of the command that only reads her files (cat, grep, shellcheck, git add or diff, …,
+    # redirecting nothing) does not name them, unless a pipe or a command or process substitution
+    # could carry what it read into a shell: so reading or linting her scripts, then running the
+    # suite, passes.
+    HERS='(^|[^A-Za-z0-9_.-])(skills/nonna|nonna/scripts|nonna\.sh)([^A-Za-z0-9_-]|$)'
+    SH='([^[:space:]]*/)?(sh|bash|zsh|dash|ksh|mksh|yash|fish|busybox)'
+    WRAP='([^[:space:]]*/)?(env|sudo|doas|xargs|nohup|exec|command|builtin|nice|timeout|time|stdbuf|setsid|ionice|chrt|taskset|flock|unbuffer|parallel|watch)|-(exec|execdir|ok|okdir)'
+    SHELLS="${AT}(${SH}|source|\\.|exec|eval|[^[:space:]]*\\.sh|\\.{0,2}/[^[:space:]]*|~/[^[:space:]]*)([[:space:]]|$)|(^|[[:space:]])(${WRAP})[[:space:]](.*[[:space:]])?${SH}([[:space:]]|$)"
+    # debt: the reader list trusts each reader's own options to run nothing, revisit if the script-file limit (ADR-0011 §4) is ever closed, since this is no stronger than it
+    READS='(cat|less|more|head|tail|grep|egrep|fgrep|rg|ag|ack|wc|ls|stat|file|shellcheck|diff|cmp|nl|bat|git[[:space:]]+(add|diff|log|show|status|blame|ls-files|grep))'
+    named="$segs"
+    if ! printf '%s' "$cmd" | grep -qE '\||<\(|>\(|\$\(|`'; then
+      named="$(printf '%s\n' "$segs" | grep -vE "^[[:space:]]*([^[:space:]]*/)?${READS}([[:space:]][^>${RD}]*)?$")"
+    fi
+    if { [ "$in_hers" = 1 ] || printf '%s\n' "$named" | grep -qiE "$HERS"; } \
+      && printf '%s\n' "$segs" | grep -qiE "$SHELLS"; then
+      recipe "refusing to run her /nonna scripts: they change her settings."
+    fi
+    [ "$off" = 0 ] || exit 0 # while she is off, her settings are all the guard keeps
 
     # The git hooks are the gate for a commit and a push, so skipping them is refused: --no-verify
     # (and its abbreviations), commit's -n, alone or in a cluster of flags that take no value, and
