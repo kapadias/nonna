@@ -10,15 +10,65 @@ versioning is [SemVer](https://semver.org/spec/v2.0.0.html).
 - Reinstall: `/plugin uninstall keel@keel`, then `/plugin marketplace add kapadias/nonna` and
   `/plugin install nonna@nonna`.
 - Environment variables are now `NONNA_*` (for example `NONNA_CRITICAL_PATHS`).
+- The plugin now starts in **lite** mode: the test gate, the branch and secret guards and six house
+  rules. For 1.x's behaviour (the constitution and the STATUS gate), run `git config nonna.mode full`
+  in a repository, add `--global` for all of them, or set the plugin's `mode` option to full.
+- The STATUS gate runs only in full mode, and only where `docs/STATUS.md` exists.
+- The plugin runs your tests before the agent can say done and before a push. The first session in a
+  repository records the command it detects in `git config nonna.testCmd`; set it to `""` there to
+  turn the gate off, or turn the `run_tests` option off before Nonna meets your repositories.
+- The git hooks now read git config alone. `NONNA_TEST_CMD` and `NONNA_MODE` still steer Claude
+  Code's hooks, but no longer the git hooks: for your own pushes, set `git config nonna.testCmd`.
 
 ### Added
 
+- **Modes: `off`, `lite` and `full`, one switch per repository** (ADR-0011). Every hook reads, in
+  order: `NONNA_MODE` (Claude Code's hooks only), your `nonna.mode` (repository, then global), the
+  plugin's `mode` option, `nonna.defaultMode`, and last what the repository carries (the hooks and
+  the rules: full; otherwise lite). A value nobody meant fails closed to full; `off` enforces
+  nothing and says nothing. Nonna never writes `nonna.mode` herself: what she records goes in
+  `nonna.defaultMode`, below it, so `git config --global nonna.mode off` reaches every repository
+  you have not set. The git hooks take nothing from the environment, a `git -c` flag or a file the
+  config includes, so a command cannot switch them off for itself.
+- **Lite**, the plugin's default: the test gate, "where's the test?", the branch and secret guards,
+  the git hooks, and six house rules (`hooks/lib/lite.md`, linted to 150 words and to cover the
+  never-list) in place of the constitution. `install.sh --mode lite|full` (copy-in stays full by
+  default), with lite rules for the other hosts in `hosts/lite/`.
+- **The plugin's test gate works out of the box, with consent.** The `run_tests` option (on) is the
+  consent: the first session in a repository records the detected command in `nonna.testCmd`, where
+  the Stop and pre-push hooks read it, and never overwrites one, an empty one included. The first
+  session also tells you, once, what Nonna did there: the mode, the test command and the git hooks
+  she added.
+- **"Where's the test?"** When source changed and no test file did, Stop sends the agent back for a
+  test that fails without the change, or a plain reason why none is needed. It asks once for a set of
+  changes in a session.
+- **Committed work cannot dodge the Stop gate.** SessionStart records where the session began, and
+  Stop checks everything changed since, committed or not.
+- **The Stop block shows what failed**: the failing lines from pytest, jest, go, cargo or TAP output,
+  quoted as the repository's words (a test cannot speak in her voice), with any line that looks like
+  a secret hidden, then what to do.
+- **Guards that travel with the plugin.** The branch guard refuses force pushes (`--force`, `-f`,
+  `--force-with-lease`, abbreviated or in a cluster), a push of every branch (`:`, a wildcard),
+  `--no-verify`, hook-path overrides, push config, and an agent's changes to Nonna's own settings or
+  git hooks, through `git push`, `subtree push` or git's own `git-push`, and git's plumbing pushes,
+  which run no hook (`send-pack`). It reads each
+  command the way the shell will run it, so quotes, escapes, brace lists, globs, capitals and a
+  nested `sh -c` do not hide a flag; a value computed when the command runs can. It is a speed bump:
+  branch protection on the server is the wall. The secret
+  guard refuses reads and searches (Read, Grep) of secret files, by any name that leads to one,
+  linted against the `settings.json` deny-list.
+- **Plugin git hooks survive updates**, and plugin installs get `pre-commit` too. The links go
+  through the plugin's data directory, re-pointed at the running version each session. They lead to
+  Nonna's own scripts, never scripts a repository ships. A dangling link of Nonna's is repaired; a
+  foreign hook, a hook manager and a hook that points at nothing are reported, never overwritten.
+- In full mode, when another enabled plugin already states the "reuse before you write" ladder, the
+  constitution's copy is left out (`NONNA_LADDER=on|off` decides it yourself).
 - **"Done" means the suite passes.** In the benchmark, agents said "done" on a broken suite in 16 of
   16 bare runs and most harnessed ones: nothing deterministic ran the tests. Now the Stop hook and
   the pre-push hook run the project's own test command (pytest, npm, go or cargo, detected; or
   `NONNA_TEST_CMD`) whenever code changed, and refuse on red. `hooks/lib/tests.sh` holds it.
-  Detection runs only in a copy-in install; under the plugin the gate waits for an explicit
-  `NONNA_TEST_CMD`. A green tree is not re-tested at every turn end, a Stop-time timeout does not
+  Detection runs at every turn end only in a copy-in install; the plugin records what it detects
+  once per repository, with consent (above). A green tree is not re-tested at every turn end, a Stop-time timeout does not
   block, and the pre-push gate reads the pushed range from git, so a branch's first push is gated.
   The push scan covers every commit the remote lacks, one diff per commit, so a key in a local-only
   base commit, or one added and removed inside the push, is caught; colour, external-diff config and
@@ -33,10 +83,16 @@ versioning is [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ### Changed
 
+- **The STATUS gate is full mode's**, and only where `docs/STATUS.md` exists, at Stop and at
+  pre-push. A repository that never kept the file is no longer blocked for not updating it; one that
+  keeps it cannot throw it out.
+- **The host rules say exactly what the git hooks refuse**: a commit on a protected branch. They
+  had claimed the git hooks refused the push itself, which only Claude Code's branch guard does.
+- **`docs/INSTALL.md` leads with the plugin**, and says what Nonna changes on your machine and how
+  to take it back out.
 - **2.0 packaging.** Both manifests say 2.0.0. The plugin shows as "Nonna" in `/plugin` and asks
   two things at install: whether to run the project's tests (`run_tests`, default on) and the
-  default mode (`mode`, default lite); the hooks read both from the plugin-defaults change on, and
-  until then they are declared only. The marketplace and plugin carry descriptions, a category and
+  default mode (`mode`, default lite), and the hooks read both (above). The marketplace and plugin carry descriptions, a category and
   keywords, and `claude plugin validate --strict` passes on both, now in CI. Every hook command
   quotes its root (`"${CLAUDE_PLUGIN_ROOT}"/...`, `"$CLAUDE_PROJECT_DIR"/...`), so a path with a
   space no longer splits and silently skips the gate; the linter holds both files to it. While the

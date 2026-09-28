@@ -7,8 +7,9 @@ alwaysApply: true
 # Nonna — house rules for this repository
 
 This repository runs Nonna. These are the non-negotiables. Each section links to the full rule in
-`.claude/rules/`; read it before you act in that area. Git hooks enforce the branch, secret and
-status rules on every commit and push, and `--no-verify` is not yours to use.
+`.claude/rules/`; read it before you act in that area. Git hooks refuse a commit on main, master or
+develop, a secret in a commit or a push, and a push with a red test suite or a stale
+docs/STATUS.md; `--no-verify` is not yours to use.
 
 ## The three principles
 
@@ -48,7 +49,7 @@ The ladder sizes the solution, never the loop. → [engineering.md](.claude/rule
 
 ## Never
 
-- Commit or push to `main`/`develop`, or force-push. (the git pre-commit and pre-push hooks block it.)
+- Commit or push to `main`/`develop`, or force-push. (the git pre-commit hook refuses a commit on them.)
 - Put a secret in code, logs, traces, or prompts. (the git pre-commit and pre-push hooks block it.)
 - Mark work done — in a tracker, in `STATUS.md`, or in a PR — with failing tests.
 - Ship production logic with no test that would have failed before it.

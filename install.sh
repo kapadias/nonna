@@ -11,6 +11,8 @@
 #
 # Hosts: claude (default), agents (AGENTS.md: Codex, Zed, Amp, opencode, Roo, Jules, Junie…),
 #        cursor, copilot, gemini, windsurf, cline, kiro, all. Several: --host cursor,agents
+# Mode:  --mode lite  the gates and short house rules only (hooks, settings.json, git hooks)
+#        --mode full  the whole harness: rules, agents, workflows, docs/STATUS.md (the default)
 # Env:   NONNA_REF  branch or tag to install (default: main)
 #        NONNA_SRC  install from a local checkout instead of cloning (used by the tests)
 set -uo pipefail
@@ -40,6 +42,7 @@ install.sh — Nonna in one command, for any agent host. Run it from the root of
 
 --host  claude (default), agents (AGENTS.md: Codex, Zed, Amp, opencode, Roo, Jules, Junie…),
         cursor, copilot, gemini, windsurf, cline, kiro, all. Several: --host cursor,agents
+--mode  lite: the gates and short house rules only. full: the whole harness (the default).
 Env:    NONNA_REF  branch or tag to install (default: main)
         NONNA_SRC  install from a local checkout instead of cloning
 USAGE
@@ -49,16 +52,25 @@ USAGE
 # Everything runs inside main, called on the last line: a download cut short runs nothing.
 main() {
 hosts="claude"
+mode=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --host)
       [ $# -ge 2 ] || { echo "install.sh: --host needs a value" >&2; exit 2; }
       hosts="$2"; shift 2 ;;
     --host=*) hosts="${1#--host=}"; shift ;;
+    --mode)
+      [ $# -ge 2 ] || { echo "install.sh: --mode needs a value" >&2; exit 2; }
+      mode="$2"; shift 2 ;;
+    --mode=*) mode="${1#--mode=}"; shift ;;
     -h | --help) usage; exit 0 ;;
-    *) echo "install.sh: unknown argument '$1' (try --host <name>)" >&2; exit 2 ;;
+    *) echo "install.sh: unknown argument '$1' (try --host <name> or --mode lite|full)" >&2; exit 2 ;;
   esac
 done
+case "$mode" in
+  "" | lite | full) ;;
+  *) echo "install.sh: unknown mode '$mode' (lite or full)" >&2; exit 2 ;;
+esac
 [ "$hosts" = all ] && hosts="claude,agents,cursor,copilot,gemini,windsurf,cline,kiro"
 
 IFS=',' read -r -a HOSTS <<<"$hosts"
@@ -124,10 +136,14 @@ put() { # <source file> <dest>: copy unless dest exists; never through a symlink
   fi
 }
 
-# .claude/ is merged file by file: yours stay, what is missing arrives.
+# .claude/ is merged file by file: yours stay, what is missing arrives. Lite brings the gates and
+# their wiring only: the hooks and settings.json, never the rules, agents or workflows.
 n_before=${#kept_msgs[@]}
 while IFS= read -r -d '' rel; do
   rel="${rel#./}"
+  if [ "$mode" = lite ]; then
+    case "$rel" in hooks/* | settings.json) ;; *) continue ;; esac
+  fi
   put "$P/.claude/$rel" ".claude/$rel"
 done < <(cd "$P/.claude" && find . \( -type f -o -type l \) -print0)
 [ "${#copied[@]}" -gt 0 ] && done_msgs+=(".claude/ (${#copied[@]} files)")
@@ -142,11 +158,16 @@ done
 for h in "${HOSTS[@]}"; do
   f="$(host_file "$h")"
   n=${#copied[@]}
-  if [ "$h" = claude ]; then put "$P/CLAUDE.md" "$f"; else put "$P/hosts/$f" "$f"; fi
+  if [ "$mode" = lite ]; then
+    # Claude Code gets lite's house rules from the SessionStart hook; other hosts read a file.
+    [ "$h" = claude ] || put "$P/hosts/lite/$f" "$f"
+  elif [ "$h" = claude ]; then put "$P/CLAUDE.md" "$f"; else put "$P/hosts/$f" "$f"; fi
   [ "${#copied[@]}" -gt "$n" ] && done_msgs+=("$f")
 done
 
-if through_link docs/STATUS.md; then
+if [ "$mode" = lite ]; then
+  : # the Definition-of-Done record (docs/STATUS.md) is full mode's
+elif through_link docs/STATUS.md; then
   warn_msgs+=("docs/STATUS.md: a symlink is on the way — I do not write through links, so I left it alone")
   failed=1
 elif [ ! -e docs/STATUS.md ]; then
@@ -197,6 +218,18 @@ link_hook() { # <git hook name> <script under .claude/hooks>
 link_hook pre-commit pre-commit.sh
 link_hook pre-push require-status-sync.sh
 
+# The mode lives in the repo's own git config, where every hook reads it (never committed, never
+# cloned), as the repo's default: nonna.mode, in the repo or --global, is the user's and outranks
+# it. Without --mode a copy-in install is full, and nothing is written.
+if [ -n "$mode" ]; then
+  if git config nonna.defaultMode "$mode"; then
+    done_msgs+=("mode: $mode (git config nonna.defaultMode)")
+  else
+    warn_msgs+=("could not record the mode in git config, so she runs as full")
+    failed=1
+  fi
+fi
+
 if [ "$failed" = 1 ]; then
   echo "Nonna could not set the whole table."
 else
@@ -209,7 +242,11 @@ if [ "$failed" = 1 ]; then
   echo "Some gates are not running. Fix what is marked '!' and run me again: I never overwrite, so it is safe."
   exit 1
 fi
-echo "No commits on main, no keys in files, and write it in docs/STATUS.md. Now go make a branch."
+if [ "$mode" = lite ]; then
+  echo "No commits on main, no keys in files, and the whole suite before done. Now go make a branch."
+else
+  echo "No commits on main, no keys in files, and write it in docs/STATUS.md. Now go make a branch."
+fi
 exit 0
 }
 

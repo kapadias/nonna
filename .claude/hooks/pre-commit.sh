@@ -20,10 +20,16 @@ done
 here="$(cd "$(dirname "$self")" && pwd)"
 # shellcheck source=/dev/null
 . "$here/lib/secret-patterns.sh"
+# shellcheck source=/dev/null
+. "$here/lib/core.sh"
+[ "$(nonna_mode git-hook)" = off ] && exit 0 # off means off: nothing enforced, nothing said
 
 fail=0
 
-branch="$(git symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+# The full ref, prefix stripped: --short gives heads/main once a tag named main exists, and the
+# branch is named before its first commit too.
+ref="$(git symbolic-ref --quiet HEAD 2>/dev/null || true)"
+branch="${ref#refs/heads/}"
 case "$branch" in
   main | master | develop)
     {

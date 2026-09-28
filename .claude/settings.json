@@ -49,6 +49,15 @@
             "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/secret-scan.sh"
           }
         ]
+      },
+      {
+        "matcher": "Read|Grep",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/secret-scan.sh"
+          }
+        ]
       }
     ],
     "PostToolUse": [

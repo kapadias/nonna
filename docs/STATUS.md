@@ -5,20 +5,22 @@ pre-push hook (`require-status-sync.sh`) blocks code pushes that leave it stale.
 
 ## Current state
 
-Nonna's discipline is enforced by code at seven lifecycle events plus the git pre-push hook. The
-harness tests its own gates and its own linter. The six workflows with side effects (`/ship`,
-`/release`, `/rollback`, `/adr`, `/sync`, `/intake`) are human-triggered only. A plugin install
-carries the constitution (`00-core.md`) into the session and into every subagent. Language- and
-domain-agnostic.
+Nonna's discipline is enforced by code at seven lifecycle events plus the git pre-commit and
+pre-push hooks. The harness tests its own gates and its own linter. The six workflows with side
+effects (`/ship`, `/release`, `/rollback`, `/adr`, `/sync`, `/intake`) are human-triggered only.
+One switch per repo sets the mode (`off | lite | full`, ADR-0011). A plugin install defaults to
+lite: the test gate, the branch and secret guards, and six house rules carried into the session and
+every subagent; full carries the constitution (`00-core.md`) and adds the STATUS gate. Language-
+and domain-agnostic.
 
-Always-on surface: **3,690 words** of prose (3,700-word budget) plus 5,570 chars of skill/agent
+Always-on surface: **3,681 words** of prose (3,700-word budget) plus 5,570 chars of skill/agent
 descriptions (5,600-char budget), both enforced by the linter.
 
 ## What exists
 
 - **Rules ×9** — `00-core` (the constitution, the decision ladder; also the plugin carrier),
   `dev-process`, `testing`, `engineering`, `git-workflow`, `sync`, `boundaries`, `safety`,
-  `token-economy`. The dense, always-on policy surface — **3,690 words, budgeted at 3,700 by
+  `token-economy`. The dense, always-on policy surface — **3,681 words with `CLAUDE.md`, budgeted at 3,700 by
   `harness_lint.py`**.
 - **Agents ×8** — `orchestrator`, `planner`, `implementer`, `test-engineer`, `code-reviewer`,
   `security-reviewer`, `explorer`, `debugger`. Reviewers emit a structured JSON verdict.
@@ -30,28 +32,121 @@ descriptions (5,600-char budget), both enforced by the linter.
   `/ship`, `/release`, `/rollback`, `/sync`, `/adr`, `/intake`. Model-tiered; several use `!`/`@` injection.
   The six with side effects set `disable-model-invocation: true` — human-triggered only, and out of
   context entirely.
-- **Hooks ×9** — `guard-branch` (blocks protected-branch commits/pushes + `--all`/`--mirror`/`+refspec`
-  force pushes), `secret-scan` (blocks secret writes + Bash reads of secret files), `format`,
-  `require-status-sync` (pre-push DoD + strict secret scan, auto-installed at SessionStart — warns on
-  a foreign hook), `session-start` (also carries `00-core.md` into plugin installs), `stop-dod`
-  (Stop — no turn ends with STATUS stale), `subagent-verdict` (SubagentStop — ADR-0005 enforced where
-  the verdict is produced), `post-compact` (PostCompact — restates loop state), `subagent-start`
-  (SubagentStart — carries `00-core.md` into every subagent under a plugin install). Seven events
-  wired; shared `lib/` + plugin `hooks.json`, asserted equivalent to `settings.json` by the linter.
-- **Settings** — denies reading secrets and force-push; wires all hooks.
+- **Hooks ×10** — each reads the mode first; `off` is silent. `guard-branch` (blocks protected-branch
+  commits/pushes, `--all`/`--mirror`, force pushes, `--no-verify`, hook-path overrides, and the
+  agent's writes to Nonna's own git config), `secret-scan` (blocks secret writes + reads of secret
+  files, Read, Grep or Bash), `format`, `require-status-sync` (pre-push: the test suite, a strict secret
+  scan, and in full mode the DoD), `pre-commit` (no commit on a protected branch, no staged secret),
+  `session-start` (wires both git hooks, through the plugin's data directory under a plugin install;
+  records the plugin's test command and mode; carries the mode's rules; tells the user once),
+  `stop-dod` (Stop — since the session began: the suite, "where's the test?", and in full mode a
+  stale STATUS), `subagent-verdict` (SubagentStop — ADR-0005 enforced where the verdict is
+  produced), `post-compact` (PostCompact — restates loop state), `subagent-start` (SubagentStart —
+  carries the mode's rules into every subagent under a plugin install). Seven events wired; shared
+  `lib/` (including `lite.md`, the lite house rules) + plugin `hooks.json`, asserted equivalent to
+  `settings.json` by the linter.
+- **Settings** — denies reading secrets and force-push (the hooks refuse both too, since a plugin
+  cannot carry this file); wires all hooks.
 - **Tests** — `tests/run.sh` (gate golden tests; the count is derived and drift-linted, never
   hardcoded) + `tests/harness_lint.py` (self-validation).
 - **Stacks** — `stacks/{python,typescript,go,rust}` wiring the test gate.
 - **Plugin** — `.claude/.claude-plugin/plugin.json` (2.0.0, `displayName`, `userConfig`:
   `run_tests`, `mode`) + `.claude-plugin/marketplace.json`. Both validate with `--strict`.
 - **Docs** — this `STATUS.md`, `INSTALL.md`, `OVERVIEW.md`, `docs/benchmarks/`, `CHANGELOG.md`, the
-  `docs/adr/` index, and ADRs 0001–0008.
+  `docs/adr/` index, and ADRs 0001–0011.
 - **CI** — `.github/workflows/ci.yml`: shellcheck (all scripts) + harness-lint + gate self-tests +
   plugin manifest (`claude plugin validate --strict`, pinned CLI).
 
 ## Recently changed
 
 History lives in `CHANGELOG.md` and `git log`. Entries here describe the current unit of work.
+
+- **2026-09-25** — Plugin defaults, the second unit of the launch plan (#17, ADR-0011). One switch
+  per repo, git config `nonna.mode` (`off | lite | full`), read by every Claude Code hook and git
+  hook. The plugin defaults to lite: the test gate, "where's the test?", the branch and secret guards
+  and six house rules (`hooks/lib/lite.md`). Full adds the STATUS gate, now only where
+  `docs/STATUS.md` exists. The plugin's test gate is on out of the box: the `run_tests` option is the
+  consent, and the first session records the detected command in `nonna.testCmd`. What Nonna records
+  about the mode goes in `nonna.defaultMode`, below the user's `nonna.mode`, so a global off reaches
+  every repo. Git hooks link through the plugin's data directory, so an update no longer leaves them
+  dangling, and `pre-commit` is wired too. Force pushes, `--no-verify`, hook-path overrides and reads
+  of secret files are refused by hooks, which a plugin carries. Stop checks everything since the
+  session began, shows the failing lines with secrets hidden, and asks for a test once when code
+  changed and none did. The first session tells the user what Nonna did in their repo. Full mode
+  drops the ladder when another plugin already states it. `install.sh --mode lite|full`.
+  `INSTALL.md` leads with the plugin.
+  Review round (code and security, both request changes, all addressed but one). The git hooks read
+  git config alone, never the environment, `git -c` or an included file, so a command cannot switch
+  them off for itself. The branch guard reads a command the way the shell will run it (quotes,
+  continued lines, subshells, abbreviated flags) and refuses changes to her settings, includes,
+  aliases, hooks path and git hooks. A plugin never sources or wires scripts a repository ships.
+  A hook that points at nothing is reported (Keel-era links are repaired). An untracked STATUS counts
+  as written, and full mode refuses a turn or push that deletes it. "Where's the test?" asks once per
+  set of changes. The suite's output is quoted as the repository's words. The secret guard covers
+  Grep, symlinks and case. The suite runs on its own git config. Per-repository test consent stays
+  plugin-wide by the maintainer's decision (ADR-0011).
+  Second review round (code approved; security found the message masking could hide a command): the
+  guard now tokenizes a command the way the shell does (lib/shell-words.awk) and checks two readings,
+  words whole and quoted strings opened. Grep globs are matched as patterns, and "where's the test?"
+  remembers the code, not the file names. A macOS CI job is a follow-up (#17). 675 tests.
+  Third review round (both request changes; security approved the heredoc fix): Claude Code's
+  heredoc message is read as one word only where it opens outside any quote and ends where bash
+  ends it, and it is set aside only as a git message, so a body that `sh -c` or `eval` runs stays in
+  view. A message is masked only in `git commit`, `merge`, `tag`, `stash` and `notes` (and `gh`
+  titles and bodies), before any expansion the reader does not follow, and never where an earlier
+  option takes the flag as its value (`-Fm`, `-t -m`). Quotes nested in `sh -c`, `$'…'` escapes and
+  `>|` no longer hide anything. A config read flag counts only before the key, and one key alone is
+  a read. Assignments count after `{`, `then`, `eval` and `time`, and through `export NAME`,
+  `printf -v`, `read` and `sudo`. A copy's target is found past a redirection or `-t`. A Grep glob is
+  judged by the secret files it would read. 745 tests.
+  Fourth review round (security approved; code found four holes): a heredoc message is set aside
+  only when its body holds no `"`, `$`, backtick or backslash, because macOS `/bin/bash` 3.2 ends the
+  `$(` inside the body. `&>` is one redirection. An empty quoted word stays a word, a config read is
+  one dotted key with only read-safe options before it, and an abbreviated `--rem` is an action.
+  `--attr-source` and `--shallow-file` take a value, a git command inside a value (`GIT_EDITOR=…`,
+  `--exec=…`) is read, and nesting deeper than six reads is refused. Assignment rules hold only at
+  the start of a command (or after `sh -c`), so a search for `export NONNA_MODE` passes. In the
+  project a Grep glob is judged by the secret files there, a sample name no longer decides. A fuzz
+  of 700 heredoc messages under bash 3.2 and 5.2 finds no command the guard lets through. 776 tests.
+  Fifth review round (both request changes): git 2.45's `--comment` takes the next word as its
+  value, so a read flag counts only after read-safe options, and a digit with a space before `>` is
+  an argument, not a file descriptor (`git config core.hooksPath 2 >/dev/null` writes). An assignment
+  that carries a value counts wherever it stands again (after `builtin`, `command`, a redirection,
+  `nice env`, or in a `trap` string); anchoring had let those through. 792 tests.
+  Sixth review round (security approved; code found one hole): a quoted value that looked like a
+  redirection (`git config core.hooksPath '>/dev/null'`) was set aside as one. The reader now marks
+  each redirection the shell performs, and only marked ones are set aside. 799 tests.
+  Seventh review round (code found the mark had broken the start-of-command anchor): a command that
+  begins with a redirection is a command's start again, so `>/dev/null GIT_CONFIG_GLOBAL=…` is
+  refused. 803 tests.
+  Eighth review round (both approved; security's MEDIUM): the guard refuses what it cannot read.
+  Without jq, a JSON string is decoded in full; an escaped quote had cut
+  `git commit -m "x" && git push --force` short. A failing jq or awk no longer waves a git command
+  through, even one whose name is split across a continued line. 812 tests.
+  Ninth review round (code: a long heredoc outran the hook's timeout, and a glob named git): the
+  reader runs in linear time in every awk (macOS's one-true-awk had taken over a minute on 100 KB),
+  and a command over 256 KB is refused, since a hook that times out does not block. Brace lists
+  expand as bash expands them, and a glob is read as what it could match (`gi[t]`, `@(git)`,
+  `mai[n]`, `.g?t/hooks`); an expansion too large to read is refused. Probing found more spellings,
+  now refused too: git's own binaries (`/usr/lib/git-core/git-push`), capitals (macOS finds
+  `GIT`), a path to `env`, `send-pack` (which runs no hook), `subtree push`, the `:` and wildcard refspecs, and push
+  refspecs or `push.default` in the config. 856 tests.
+  Tenth review round: both approve. The one LOW is the declared trade: quoted text is expanded as
+  code, so a minified JSON array in one word is refused as too large to read from 16 two-field
+  objects (fewer with more fields; ADR-0011 §4).
+  Two follow-ups, found while planning `/nonna`. The guard now knows a branch before its first
+  commit; it had let the first commit onto a new, empty `main` through. And a git hook link is hers
+  only when it leads to her own script. A user's own `scripts/pre-commit.sh` link had been taken
+  for hers, which left her gate off without a word. 859 tests.
+  Eleventh review round, three findings, all fixed. A tag named `main` made the branch read as
+  `heads/main`, so the guard and the pre-commit hook let a commit onto `main` through; both now
+  read the full ref. Her plugin paths are anchored to the plugins directory Claude Code uses, so a
+  link merely shaped like hers is not hers. And a user's hook chains hers only when it names her
+  script's path, not a file that merely shares its name. 864 tests.
+  Twelfth review round: both approve, and their two LOWs are fixed. A path that climbs back out of
+  her cache with `..` is not hers, and her plugins directory is read as written and as resolved, so
+  a `HOME` ending in `/` or a symlinked config directory still gets her dangling link repaired.
+  867 tests.
 
 - **2026-09-25** — 2.0 packaging, the first unit of the launch plan (#17). Both manifests say 2.0.0;
   the plugin shows as "Nonna" and declares two install options, `run_tests` and `mode`. The hooks
@@ -129,6 +224,9 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   failing input as `optional:`. The verdict-gate fix from `develop` is merged in.
 
 ## Next / open
+
+- The rest of the launch plan (#17): `/nonna` (status, setup, `lite|full|off`, uninstall), then
+  benchmark round 3 with lite, full and the real FastAPI suite, then the launch README and assets.
 
 - A behavioural eval on the failures the gates exist for (a secret in a fixture, a push to a
   protected branch, an error hidden by a "fix"), scored on "did it get caught".

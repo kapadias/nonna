@@ -26,6 +26,15 @@
             "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/secret-scan.sh"
           }
         ]
+      },
+      {
+        "matcher": "Read|Grep",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/hooks/secret-scan.sh"
+          }
+        ]
       }
     ],
     "PostToolUse": [

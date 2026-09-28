@@ -12,7 +12,7 @@ task gets longer. Nonna is built the other way — **progressive disclosure**:
 |                 | Always-on (paid every turn)                                                                                                                             | On-demand (paid only when needed)                                         |
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
 | **What**        | `CLAUDE.md` + 9 rules, plus the name+description of each skill, agent and workflow                                                                      | 12 skill playbooks + 15 pipeline workflows + 8 agents — bodies only       |
-| **Footprint**   | **~7.1k tokens** — 3,690 words of prose (3,700-word budget) + 5,570 chars of descriptions (5,600-char budget), both enforced by `tests/harness_lint.py` | the bulk of Nonna — loaded only when relevant                             |
+| **Footprint**   | **~7.1k tokens** — 3,681 words of prose (3,700-word budget) + 5,570 chars of descriptions (5,600-char budget), both enforced by `tests/harness_lint.py` | the bulk of Nonna — loaded only when relevant                             |
 | **When loaded** | Every request                                                                                                                                           | Only when a trigger matches, a workflow runs, or a subagent is dispatched |
 
 The six side-effecting workflows (`/ship`, `/release`, `/rollback`, `/adr`, `/sync`, `/intake`) carry
@@ -76,25 +76,33 @@ explorer, a debugger and a router. Who runs on which model: see the crew above.
 
 ## Safety & enforcement
 
-Hooks turn the rules into deterministic guards — gates, not suggestions:
+Hooks turn the rules into deterministic guards — gates, not suggestions. Each reads the mode first
+(`off`, `lite` or `full`, [ADR 0011](adr/0011-lite-mode-and-plugin-defaults.md)); `off` is silent,
+and only the STATUS checks are full mode's:
 
 - **`guard-branch.sh`** — **blocks** `git commit` / `git push` to `main` / `master` / `develop` (warns
-  on edits there), plus `--all` / `--mirror` and `+refspec` force pushes. The "never commit to a
-  protected branch" rule, actually enforced.
+  on edits there), plus a push of every branch (`--all`, `--mirror`, `:`, a wildcard), force pushes,
+  `--no-verify` and hook-path overrides, reading each command the way the shell will run it, brace
+  lists and globs included. A speed bump for the agent; server-side branch protection is the wall.
+  The "never commit to a protected branch" rule, actually enforced.
 - **`secret-scan.sh`** — **blocks** any edit/write that introduces a high-confidence secret (AWS /
-  GitHub / Slack / Google keys, private-key blocks, hardcoded credentials), and Bash reads/copies of
-  secret files (`cat .env`) — parity with the Read deny list.
+  GitHub / Slack / Google keys, private-key blocks, hardcoded credentials), and reads/copies of
+  secret files (Read, Grep, or `cat .env`), by any name that leads to one — parity with the Read
+  deny list.
 - **`format.sh`** — auto-formats the file you just touched (ruff / prettier / gofmt / rustfmt —
   best-effort, never blocking).
 - **`require-status-sync.sh`** (pre-push, **auto-installed at `SessionStart`** — warns instead of
-  overwriting a foreign pre-push hook) — blocks a code push that skips `docs/STATUS.md` or that
-  introduces a secret (no fixture exemption at push time). The Definition of Done, enforced.
-- **`stop-dod.sh`** (**Stop**) — blocks a turn ending with tracked code changed and `docs/STATUS.md`
-  stale.
+  overwriting a foreign pre-push hook) — blocks a push with a red suite or a new secret (no fixture
+  exemption at push time), and in full mode a code push that skips `docs/STATUS.md`. The Definition
+  of Done, enforced. **`pre-commit.sh`** refuses a commit on a protected branch or a staged secret.
+- **`stop-dod.sh`** (**Stop**) — when code changed since the session began: runs the suite and sends
+  the agent back once on red, asks once for a test when no test changed, and in full mode blocks on a
+  stale `docs/STATUS.md`.
 - **`subagent-verdict.sh`** (**SubagentStop**) — runs `check-review.sh` on the reviewer's own output,
   so ADR-0005 binds where the verdict is produced.
-- **`subagent-start.sh`** (**SubagentStart**) — carries `00-core.md` into every subagent under a
-  plugin install, where `SessionStart` context never reaches them; silent in a standalone checkout.
+- **`subagent-start.sh`** (**SubagentStart**) — carries the mode's rules (`00-core.md`, or lite's
+  house rules) into every subagent under a plugin install, where `SessionStart` context never
+  reaches them; silent in a standalone checkout.
 - **`post-compact.sh`** (**PostCompact**) — restates branch, STATUS state, and review verdicts after
   a summary.
 

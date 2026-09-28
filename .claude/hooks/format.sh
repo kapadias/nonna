@@ -6,6 +6,9 @@ set -uo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
 . "$here/lib/json.sh"
+# shellcheck source=/dev/null
+. "$here/lib/core.sh"
+[ "$(cd "${CLAUDE_PROJECT_DIR:-.}" 2>/dev/null && nonna_mode)" = off ] && exit 0 # off means off
 
 # The edited file path comes from the hook JSON on stdin (.tool_input.file_path),
 # with an optional env override.

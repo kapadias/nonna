@@ -32,4 +32,5 @@ option that preserves correctness, safety, and reproducibility over cleverness o
 `.claude/README.md` maps the harness. Agent and skill descriptions are already in context —
 do not re-read an index to find them. Nonna installs as a plugin
 (`/plugin marketplace add kapadias/nonna`); a plugin install is **not** equivalent to a copy-in
-install — see [`docs/INSTALL.md`](docs/INSTALL.md) and [ADR 0007](docs/adr/0007-plugin-install-is-not-equivalent.md).
+install, and defaults to lite mode — see [`docs/INSTALL.md`](docs/INSTALL.md),
+[ADR 0007](docs/adr/0007-plugin-install-is-not-equivalent.md) and [ADR 0011](docs/adr/0011-lite-mode-and-plugin-defaults.md).

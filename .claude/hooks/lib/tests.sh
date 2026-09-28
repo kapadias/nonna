@@ -1,22 +1,42 @@
 #!/usr/bin/env bash
 # lib/tests.sh — "done" means the project's own test suite passes, not that the agent says so.
 #
-# nonna_test_cmd   prints the test command for the repo in the current directory, or nothing:
-#                  NONNA_TEST_CMD if set (empty string turns the gate off), else detected from
-#                  pytest config/tests, package.json's "test" script, go.mod or Cargo.toml.
-#                  Detection needs consent: it runs only when Nonna was copied into the repo
-#                  (.claude/hooks/lib/tests.sh exists). Under a plugin install nobody agreed to have
-#                  the repo's own code run by a hook, so only an explicit NONNA_TEST_CMD does that.
+# nonna_test_cmd   prints the test command for the repo in the current directory, or nothing.
+#                  Precedence: NONNA_TEST_CMD (empty turns the gate off) > git config nonna.testCmd
+#                  (empty turns it off) > detection, in a copy-in install only (the harness running
+#                  is the repo's own .claude/). A plugin install detects once, at session start, when
+#                  the plugin's run_tests option allows it (the default): session-start.sh records the
+#                  command in the repo's own git config, which is never committed and never cloned,
+#                  and says so. So the Stop hook and the git pre-push hook run one command, and the
+#                  user can see and change it. The pre-push hook passes `git-hook`: it ignores
+#                  NONNA_TEST_CMD, which the command that runs git could set.
+# nonna_detect_test_cmd  prints the command detection finds here: pytest config/tests,
+#                  package.json's "test" script, go.mod or Cargo.toml.
 # nonna_run_tests  runs it with a timeout (NONNA_TEST_TIMEOUT seconds, default 600); exit status is
-#                  the suite's, 124 when it timed out; output tail in $NONNA_TEST_TAIL.
+#                  the suite's, 124 when it timed out. $NONNA_TEST_TAIL gets what a person needs to
+#                  see: up to five failing-test lines (pytest, jest, go, cargo, TAP) and the summary,
+#                  else the last eight lines; colour codes stripped, and any line that looks like a
+#                  secret replaced, because this text is shown to the agent and to the user.
 # shellcheck shell=bash
 
-nonna_test_cmd() {
-  if [ "${NONNA_TEST_CMD+set}" = set ]; then
+# shellcheck source=/dev/null
+command -v nonna_config >/dev/null 2>&1 || . "$(dirname "${BASH_SOURCE[0]}")/core.sh"
+
+nonna_test_cmd() { # [git-hook]: a git hook takes nothing from the environment (lib/core.sh)
+  if [ "${1:-}" != git-hook ] && [ "${NONNA_TEST_CMD+set}" = set ]; then
     printf '%s' "$NONNA_TEST_CMD"
     return 0
   fi
-  [ -f .claude/hooks/lib/tests.sh ] || return 0
+  local cfg
+  if cfg="$(nonna_config nonna.testCmd)"; then
+    printf '%s' "$cfg"
+    return 0
+  fi
+  nonna_copy_in || return 0 # only a repo's own harness detects; a plugin runs what was recorded
+  nonna_detect_test_cmd
+}
+
+nonna_detect_test_cmd() {
   local t has_py_tests=0
   for t in tests/test_*.py tests/*_test.py test/test_*.py test_*.py; do
     [ -f "$t" ] && has_py_tests=1 && break
@@ -52,9 +72,63 @@ nonna_run_tests() { # <command>
     bash -c "$1" >"$log" 2>&1
     rc=$?
   fi
-  out="$(tail -n 8 "$log")"
+  out="$(nonna_test_digest "$log")"
   rm -f "$log"
   # shellcheck disable=SC2034  # read by the hook that sourced this file
   NONNA_TEST_TAIL="$out"
   return "$rc"
+}
+
+# nonna_is_test_file <path>  0 when the path is a test: in a test directory, or named like one.
+#   Deliberately not the secret scan's nonna_is_test_path, which also exempts fixtures and examples.
+nonna_is_test_file() {
+  case "/$1" in */test/* | */tests/* | */__tests__/* | */spec/* | */specs/* | */testing/*) return 0 ;; esac
+  case "${1##*/}" in
+    test_*.py | *_test.py | *_test.go | *.test.[jt]s | *.test.[jt]sx | *.test.[cm][jt]s | *.spec.[jt]s \
+      | *.spec.[jt]sx | *.spec.[cm][jt]s | *Test.java | *Tests.java | *Test.kt | *Tests.kt | *_spec.rb \
+      | *_test.rb | *Test.php | *Test.cs | *Tests.cs | *Tests.swift | *_test.exs | *_test.dart | *_test.c* \
+      | *_test.rs) return 0 ;;
+  esac
+  return 1
+}
+
+# nonna_is_source_file <path>  0 when the path is program source (by extension): what a test covers.
+nonna_is_source_file() {
+  case "${1##*.}" in
+    py | js | jsx | ts | tsx | mjs | cjs | go | rs | java | kt | kts | rb | php | cs | swift | c | h | cc \
+      | cpp | hpp | m | mm | scala | ex | exs | erl | clj | dart | lua | vue | svelte) return 0 ;;
+  esac
+  return 1
+}
+
+# nonna_shown_cmd <command>  the command as a message may show it: never one that carries a secret.
+nonna_shown_cmd() {
+  # shellcheck source=/dev/null
+  . "$(dirname "${BASH_SOURCE[0]}")/secret-patterns.sh" 2>/dev/null || { printf 'your test command'; return 0; }
+  if printf '%s' "$1" | nonna_scan_secrets >/dev/null; then printf 'your test command'; else printf '%s' "$1"; fi
+}
+
+# nonna_test_digest <log>  prints the lines of a test run worth showing (see nonna_run_tests).
+nonna_test_digest() {
+  local esc clean fails last out line class
+  esc="$(printf '\033')"
+  clean="$(sed "s/${esc}\[[0-9;]*[A-Za-z]//g" "$1" 2>/dev/null)"
+  fails="$(printf '%s\n' "$clean" | grep -E '^(FAILED|ERROR) |^--- FAIL: |^not ok |^test .* \.\.\. FAILED$|✕ ' | head -n 5)"
+  last="$(printf '%s\n' "$clean" | grep -v '^[[:space:]]*$' | tail -n 1)"
+  if [ -n "$fails" ]; then
+    out="$fails"
+    case "$fails" in *"$last"*) ;; *) out="$out
+$last" ;; esac
+  else
+    out="$(printf '%s\n' "$clean" | tail -n 8)"
+  fi
+  # shellcheck source=/dev/null
+  . "$(dirname "${BASH_SOURCE[0]}")/secret-patterns.sh" 2>/dev/null || { printf '%s\n' "$out"; return 0; }
+  while IFS= read -r line; do
+    if class="$(printf '%s' "$line" | nonna_scan_secrets)"; then
+      printf '[a line that looks like a %s was hidden]\n' "$class"
+    else
+      printf '%s\n' "$line"
+    fi
+  done <<<"$out"
 }

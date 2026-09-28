@@ -93,14 +93,14 @@ For another agent, add `-s -- --host <name>`:
 
 What each agent gets:
 
-|                                                                  | Claude Code | Every other agent |
-| ---------------------------------------------------------------- | :---------: | :---------------: |
-| Nonna's rules                                                    |     yes     |        yes        |
-| Git hooks: no commit on `main`, no staged secret                 |     yes     |        yes        |
-| Git hooks: no push with red tests or a stale `docs/STATUS.md`    |     yes     |        yes        |
-| Can't end its turn on a red suite                                |     yes     |        no         |
-| Secret scan on every file write, branch guard on every command   |     yes     |        no         |
-| Review agents and 15 workflows                                   |     yes     |        no         |
+|                                                                | Claude Code | Every other agent |
+| -------------------------------------------------------------- | :---------: | :---------------: |
+| Nonna's rules                                                  |     yes     |        yes        |
+| Git hooks: no commit on `main`, no staged secret               |     yes     |        yes        |
+| Git hooks: no push with red tests or a stale `docs/STATUS.md`  |     yes     |        yes        |
+| Can't end its turn on a red suite                              |     yes     |        no         |
+| Secret scan on every file write, branch guard on every command |     yes     |        no         |
+| Review agents and 15 workflows                                 |     yes     |        no         |
 
 Nothing you already have is overwritten. More: [`docs/INSTALL.md`](docs/INSTALL.md).
 
@@ -109,7 +109,7 @@ Nothing you already have is overwritten. More: [`docs/INSTALL.md`](docs/INSTALL.
 - **Tests decide "done".** When code changed, the agent cannot end its turn or push with a red
   suite. It runs your test command, not a file it picked.
 - **Test first.** A change with no test that would have failed before it is not finished.
-- **Scripts decide, not the model.** A git hook refuses the push to `main`. A script parses the
+- **Scripts decide, not the model.** A hook refuses the push to `main`. A script parses the
   reviewer's verdict. Another sizes the review: small, low-risk diffs get one quick reviewer.
 - **Look in the pantry first.** Before writing code: does it need to exist, is it already here,
   does the standard library do it, is it one line?
@@ -131,7 +131,7 @@ will add it. She will remember.
 ## Development
 
 ```bash
-bash tests/run.sh              # every gate proven to block and to allow (399 golden tests)
+bash tests/run.sh              # every gate proven to block and to allow (867 golden tests)
 python3 tests/harness_lint.py  # word budgets, host files in sync, hook wiring
 ```
 

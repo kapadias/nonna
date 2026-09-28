@@ -29,6 +29,7 @@ import glob
 import json
 import os
 import re
+import subprocess
 import sys
 
 ROOT = os.environ.get("NONNA_LINT_ROOT") or os.path.dirname(
@@ -208,7 +209,9 @@ with open(f"{ROOT}/.claude/rules/dev-process.md", encoding="utf-8") as fh:
 # quoting in hooks.json only; settings.json has no validator, so the lint holds both.
 HOOK_FORMS = {
     ".claude/hooks/hooks.json": (
-        re.compile(r'^"\$\{CLAUDE_PLUGIN_ROOT\}"/(hooks/[A-Za-z0-9_.-]+\.sh)(?P<data> "\$\{CLAUDE_PLUGIN_DATA\}")?$'),
+        re.compile(
+            r'^"\$\{CLAUDE_PLUGIN_ROOT\}"/(hooks/[A-Za-z0-9_.-]+\.sh)(?P<data> "\$\{CLAUDE_PLUGIN_DATA\}")?$'
+        ),
         '"${CLAUDE_PLUGIN_ROOT}"/hooks/<script>.sh',
     ),
     ".claude/settings.json": (
@@ -245,16 +248,28 @@ def check_hook_forms(rel: str, cfg: dict) -> None:
                         f"(quoted root, then the script, then nothing: a tail like '|| true' turns a block into a pass)"
                     )
                 elif not os.path.isfile(os.path.join(ROOT, ".claude", script)):
-                    shown = script if rel.endswith("hooks.json") else f".claude/{script}"
+                    shown = (
+                        script if rel.endswith("hooks.json") else f".claude/{script}"
+                    )
                     bad(f"{os.path.basename(rel)}: wired hook missing on disk: {shown}")
                 if hook.get("type") != "command":
-                    bad(f"{rel}: {event} hook '{cmd}' must be type \"command\" (a gate is a script, not a model's judgment)")
+                    bad(
+                        f"{rel}: {event} hook '{cmd}' must be type \"command\" (a gate is a script, not a model's judgment)"
+                    )
                 extra = sorted(set(hook) - HOOK_KEYS)
                 if extra:
-                    bad(f"{rel}: {event} hook '{cmd}' has keys {extra} (allowed: {sorted(HOOK_KEYS)}; an async hook cannot block)")
+                    bad(
+                        f"{rel}: {event} hook '{cmd}' has keys {extra} (allowed: {sorted(HOOK_KEYS)}; an async hook cannot block)"
+                    )
                 t = hook.get("timeout")
-                if "timeout" in hook and (isinstance(t, bool) or not isinstance(t, (int, float)) or t < MIN_HOOK_TIMEOUT):
-                    bad(f"{rel}: {event} hook '{cmd}' timeout {t!r} is under {MIN_HOOK_TIMEOUT}s (a timeout lets the action through)")
+                if "timeout" in hook and (
+                    isinstance(t, bool)
+                    or not isinstance(t, (int, float))
+                    or t < MIN_HOOK_TIMEOUT
+                ):
+                    bad(
+                        f"{rel}: {event} hook '{cmd}' timeout {t!r} is under {MIN_HOOK_TIMEOUT}s (a timeout lets the action through)"
+                    )
 
 
 with open(f"{ROOT}/.claude/settings.json", encoding="utf-8") as fh:
@@ -262,7 +277,9 @@ with open(f"{ROOT}/.claude/settings.json", encoding="utf-8") as fh:
 check_hook_forms(".claude/settings.json", settings)
 # One settings key turns every hook off at once; pinning each gate means nothing if it is set.
 if settings.get("disableAllHooks"):
-    bad(".claude/settings.json: disableAllHooks is set, which turns every Nonna gate off")
+    bad(
+        ".claude/settings.json: disableAllHooks is set, which turns every Nonna gate off"
+    )
 
 # --- cross-links: intra-repo markdown links must resolve ---
 LINK = re.compile(r"\]\(([^)]+)\)")
@@ -396,6 +413,8 @@ for rel, phrase in (
 # one place their names appear. Everything the harness ships stays brand-free. The
 # term is assembled at runtime so this file cannot trip its own check.
 EXTERNAL_NAMES = ("pony" + "tail",)
+# The credit line, and the one helper that must name the plugin to detect it (lib/ladder.sh).
+EXTERNAL_ALLOWED = {"README.md", ".claude/hooks/lib/ladder.sh"}
 EXTERNAL = re.compile("|".join(re.escape(t) for t in EXTERNAL_NAMES), re.IGNORECASE)
 SCAN_EXT = re.compile(r"\.(md|sh|py|json|ya?ml|txt)$")
 # os.walk, not glob: glob("**") skips dot-directories, and .claude/ is one.
@@ -404,7 +423,7 @@ for dirpath, dirnames, filenames in os.walk(ROOT):
     for name in filenames:
         path = os.path.join(dirpath, name)
         rel = os.path.relpath(path, ROOT)
-        if rel == "README.md" or not SCAN_EXT.search(name):
+        if rel in EXTERNAL_ALLOWED or not SCAN_EXT.search(name):
             continue
         with open(path, encoding="utf-8", errors="replace") as fh:
             for n, line in enumerate(fh, 1):
@@ -435,6 +454,43 @@ for rel in (".claude/rules/00-core.md", ".claude/skills/lean/SKILL.md"):
         if rung not in text:
             bad(
                 f"{rel}: ladder rung '{rung}' missing — 00-core.md and the lean skill must agree (ADR-0008)"
+            )
+
+# --- lite.md: the house rules every lite session and subagent carries ---
+# It rides additionalContext on every lite SessionStart and SubagentStart, so it has a budget, and
+# it must keep a line for each never-list item lite mode inherits: without one, lite would stop
+# saying what its own gates enforce.
+MAX_LITE_WORDS = 150
+LITE_COVERS = (  # (never-list wording in 00-core.md, phrase lite.md must keep)
+    ("Commit or push to", "Never commit or push to main"),
+    ("force-push", "never force-push"),
+    ("Put a secret", "Never put a secret"),
+    ("with failing tests", "whole test suite passes"),
+    ("no test that would have failed before it", "fails before the fix"),
+    ("Override a gate", "do not work around it"),
+)
+lite_path = os.path.join(ROOT, ".claude/hooks/lib/lite.md")
+if not os.path.isfile(lite_path):
+    bad("lite mode: missing .claude/hooks/lib/lite.md")
+else:
+    with open(lite_path, encoding="utf-8") as fh:
+        lite = " ".join(fh.read().split())
+    if len(lite.split()) > MAX_LITE_WORDS:
+        bad(
+            f".claude/hooks/lib/lite.md is {len(lite.split())} words, over its {MAX_LITE_WORDS}-word budget (it rides every lite session and subagent)"
+        )
+    with open(os.path.join(ROOT, ".claude/rules/00-core.md"), encoding="utf-8") as fh:
+        core_text = fh.read()
+    never = " ".join(core_text.split("## Never", 1)[-1].split("\n## ", 1)[0].split())
+    for item, phrase in LITE_COVERS:
+        if item not in never:
+            # A reworded never-list would otherwise switch this check off without a word.
+            bad(
+                f".claude/rules/00-core.md: the never-list no longer says '{item}' — update LITE_COVERS in tests/harness_lint.py"
+            )
+        elif phrase not in lite:
+            bad(
+                f".claude/hooks/lib/lite.md: no line for the never-list item '{item}' (keep '{phrase}')"
             )
 
 # --- debt gate wiring: /review gates the delta, /sync prints the ledger (ADR-0008) ---
@@ -571,8 +627,17 @@ def hook_shape(rel: str, cfg: dict) -> dict:
                 cmd = hook.get("command", "")
                 # The whole hook, with the command reduced to its script: a timeout or type set in
                 # one mode only changes what the gate does in that mode, so it must differ here too.
-                rest = {k: v for k, v in hook.items() if k not in ("command", "statusMessage")}
-                scripts.append(json.dumps({**rest, "script": hook_script(rel, event, cmd) or cmd}, sort_keys=True))
+                rest = {
+                    k: v
+                    for k, v in hook.items()
+                    if k not in ("command", "statusMessage")
+                }
+                scripts.append(
+                    json.dumps(
+                        {**rest, "script": hook_script(rel, event, cmd) or cmd},
+                        sort_keys=True,
+                    )
+                )
             by_matcher.setdefault(entry.get("matcher", "*"), []).extend(scripts)
         shape[event] = by_matcher
     return shape
@@ -581,7 +646,10 @@ def hook_shape(rel: str, cfg: dict) -> dict:
 if os.path.isfile(plugin_hooks):
     with open(plugin_hooks, encoding="utf-8") as fh:
         ph = json.load(fh)
-    a, b = hook_shape(".claude/settings.json", settings), hook_shape(".claude/hooks/hooks.json", ph)
+    a, b = (
+        hook_shape(".claude/settings.json", settings),
+        hook_shape(".claude/hooks/hooks.json", ph),
+    )
     for event in sorted(set(a) | set(b)):
         if event not in a:
             bad(f"hook wiring: '{event}' is in hooks.json but not settings.json")
@@ -595,6 +663,60 @@ if os.path.isfile(plugin_hooks):
             )
     # The nonna plugin's root is .claude/ (marketplace source "./.claude").
     check_hook_forms(".claude/hooks/hooks.json", ph)
+
+# --- the core gates are wired, in both install modes ---
+# Equivalence alone passes a gate deleted from both files. These are the gates the README promises.
+REQUIRED_GATES = {
+    ("PreToolUse", "Bash"): ("hooks/guard-branch.sh", "hooks/secret-scan.sh"),
+    ("PreToolUse", "Edit|Write|MultiEdit"): (
+        "hooks/guard-branch.sh",
+        "hooks/secret-scan.sh",
+    ),
+    ("PreToolUse", "Read|Grep"): ("hooks/secret-scan.sh",),
+    ("Stop", "*"): ("hooks/stop-dod.sh",),
+    ("SessionStart", "*"): ("hooks/session-start.sh",),
+}
+for rel, wiring in (
+    (".claude/settings.json", settings),
+    (".claude/hooks/hooks.json", ph if os.path.isfile(plugin_hooks) else {}),
+):
+    for (event, matcher), scripts in REQUIRED_GATES.items():
+        wired = set()
+        for entry in (wiring.get("hooks") or {}).get(event, []):
+            if entry.get("matcher", "*") == matcher:
+                wired |= {
+                    hook_script(rel, event, h.get("command", ""))
+                    for h in entry.get("hooks", [])
+                }
+        for script in scripts:
+            if script not in wired:
+                bad(f"{rel}: {event} '{matcher}' must run {script} (a core gate)")
+
+# --- every Read settings.json denies, the Read hook refuses too, for Read and for Grep ---
+# A plugin install cannot carry permissions.deny: the hook is all it has. Each deny glob becomes a
+# sample path, and secret-scan.sh must refuse to Read it, and to Grep it (Claude Code applies Read
+# denies to Grep).
+for rule in (settings.get("permissions") or {}).get("deny", []):
+    m = re.fullmatch(r"Read\((.+)\)", rule)
+    if not m:
+        continue
+    sample = m.group(1).replace("**", "x").replace("*", "a")
+    for tool, tool_input in (
+        ("Read", {"file_path": sample}),
+        ("Grep", {"pattern": ".", "path": sample}),
+    ):
+        payload = json.dumps({"tool_name": tool, "tool_input": tool_input})
+        rc = subprocess.run(
+            ["bash", os.path.join(ROOT, ".claude/hooks/secret-scan.sh")],
+            input=payload,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "NONNA_MODE": "full", "CLAUDE_PROJECT_DIR": ROOT},
+        ).returncode
+        if rc != 2:
+            bad(
+                f".claude/hooks/secret-scan.sh lets the agent {tool} {sample}, which settings.json denies ({rule}); a plugin install has only the hook"
+            )
 
 if offenders:
     print("Harness lint FAILED:")

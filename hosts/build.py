@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Build every agent host's rules file from one source: .claude/rules/00-core.md.
+"""Build every agent host's rules file from one source: .claude/rules/00-core.md (full mode) and
+.claude/hooks/lib/lite.md (lite mode, under hosts/lite/).
 
 The constitution is the part of Nonna that ports: it is what steered models away from pushing to
 main and writing secrets in the benchmark. The Claude-only routing section is dropped; links point
 at the installed .claude/rules/. Deterministic enforcement on every host is the git hooks.
 
-  python3 hosts/build.py           write hosts/<target path> for every host
-  python3 hosts/build.py --check   exit 1 if any generated file drifted from the source
+  python3 hosts/build.py           write hosts/<target path> and hosts/lite/<target path>
+  python3 hosts/build.py --check   exit 1 if any generated file drifted from its source
 """
 
 from __future__ import annotations
@@ -25,15 +26,28 @@ MAX_CHARS = 6000  # Windsurf's per-rule cap is the tightest documented limit
 HEADER = """# Nonna — house rules for this repository
 
 This repository runs Nonna. These are the non-negotiables. Each section links to the full rule in
-`.claude/rules/`; read it before you act in that area. Git hooks enforce the branch, secret and
-status rules on every commit and push, and `--no-verify` is not yours to use.
+`.claude/rules/`; read it before you act in that area. Git hooks refuse a commit on main, master or
+develop, a secret in a commit or a push, and a push with a red test suite or a stale
+docs/STATUS.md; `--no-verify` is not yours to use.
 """
 
+# What enforces each rule on every host is the git hooks, and they must be named exactly: the
+# pre-commit hook refuses a commit on a protected branch, but no git hook refuses the push itself.
 PORTABLE = {
-    "(`guard-branch.sh` blocks it.)": "(the git pre-commit and pre-push hooks block it.)",
+    "(`guard-branch.sh` blocks it.)": "(the git pre-commit hook refuses a commit on them.)",
     "(`secret-scan.sh` blocks it.)": "(the git pre-commit and pre-push hooks block it.)",
     "the `/fix` fast lane": "the fast lane (`.claude/skills/fix/SKILL.md`)",
 }
+
+# Lite mode: the house rules from .claude/hooks/lib/lite.md, for hosts that read a rules file.
+LITE_SRC = os.path.join(ROOT, ".claude", "hooks", "lib", "lite.md")
+LITE_OUT = os.path.join(OUT, "lite")
+LITE_HEADER = """# Nonna (lite) — house rules for this repository
+
+This repository runs Nonna in lite mode. Git hooks refuse a commit on main, master or develop, a
+secret in a commit or a push, and a push with a red test suite; `--no-verify` is not yours to use.
+"""
+LITE_CLAUDE_ONLY = " Her agents and workflows run only when the user asks for them."
 
 # host key -> (target path, frontmatter or "")
 HOSTS: dict[str, tuple[str, str]] = {
@@ -68,16 +82,43 @@ def render(frontmatter: str) -> str:
     return frontmatter + HEADER + "\n" + body()
 
 
+def lite_body() -> str:
+    with open(LITE_SRC, encoding="utf-8") as fh:
+        lines = fh.read().splitlines()
+    # lite.md's first line announces the mode; the header does that here. Agents and workflows are
+    # Claude Code's, and a lite install for another host has neither.
+    return "\n".join(lines[1:]).strip().replace(LITE_CLAUDE_ONLY, "") + "\n"
+
+
+def render_lite(frontmatter: str) -> str:
+    frontmatter = frontmatter.replace(
+        "Nonna house rules — tests first, review, never on main, no secrets",
+        "Nonna lite house rules — the whole suite before done, never on main, no secrets",
+    )
+    return frontmatter + LITE_HEADER + "\n" + lite_body()
+
+
 def main() -> int:
     check = "--check" in sys.argv[1:]
     bad = []
-    for key, (path, fm) in HOSTS.items():
-        want = render(fm)
+    targets = [
+        (os.path.join(OUT, path), f"hosts/{path}", render(fm), "00-core.md")
+        for path, fm in HOSTS.values()
+    ]
+    targets += [
+        (
+            os.path.join(LITE_OUT, path),
+            f"hosts/lite/{path}",
+            render_lite(fm),
+            "hooks/lib/lite.md",
+        )
+        for path, fm in HOSTS.values()
+    ]
+    for dest, shown, want, src in targets:
         if len(want) > MAX_CHARS:
             bad.append(
-                f"hosts/{path}: {len(want)} chars exceeds the {MAX_CHARS}-char host budget"
+                f"{shown}: {len(want)} chars exceeds the {MAX_CHARS}-char host budget"
             )
-        dest = os.path.join(OUT, path)
         if check:
             try:
                 with open(dest, encoding="utf-8") as fh:
@@ -86,7 +127,7 @@ def main() -> int:
                 have = None
             if have != want:
                 bad.append(
-                    f"hosts/{path}: out of date with .claude/rules/00-core.md — run python3 hosts/build.py"
+                    f"{shown}: out of date with .claude/{src} — run python3 hosts/build.py"
                 )
         else:
             os.makedirs(os.path.dirname(dest), exist_ok=True)

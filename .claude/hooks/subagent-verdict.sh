@@ -17,6 +17,10 @@
 # malformed — by sending the reviewer back once with the contract as its next
 # instruction. Once, not forever: see stop_hook_active below.
 set -uo pipefail
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
+. "$here/lib/core.sh"
+[ "$(cd "${CLAUDE_PROJECT_DIR:-.}" 2>/dev/null && nonna_mode)" = off ] && exit 0 # off means off
 payload="$(cat 2>/dev/null || true)"
 [ -n "$payload" ] || exit 0
 command -v jq >/dev/null 2>&1 || exit 0   # structured read required; backstopped by /review

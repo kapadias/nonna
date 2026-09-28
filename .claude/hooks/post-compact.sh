@@ -16,6 +16,10 @@ root="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 cd "$root" 2>/dev/null || exit 0
 command -v git >/dev/null 2>&1 || exit 0
 git rev-parse --git-dir >/dev/null 2>&1 || exit 0
+here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=/dev/null
+. "$here/lib/core.sh"
+[ "$(nonna_mode)" = off ] && exit 0 # off means off: nothing enforced, nothing said
 
 branch="$(git branch --show-current 2>/dev/null || echo '(detached)')"
 sha="$(git rev-parse --short HEAD 2>/dev/null || echo none)"
