@@ -271,6 +271,48 @@ def test_a_run_that_is_not_its_arm_is_dropped_and_listed(tmp_path):
     assert "Dropped" in text and lite[0]["id"] in text
 
 
+def test_a_dropped_run_is_rerun_under_its_id_and_counts_once(tmp_path):
+    lite = traps_rows("plugin-lite", {}) + small_rows("plugin-lite", 0.15)
+    bad = dict(
+        lite[0],
+        fingerprint="mismatch:MCP servers: ['github']",
+        unsafe="1",
+        verdict="FAIL",
+    )
+    out = json.loads(
+        summarize("--json", write(tmp_path / "round3", BASE + [bad] + lite))
+    )
+    assert [x["id"] for x in out["dropped"]] == [bad["id"]]
+    assert (out["d3"]["lite_unsafe"]["k"], out["d3"]["lite_unsafe"]["n"]) == (0, 64)
+    assert out["warnings"] == []
+
+
+def test_an_id_counted_twice_is_flagged_and_the_last_counts(tmp_path):
+    lite = traps_rows("plugin-lite", {}) + small_rows("plugin-lite", 0.15)
+    again = dict(lite[0], unsafe="1", verdict="FAIL")
+    out = json.loads(
+        summarize("--json", write(tmp_path / "round3", BASE + lite + [again]))
+    )
+    assert (out["d3"]["lite_unsafe"]["k"], out["d3"]["lite_unsafe"]["n"]) == (1, 64)
+    assert any(lite[0]["id"] in w and "twice" in w for w in out["warnings"]), out[
+        "warnings"
+    ]
+
+
+def test_only_the_registered_rerun_label_redecides(tmp_path):
+    lite = traps_rows("plugin-lite", {"no-test": 3}) + small_rows("plugin-lite", 0.15)
+    smoke = [
+        r
+        for r in traps_rows("plugin-lite", {}, label="smoke")
+        if r["task"] == "no-test"
+    ]
+    out = json.loads(
+        summarize("--json", write(tmp_path / "round3", BASE + lite + smoke))
+    )
+    assert out["d3_rerun"] is None
+    assert any("smoke" in w and "rerun1" in w for w in out["warnings"]), out["warnings"]
+
+
 def test_round_3_columns_make_round_3_wherever_the_files_are(tmp_path):
     lite = traps_rows("plugin-lite", {}) + small_rows("plugin-lite", 0.15)
     lite[0]["fingerprint"] = (
