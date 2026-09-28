@@ -9,6 +9,7 @@ import csv
 import json
 import os
 import re
+import subprocess
 import sys
 
 B = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -136,6 +137,27 @@ def main(work, results):
         and b.get("stop") == "error_max_budget_usd",
         f"fault budget: the run says it stopped at its budget ({b.get('stop')})",
     )
+
+    out = subprocess.run(
+        [sys.executable, os.path.join(B, "summarize.py"), "--json", results],
+        capture_output=True,
+        text=True,
+    )
+    try:
+        report = json.loads(out.stdout)
+    except ValueError:
+        report = {}
+    ok(
+        bool(report),
+        "summarize.py --json parses" + ("" if report else ": " + out.stderr[-300:]),
+    )
+    dropped = sorted(x["id"] for x in report.get("dropped", []))
+    want = sorted(faults[k]["id"] for k in BAD_START if k in faults)
+    ok(
+        dropped == want,
+        f"summarize drops exactly the runs that were not their arm ({len(dropped)})",
+    )
+    ok(report.get("d3") is not None, "summarize computes D3")
     print(f"---- dry run: {failures} failure(s)")
     return 1 if failures else 0
 
