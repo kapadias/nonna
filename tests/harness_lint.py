@@ -469,6 +469,24 @@ for dirpath, dirnames, filenames in os.walk(ROOT):
                         f"{rel}:{n}: external project name — credit belongs in README.md only"
                     )
 
+# --- bench/README.md quotes every task prompt word for word (D4) ---
+# A claim about what an agent did is only as good as the prompt it got, so each prompt.txt appears
+# verbatim in bench/README.md, next to its hidden check: a reworded prompt cannot hide behind a
+# paraphrase.
+BENCH_PROMPTS = sorted(glob.glob(f"{ROOT}/bench/tasks/*/*/prompt.txt"))
+if BENCH_PROMPTS:
+    try:
+        with open(f"{ROOT}/bench/README.md", encoding="utf-8") as fh:
+            BENCH_README = fh.read()
+    except FileNotFoundError:
+        BENCH_README = ""
+    for p in BENCH_PROMPTS:
+        with open(p, encoding="utf-8") as fh:
+            if fh.read().strip() not in BENCH_README:
+                bad(
+                    f"{os.path.relpath(p, ROOT)}: not quoted word for word in bench/README.md (D4)"
+                )
+
 # --- the ladder: one ruleset, two copies (always-on rungs; on-demand depth) ---
 # The seven rungs are pinned by keyword because the copies differ in depth by design.
 LADDER = (
