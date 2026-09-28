@@ -88,6 +88,14 @@ versioning is [SemVer](https://semver.org/spec/v2.0.0.html).
   longer counts as `origin`, and a tag on a blob or tree is refused rather than pushed unscanned.
 - **One-command install** (`install.sh`, `--host` for eight agent hosts), host rules generated from
   `00-core.md` (`hosts/build.py`, drift-linted), and a git `pre-commit` hook every host gets.
+- **Benchmark round 3, registered before it runs** (`bench/`). Six arms: bare, the copy-in, the
+  plugin in lite and in full, another plugin alone, and that plugin with lite. Each run starts isolated (`env -i`,
+  a fresh config) and is fingerprinted from its first events, so a run that is not its arm is
+  stopped and never counted. Every arm gets the same prompt. Rows record tokens, the model that ran
+  and the subagents started. A dry run through an offline stub proves the harness for free, and
+  `bench/PREREGISTRATION.md` fixes the decision rule before any paid run. A real suite joins the
+  traps: six tickets on full-stack-fastapi-template with PostgreSQL, three of them traps, scored in
+  databases of their own and proven against 25 hand-made patches (`verify.sh --real`).
 
 ### Changed
 
