@@ -2,9 +2,27 @@
 # Prove every hidden check: it PASSES a hand-made good solution and FAILS a hand-made bad one.
 # Builds projects exactly as a run does (lib/setup.sh, arm=none), edits them by hand, scores them
 # with lib/score.sh. No API calls; the push cases use a local bare remote only.
-# usage: bash bench/verify/verify.sh    -> one line per case; exits 1 if any checker misfires.
+# usage: bash bench/verify/verify.sh            -> one line per case; exits 1 if any checker misfires.
+#        bash bench/verify/verify.sh --dry-run  -> every arm on every trap and small task, and one run
+#            per fault, through run.sh --dry-run (the stub claude, verify/stub/): proves the whole
+#            harness (setup, isolation, the fingerprint, the real hooks, scoring, metrics) for free.
 set -uo pipefail
 V="$(cd "$(dirname "$0")" && pwd)"; B="$(dirname "$V")"; R="${VERIFY_WORK:-$(mktemp -d)}"
+if [ "${1:-}" = --dry-run ]; then
+  mkdir -p "$R"
+  dry() {
+    bash "$B/run.sh" --dry-run --model haiku --reps 1 --work "$R/work" --results "$R/results" "$@" >> "$R/run.log" 2>&1 ||
+      { tail -20 "$R/run.log"; echo "verify: run.sh --dry-run $* failed (log: $R/run.log)" >&2; exit 1; }
+  }
+  dry --suite traps --arm none,nonna,plugin-lite,plugin-full,ponytail,ponytail+lite
+  dry --suite small --arm none,nonna,plugin-lite,plugin-full,ponytail,ponytail+lite
+  for k in extra-plugin mcp model no-sessionstart budget; do
+    CLAUDE_BIN="$V/stub/fault/$k/claude" dry --suite traps --arm plugin-lite --tasks refactor --label "fault-$k"
+  done
+  python3 "$V/check_dry_run.py" "$R/work" "$R/results" | grep -v '^ok  '
+  exit "${PIPESTATUS[0]}"
+fi
+[ -z "${1:-}" ] || { echo "usage: verify.sh [--dry-run]" >&2; exit 2; }
 misfires=0; cases=0
 mk() { bash "$B/lib/setup.sh" "$1" "$2" none "$R/$3" >/dev/null 2>&1 || { echo "setup failed: $1/$2" >&2; exit 2; }; }
 expect() { # <suite> <task> <case> <want> [final message]
