@@ -1,7 +1,7 @@
 # Nonna CI — the harness held to its own bar. Four deterministic gates:
 # shellcheck (every script), harness-lint (the harness validates itself), the
-# gate golden tests (proof each gate blocks vs. allows), and the plugin manifests
-# as Claude Code itself reads them.
+# gate golden tests (proof each gate blocks vs. allows; run again on a stock Mac),
+# and the plugin manifests as Claude Code itself reads them.
 # Every third-party action is pinned to a full commit SHA with its tag beside it: a
 # tag can be moved after the fact, a SHA cannot. Bump the two together.
 # Adopters: add your own lint/type/test gate as another job — see stacks/.
@@ -44,6 +44,33 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Run the gate golden tests
         run: bash tests/run.sh
+
+  # The same suite on what a Mac ships: /bin/bash 3.2 and Apple's awk, sed and grep, no
+  # Homebrew. The guards parse shell in bash and awk, and those differ from Linux's in ways
+  # that only this job can see.
+  gates-macos:
+    name: gate self-tests (macOS, stock bash 3.2)
+    runs-on: macos-latest
+    # Linux takes a few minutes; this only stops a hang from running for GitHub's 6 hours.
+    timeout-minutes: 30
+    env:
+      STOCK_PATH: /usr/bin:/bin:/usr/sbin:/sbin
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      # A green run under some other bash proves nothing, so fail if the runner is not what
+      # the name says. The versions it prints are the evidence of what ran.
+      - name: Check the toolchain is a stock Mac's
+        run: |
+          env PATH="$STOCK_PATH" /bin/bash -e <<'EOF'
+          echo "bash $BASH_VERSION"
+          case "$BASH_VERSION" in 3.2.*) ;; *) echo "::error::/bin/bash is $BASH_VERSION, not 3.2"; exit 1 ;; esac
+          for t in awk sed grep python3 jq git; do
+            command -v "$t" || { echo "::error::$t is not on a stock Mac path"; exit 1; }
+          done
+          python3 --version; jq --version; git --version
+          EOF
+      - name: Run the gate golden tests
+        run: env PATH="$STOCK_PATH" /bin/bash tests/run.sh
 
   plugin-validate:
     name: plugin manifest
