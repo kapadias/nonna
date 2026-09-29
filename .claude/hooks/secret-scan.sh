@@ -184,7 +184,14 @@ else
   # on a secret. Scan the RAW payload instead — a secret's characters survive
   # JSON escaping. Fails CLOSED; may over-trigger on an edit that REMOVES a
   # secret, which is acceptable in this degraded mode (jq is the supported path).
+  # A \u0000 escape is a NUL byte in the content, as jq would write it: it reaches the scan as \001,
+  # which the scan reads both as a gap and as nothing (lib/secret-patterns.sh). Should sed fail, the
+  # raw payload is scanned as it is.
   content="$payload"
+  ctrl_a="$(printf '\001')"
+  if unescaped="$(printf '%s' "$payload" | LC_ALL=C sed "s/\\\\u0000/${ctrl_a}/g")"; then
+    content="$unescaped"
+  fi
 fi
 
 [ -n "${content//[$' \t\n']/}" ] || exit 0

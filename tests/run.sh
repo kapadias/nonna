@@ -2236,6 +2236,11 @@ printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"c.py","content":"x 
 printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"c.py","content":"x\f'"$FAKE_OAI"'"}}' | PATH="$NOJQ" "$SS" 2>/dev/null; check "secret-scan: blocks a key after a \\f escape when jq is absent" 2 "$?"
 printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"c.py","content":"x\b'"$FAKE_OAI"'"}}' | PATH="$NOJQ" "$SS" 2>/dev/null; check "secret-scan: blocks a key after a \\b escape when jq is absent" 2 "$?"
 printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"c.py","content":"x\u0000'"$FAKE_OAI"'"}}' | PATH="$NOJQ" "$SS" 2>/dev/null; check "secret-scan: blocks a key after a \\u0000 escape when jq is absent" 2 "$?"
+# ...and a key a \u0000 cuts in two, or text with one after every character (UTF-16 read as JSON): the
+# scan reads each \u0000 as a gap and as nothing, as it reads a NUL byte.
+printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"c.py","content":"x = '"${FAKE_OAI:0:20}"'\u0000'"${FAKE_OAI:20}"'"}}' | PATH="$NOJQ" "$SS" 2>/dev/null; check "secret-scan: blocks a key a \\u0000 escape cuts in two when jq is absent" 2 "$?"
+w16="$(printf '%s' "$FAKE_ANT" | sed 's/./&\\u0000/g')"
+printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"c.py","content":"'"$w16"'"}}' | PATH="$NOJQ" "$SS" 2>/dev/null; check "secret-scan: blocks text with a \\u0000 after every character when jq is absent" 2 "$?"
 rm -rf "$NOJQ"
 # Branch guard tolerates global options and blocks wide pushes.
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; "${GIT[@]}" -C "$TMP" commit -q --allow-empty -m init; "${GIT[@]}" -C "$TMP" branch -M main
