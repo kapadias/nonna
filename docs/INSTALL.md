@@ -1,24 +1,39 @@
 # Installing Nonna
 
-## Claude Code: install the plugin
+Two ways in: the Claude Code plugin, or `install.sh`, which puts the gates in the repository itself,
+for Claude Code and for other agents. Both start in lite mode.
+
+## Claude Code: the plugin
 
 ```
 /plugin marketplace add kapadias/nonna
 /plugin install nonna@nonna
 ```
 
-Claude Code asks two things when you enable it: whether Nonna may run your tests (`run_tests`, on)
-and which mode to start in (`mode`, lite). Change either later with `/plugin configure nonna@nonna`.
+Or from a terminal: `claude plugin marketplace add kapadias/nonna && claude plugin install nonna@nonna`
 
-The first session in each repository tells you, once, what Nonna did there:
+The plugin starts in lite mode: the test gate, "where's the test?", the branch and secret guards, the
+git hooks and six house rules. [Full mode](#full-mode) adds more, for teams. The plugin's two
+options, `run_tests` and `mode`, are under [Configuration](#configuration).
 
-> Nonna is on here (lite). Before the agent can say done, Nonna runs: python3 -m pytest -q. Added
-> .git/hooks/pre-push and pre-commit.
+The first session in each git repository tells you, once, what Nonna did there:
 
-Using another agent, or want the gates to travel with the repo for your whole team? Use
-[install.sh](#other-agents-or-a-whole-team-installsh).
+```text
+Nonna is on here (lite). Before the agent can say done, Nonna runs: python3 -m pytest -q. Added .git/hooks/pre-push and pre-commit. See or change it with /nonna.
+```
 
-## `/nonna`: see or change what she enforces
+When she finds no test suite, it says so:
+
+```text
+Nonna is on here (lite). She found no test command here, so the test gate is off; set one with: /nonna test '<command>'. Added .git/hooks/pre-push and pre-commit. See or change it with /nonna.
+```
+
+When a git hook could not be wired, a `Note:` says which gate is not enforced and why.
+
+Using another agent, or want the gates committed for your whole team? See
+[install.sh](#other-agents-installsh).
+
+### `/nonna`
 
 ```
 /nonna                   what she enforces here, and where each setting comes from
@@ -28,32 +43,85 @@ Using another agent, or want the gates to travel with the repo for your whole te
 /nonna uninstall         take her git hooks, settings and state back out of this repository
 ```
 
+- `/nonna` shows her version, the mode and where it comes from, then one line each for the test
+  gate (the command, where it comes from, and whether this tree already passed), the branch guard,
+  the secret guard, the STATUS gate and the two git hooks. It changes nothing.
+- `/nonna setup` records the test command detection finds, unless one is already recorded (an empty
+  one included), and wires the git hooks. Then it offers what only you can decide: Claude Code's
+  [deny-list](#optional-claude-codes-own-deny-list) in `.claude/settings.json`, and in full mode a
+  `docs/STATUS.md`. Those files change only when you say yes. While she is off, it records and
+  wires nothing.
+- `/nonna lite|full|off` sets `git config nonna.mode` in this repository. If `NONNA_MODE` is set
+  where Claude Code runs, it tells you that the variable still decides.
+- `/nonna test '<command>'` sets `git config nonna.testCmd`; `/nonna test off` sets it empty, which
+  turns the test gate off. If `NONNA_TEST_CMD` is set, it tells you that the variable still decides
+  at the end of a turn.
+- `/nonna uninstall` takes out what is hers: see [Uninstall](#uninstall).
+
 `/nonna` is yours. Claude Code runs it when you type it; the agent cannot invoke it, and the branch
 guard refuses the agent running its scripts. If another command already has the name, type
-`/nonna:nonna`, which always works. `setup` changes your own files only when you say yes: it offers
-Claude Code's deny-list for secret files, and in full mode a `docs/STATUS.md`. With Claude Code's
-`disableSkillShellExecution` setting on, `/nonna` cannot run, and the git config below still works.
+`/nonna:nonna`, which always works. With Claude Code's `disableSkillShellExecution` setting on,
+`/nonna` cannot run, and [git config](#configuration) still works.
 
-## Modes
+## What Nonna changes on your machine
 
-|                                                                                               | lite (default)                                              | full                                                           |
-| --------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | -------------------------------------------------------------- |
-| Test gate: the whole suite before a turn that changed code can end, and before a push         | ✓                                                           | ✓                                                              |
-| "Where's the test?": code changed and no test did, asked once per set of changes              | ✓                                                           | ✓                                                              |
-| Branch guard: no commit or push on `main`/`master`/`develop`, no force push, no `--no-verify` | ✓                                                           | ✓                                                              |
-| Secret guard: writes, reads and searches of secret files, commits, pushes                     | ✓                                                           | ✓                                                              |
-| What rides into the session                                                                   | six house rules ([`lite.md`](../.claude/hooks/lib/lite.md)) | the constitution ([`00-core.md`](../.claude/rules/00-core.md)) |
-| `docs/STATUS.md` must change with the code (and stay), at turn end and pre-push               |                                                             | ✓, if the file exists                                          |
+In each git repository where a session starts:
 
-`off` enforces nothing and says nothing, git hooks included, with one exception: her settings.
-While she is off, the agent still may not change them (her git config, config that routes git
-around her hooks, the git hooks, the variables her gates read) or run `/nonna`'s scripts, so she
-comes back on, and with the test command you chose, only when you say so. Nonna's agents and
-workflows (`/plan`, `/tdd`, `/review`, `/ship`…) are there in both modes; lite tells the agent to
-run them only when you ask.
+- **`.git/hooks/pre-push` and `.git/hooks/pre-commit`**: links to her scripts, added only where the
+  hook does not exist yet. Under the plugin they lead through the plugin's data directory
+  (`~/.claude/plugins/data/…/current`), which each session points at the running version, so the
+  hooks survive plugin updates; a copy-in install links to the repository's own `.claude/hooks/`.
+  They run her own scripts, never ones a repository ships: git refuses to let a clone install hooks,
+  and so does she. An existing hook is never overwritten and a hook manager's directory
+  (`core.hooksPath`) is never written: both are reported, and so is a hook of hers that points at
+  nothing.
+- **`.git/config`**: `nonna.testCmd` (the [test command](#the-test-command)), `nonna.defaultMode`
+  (the plugin's `mode` option, mirrored for the git hooks, which cannot read it; or the mode
+  `install.sh` installed) and `nonna.announced` (the first-session notice was shown). `nonna.mode`
+  only when you set it.
+- **`.git/nonna/`**: where each session began, so work committed during a session cannot dodge the
+  test gate, and which changes were already asked for a test. Files older than a week are deleted.
+- **`.git/nonna-green`**: the last tree and test command the suite passed on.
+- **`.git/.nonna-branch-warned-<branch>`**: an empty file, so the warning about editing on `main`,
+  `master` or `develop` shows once.
 
-Switch with `/nonna lite|full|off`, or with git config, which your repository never commits and a
-clone never carries:
+Outside your repositories, the plugin keeps one link, `current`, in its data directory. Nothing is
+committed, and her hooks make no network calls.
+
+`/nonna uninstall` takes all of it back out of a repository. By hand:
+
+```bash
+ls -l .git/hooks/pre-push .git/hooks/pre-commit     # remove them only if they point at Nonna
+rm .git/hooks/pre-push .git/hooks/pre-commit
+git config --remove-section nonna
+rm -rf .git/nonna .git/nonna-green .git/.nonna-branch-warned-*
+```
+
+## Configuration
+
+`/nonna` shows which setting decides, and where it comes from.
+
+| Setting                | Where                                     | What it does                                                                                                                                              |
+| ---------------------- | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `nonna.mode`           | git config, the repository or `--global`  | `off`, `lite` or `full`. Yours alone: Nonna never writes it, and `/nonna lite\|full\|off` sets it for you.                                                |
+| `nonna.testCmd`        | git config, the repository or `--global`  | The [test command](#the-test-command). Empty turns the test gate off.                                                                                     |
+| `NONNA_MODE`           | the environment Claude Code runs in       | Outranks `nonna.mode` in Claude Code's hooks. The git hooks ignore it.                                                                                    |
+| `NONNA_TEST_CMD`       | the environment Claude Code runs in       | Outranks `nonna.testCmd` at the end of a turn; empty turns that gate off. The `pre-push` hook ignores it.                                                 |
+| `NONNA_TEST_TIMEOUT`   | the environment of Claude Code, or of git | Seconds the suite may run. Unset: 240 at the end of a turn, 600 before a push.                                                                            |
+| `NONNA_CRITICAL_PATHS` | the environment Claude Code runs in       | Colon-separated globs of paths to treat as critical: `/fix` sends a change there to the full loop, and `/review` gives it the full review with security.  |
+| `NONNA_LADDER`         | the environment Claude Code runs in       | Full mode under the plugin: `off` leaves the constitution's decision ladder out, `on` keeps it even when another plugin states it.                        |
+| `run_tests`            | plugin option                             | On (the default): while a repository has no `nonna.testCmd`, each session detects one and records it. Off: nothing is recorded.                           |
+| `mode`                 | plugin option                             | `lite` (the default) or `full`: the mode wherever you set no `nonna.mode`. Each session mirrors it into `nonna.defaultMode`, where the git hooks read it. |
+
+Change the plugin's options with `/plugin configure nonna@nonna`, or set them as you install from a
+terminal: `claude plugin install nonna@nonna --config mode=full`.
+
+Claude Code's hooks take the mode from, in order: `NONNA_MODE`, your `nonna.mode` (the repository's,
+then the global one), the plugin's `mode` option, `nonna.defaultMode`, and last what the repository
+carries (her hooks and her rules: full; otherwise lite). A value nobody meant, such as a typo, fails
+closed to full. The git hooks take the same order without `NONNA_MODE` and the plugin option: they
+read their mode and test command from git config alone, never from the environment, a `git -c` flag
+or a file the config includes, so a command cannot switch them off for itself.
 
 ```bash
 git config nonna.mode full            # this repository (lite, full or off)
@@ -61,112 +129,187 @@ git config --global nonna.mode off    # every repository without its own setting
 NONNA_MODE=off claude                 # one session's Claude Code hooks
 ```
 
-The `mode` option is the default for repositories where you have set nothing. The git hooks read
-git config alone, never the environment, a `git -c` flag or a file the config includes: a command
-cannot switch them off for itself.
+`off` enforces nothing and says nothing, git hooks included, with one exception: her settings
+([below](#these-switches-are-yours)).
 
-These switches are yours. The branch guard refuses an agent that tries to change Nonna's settings,
-run `/nonna`'s scripts, edit `.git/config` or the git hooks, force a push, or skip the hooks, and it reads each command the
-way the shell will run it, quotes, brace lists and globs and all. It is still a speed bump, not a
-sandbox: an agent that writes a script and runs it, runs git under another name, or computes a flag
-when the command runs, is past it. The wall is on the server: protect `main` with a branch
+### The test command
+
+The Stop hook runs it before a turn that changed code can end, and the git `pre-push` hook before a
+push that changes code. It comes from, in order: `NONNA_TEST_CMD` (Claude Code's hooks only), then
+`git config nonna.testCmd` (the repository's, then the global one). A copy-in install with neither
+detects the command each time instead.
+
+Under the plugin, while a repository has no `nonna.testCmd`, each session start detects one and
+records it, if `run_tests` is on: `python3 -m pytest -q` (pytest installed, and a `pytest.ini`,
+`tox.ini` or `conftest.py`, or test files such as `tests/test_*.py`), `npm test --silent` (a `test`
+script in `package.json`), `go test ./...` or `cargo test --quiet`. Once one is recorded, Nonna never
+changes it, not even an empty one; turning `run_tests` off later does not remove it. That is the
+consent: under the plugin, Nonna runs your tests only when `run_tests` allowed it or you set the
+command yourself, and a repository cannot set it for you, because `.git/config` is never cloned. No
+suite found means no gate, and the first-session notice says so.
+
+On red, the Stop hook sends the agent back once with the failing lines: it fixes them, or it tells
+you plainly that it is not done. What the suite prints is shown to the agent quoted, as the
+repository's words, never as Nonna's: a test cannot hand the agent instructions in her voice. A
+green run is remembered by tree and command, so an unchanged tree is not tested twice at the end of
+a turn. "Where's the test?" asks once for a set of changes; an answer that the change needs none
+holds until more code changes.
+
+At the end of a turn the suite has 240 seconds, and one that runs out of time is not called red
+there; Claude Code stops the Stop hook at 300 seconds, whatever `NONNA_TEST_TIMEOUT` says. Before a
+push it has 600 seconds, and a suite that runs out of time there is refused.
+
+The `pre-push` test gate tastes what you push. It runs in the working tree, so it refuses a push
+while the tree differs from `HEAD`, untracked files included. A pushed branch that is not checked
+out gets a warning that its tests did not run; tags and deletes run nothing.
+
+### These switches are yours
+
+The branch guard refuses an agent that tries to change Nonna's settings (her git config, config
+that routes git around her hooks, the git hooks, the variables her gates read) or run `/nonna`'s
+scripts, even while she is off, so she comes back on, with the test command you chose, only when you
+say so. While she is on, it also refuses a force push and skipping the hooks. It reads each command
+the way the shell will run it, quotes, brace lists and globs and all. It is still a speed bump, not
+a sandbox: an agent that writes a script and runs it, runs git under another name, or computes a
+flag when the command runs, is past it. The wall is on the server: protect `main` with a branch
 protection rule.
 
-## The test gate
+## Full mode
 
-When a turn changed code, the Stop hook runs the whole suite. On red it sends the agent back with the
-failing lines, once: it fixes them, or it tells you plainly that it is not done. The git `pre-push`
-hook runs the suite again, for the agent and for you.
-A green tree is remembered, so an idle turn end costs nothing. A suite slower than the Stop budget
-(240 s, `NONNA_TEST_TIMEOUT`) is not called red there; pre-push still runs it in full.
+|                                                                                               | lite (default)                                              | full                                                                                                                 |
+| --------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------- |
+| Test gate: the whole suite before a turn that changed code can end, and before a push         | ✓                                                           | ✓                                                                                                                    |
+| "Where's the test?": code changed and no test did, asked once per set of changes              | ✓                                                           | ✓                                                                                                                    |
+| Branch guard: no commit or push on `main`/`master`/`develop`, no force push, no `--no-verify` | ✓                                                           | ✓                                                                                                                    |
+| Secret guard: writes, reads and searches of secret files, commits, pushes                     | ✓                                                           | ✓                                                                                                                    |
+| The rules the agent gets                                                                      | six house rules ([`lite.md`](../.claude/hooks/lib/lite.md)) | the constitution ([`00-core.md`](../.claude/rules/00-core.md)); in a copy-in install, all nine rules and `CLAUDE.md` |
+| `docs/STATUS.md` must change with the code (and stay), at turn end and pre-push               |                                                             | ✓, where the file exists                                                                                             |
+| Her agents and workflows (`/plan`, `/tdd`, `/review`, `/ship`…)                               | under the plugin                                            | ✓                                                                                                                    |
 
-The command comes from, in order: `NONNA_TEST_CMD` (empty turns the gate off; Claude Code's hooks
-only), then `git config nonna.testCmd` (empty turns it off). A plugin install fills in the second one for you:
-the first session in a repository, when `run_tests` is on, detects `pytest`, `npm test`, `go test`
-or `cargo test` and records it. That is the consent: nothing runs your repository's code unless
-`run_tests` allowed it or you set the command yourself, and a repository cannot choose the command,
-because `.git/config` is never cloned.
+Full mode adds process, not safety. In round 3 of the benchmark it was no safer than lite: 0 of 64
+trap runs cut a corner, against lite's 1 of 64, and a small change cost $0.096 on Claude Sonnet
+against lite's $0.071 ([results](../bench/README.md)). Treat its extras as extras for teams.
 
-Change it with `/nonna test 'make test'` (`/nonna test off` turns the gate off), or with git config:
+Switch one repository with `/nonna full`, every repository without its own setting with
+`git config --global nonna.mode full`, or set the plugin's `mode` option to full. A copy-in install
+needs full's files: run `install.sh --mode full`, since `/nonna full` changes the mode and brings no
+files.
 
-```bash
-git config nonna.testCmd 'make test'   # your own command
-git config nonna.testCmd ""            # the test gate off, in this repository
-```
+Try `/plan`, `/tdd`, `/review` and `/ship`, or `/fix` for a trivial change (`check-trivial.sh`
+decides what qualifies, not prose); under the plugin they are `/nonna:plan` and so on. Lite tells
+the agent to run them only when you ask. `/test` runs your lint, type-check, test and coverage gate;
+each pack under [`stacks/`](../stacks/README.md) lists its stack's commands.
 
-`run_tests` only decides what happens the first time Nonna meets a repository. After that, the
-repository's `nonna.testCmd` decides; Nonna never overwrites it, not even an empty one. No suite
-found means no gate, and the first-session notice says so.
-
-The pre-push test gate tastes what you push. It runs in the working tree, so it refuses a push while
-the tree differs from `HEAD`, untracked files included. A pushed branch that is not checked out gets
-a warning that its tests did not run; tags and deletes run nothing.
-
-What the suite prints is shown to the agent quoted, as the repository's words, never as Nonna's:
-a test cannot hand the agent instructions in her voice. "Where's the test?" asks once for a set of
-changes; an answer that the change needs none holds until more code changes.
-
-## What Nonna changes on your machine
-
-In each repository where a session runs, and nowhere else:
-
-- **`.git/hooks/pre-push` and `.git/hooks/pre-commit`**, links to Nonna's scripts through the
-  plugin's data directory (`~/.claude/plugins/data/…/current`), which each session points at the
-  running version, so the hooks survive plugin updates. They are Nonna's own scripts, never scripts
-  a repository ships: git refuses to let a clone install hooks, and so does she. An existing hook is
-  never overwritten and a hook manager's directory (`core.hooksPath`) is never written: both are
-  reported, and so is a hook that points at nothing.
-- **`.git/config`**: `nonna.testCmd` (above), `nonna.defaultMode` (the `mode` option, which git
-  hooks cannot read, mirrored for them; your own `nonna.mode` always outranks it) and
-  `nonna.announced` (the notice was shown).
-- **`.git/nonna/`**: where each session began, so work committed during a session cannot dodge the
-  test gate, and which changes were already asked for a test. Pruned after a week.
-  **`.git/nonna-green`**: the last tree the suite passed on.
-
-Nothing is committed, nothing is written outside `.git/`, and Nonna's hooks make no network calls.
-
-To take it all back out of a repository, then remove the plugin: `/nonna uninstall` removes only
-what is hers, in every worktree, and names each thing with its value. By hand:
-
-```bash
-ls -l .git/hooks/pre-push .git/hooks/pre-commit     # remove them only if they point at Nonna
-rm .git/hooks/pre-push .git/hooks/pre-commit
-git config --remove-section nonna
-rm -rf .git/nonna .git/nonna-green
-```
-
-```
-/plugin uninstall nonna@nonna
-```
-
-Clean the repositories first: once the plugin is gone its git hooks point at nothing, and git skips a
-hook it cannot find without a word.
-
-## Full mode on a plugin: only the constitution rides along
+### Under the plugin, only the constitution rides along
 
 Claude Code's plugin schema has **no `rules` component**, and the root `CLAUDE.md` lives outside the
-plugin root. In full mode `rules/00-core.md` (the three principles, the loop, the ladder, the
-never-list) rides `SessionStart` into the session and `SubagentStart` into every subagent; in lite,
-the house rules ride the same way. The other eight `.claude/rules/*.md` files and `CLAUDE.md` do
-**not** load, even though they sit inside the published plugin directory. If you want all of full
-mode's policy, copy it in alongside the plugin:
+plugin root. So in full mode, `rules/00-core.md` (the three principles, the loop, the ladder, the
+never-list) rides `SessionStart` into the session and `SubagentStart` into every subagent, with a
+line that tells the agent where the other rules are. The other eight `.claude/rules/*.md` files and
+`CLAUDE.md` do **not** load, even though they sit inside the published plugin directory. Lite is
+not affected: its six house rules ride the same way, whole. If you want all of full mode's policy,
+copy it in alongside the plugin:
 
 ```bash
 git clone --depth 1 https://github.com/kapadias/nonna /tmp/nonna
 mkdir -p .claude/rules && cp -r /tmp/nonna/.claude/rules/. .claude/rules/
-cp /tmp/nonna/CLAUDE.md CLAUDE.md
+[ -e CLAUDE.md ] || cp /tmp/nonna/CLAUDE.md CLAUDE.md
 ```
 
-If another plugin already gives the agent a "reuse before you write" ladder, full mode leaves its
-own copy out rather than say it twice. `NONNA_LADDER=on` or `off` decides it yourself.
+The last line keeps a `CLAUDE.md` you already have. Once the rules are in the repository, Claude
+Code loads them in every session and Nonna stops carrying her own, in lite mode too.
+
+If another plugin already gives the agent the same "reuse before you write" ladder, full mode leaves
+its own copy out rather than say it twice. `NONNA_LADDER=on` or `off` decides it yourself.
+
+## Other agents: install.sh
+
+One command, from the root of a git repository:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/kapadias/nonna/main/install.sh | bash
+```
+
+For another agent, add `-s -- --host <name>` (several at once: `--host cursor,agents`):
+
+| Agent                                                                     | `--host`           | Rules file                                                                     |
+| ------------------------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------------ |
+| Claude Code                                                               | `claude` (default) | lite: none, the `SessionStart` hook carries the house rules; full: `CLAUDE.md` |
+| Codex, Zed, Amp, opencode, Roo Code, Jules, Junie, any `AGENTS.md` reader | `agents`           | `AGENTS.md`                                                                    |
+| Cursor                                                                    | `cursor`           | `.cursor/rules/nonna.mdc`                                                      |
+| GitHub Copilot                                                            | `copilot`          | `.github/copilot-instructions.md`                                              |
+| Gemini CLI                                                                | `gemini`           | `GEMINI.md`                                                                    |
+| Windsurf                                                                  | `windsurf`         | `.windsurf/rules/nonna.md`                                                     |
+| Cline                                                                     | `cline`            | `.clinerules/nonna.md`                                                         |
+| Kiro                                                                      | `kiro`             | `.kiro/steering/nonna.md`                                                      |
+| All of them                                                               | `all`              | all of the above                                                               |
+
+`install.sh` installs **lite** unless you say otherwise: her hooks and their `settings.json` wiring,
+the git `pre-commit` and `pre-push` hooks, `/nonna`, and short house rules for each host that reads
+a rules file. It writes no rules, agents or workflows, no `CLAUDE.md` and no `docs/STATUS.md`, and it
+records `git config nonna.defaultMode lite`.
+
+`--mode full` brings the whole harness: the nine rules, the eight agents, the fifteen workflows and
+twelve playbooks, `CLAUDE.md` for Claude Code, the constitution in each other host's rules file, and
+a blank `docs/STATUS.md`. It records `nonna.defaultMode full`.
+
+In both modes, when it finds `pyproject.toml`, `setup.cfg` or `setup.py`, `package.json`, `go.mod`
+or `Cargo.toml`, it also writes that stack's `.claude/settings.local.json` from
+[`stacks/`](../stacks/README.md): Claude Code permissions that let the stack's tools run without
+asking (for Python: `ruff`, `mypy`, `pyright`, `pytest`, `python`, `uv` and `pip`). Where several
+match, the last in that list wins.
+
+Every host gets the git hooks. `pre-commit` refuses a commit on `main`, `master` or `develop`, a
+staged secret file and a staged credential; `pre-push` refuses a secret in any pushed commit, a red
+test suite, and in full mode a code push that leaves `docs/STATUS.md` untouched. A repository born on
+`main` makes its very first commit with `git commit --no-verify`, then branches. Claude Code also
+gets the tool-level hooks: a write is scanned before it lands, a turn that ends on a red suite is
+sent back, and the guards check every command, file write and file read. On other hosts the house
+rules and the git hooks do the work. In round 3 of the benchmark, run in Claude Code, the house rules did most
+of it: in lite, the test gate and the branch guard never had to fire.
+
+Running it again without `--mode` never changes the mode: it keeps the mode recorded in
+`nonna.defaultMode`. With no record, a repository that carries both
+`.claude/hooks/require-status-sync.sh` and `.claude/rules/00-core.md`, as every install by the old
+installer does, stays full, and the output says `kept as this repository has it`. `--mode lite` or
+`--mode full` changes it. No file is deleted or overwritten either way, so an existing full install
+needs nothing done. Your own `nonna.mode`, in the repository or `--global`, still outranks the
+recorded mode; the installer neither reads nor writes it.
+
+It never overwrites a file or a git hook that already exists, and never writes through a symlink. It
+merges into an existing `.claude/` file by file and lists what it left alone, so running it again
+adds what is missing and leaves every file already there as it is. Where you already have a git
+hook, it tells you to chain hers from it; where a hook manager owns the hooks (a custom
+`core.hooksPath`), it tells you which scripts to point it at. It exits non-zero when a gate could not
+be put in place: a symlink in the way, a file it could not write, or a `.claude/settings.json` of
+yours that does not run her hooks. Pin a release with `curl … | NONNA_REF=<tag> bash`. Prefer to
+read before you pipe? `curl -fsSLO …/install.sh`, read it, then `bash install.sh`.
+
+## Copy-in install, for teams
+
+`install.sh` puts the gates in the repository itself. Commit what it adds, and everyone who clones
+the repository gets them, plugin or not.
+
+- **What to commit**: `.claude/`, the host rules files, and in full mode `CLAUDE.md` and
+  `docs/STATUS.md`. `.claude/settings.local.json` is for local overrides; Nonna's own `.gitignore`
+  keeps it out of git.
+- **Each clone wires its own git hooks**, because git never copies hooks. Claude Code wires them
+  when a session starts in the clone. With another agent, run `install.sh` once in the clone: it adds
+  nothing that is already there, links the hooks and records the mode.
+- **The mode travels with the files.** A clone has no `.git/config` record of its own, so it goes by
+  what the repository carries: the hooks and the rules run full, the hooks alone run lite.
+  `--mode lite` over a full install changes only the clone where you run it.
+- **The test command is detected each time** instead of recorded, unless you set `nonna.testCmd`.
+- **`/nonna` comes with both modes**; the agents and the other workflows come with `--mode full`.
 
 ## Optional: Claude Code's own deny-list
 
-A plugin cannot bring `settings.json` permissions into your project. Nonna's hooks cover what they
-were for (the branch guard refuses force pushes; the secret guard refuses reads and searches of
-secret files, by any name that leads to one),
-so this is belt and braces: Claude Code itself refuses too. Copy the block, kept in sync with
-[`.claude/settings.json`](../.claude/settings.json), into your project's `.claude/settings.json`:
+A plugin cannot bring `settings.json` permissions into your project, and Nonna does not need it to:
+the branch guard refuses force pushes, and the secret guard refuses reads and searches of secret
+files, by any name that leads to one. The deny-list is belt and braces: Claude Code itself refuses
+too. `/nonna setup` offers to add it to your `.claude/settings.json`, and a copy-in install brings it
+in the `settings.json` it copies, unless you already had one. The block, kept in sync with
+[`.claude/settings.json`](../.claude/settings.json):
 
 ```json
 {
@@ -195,64 +338,38 @@ so this is belt and braces: Claude Code itself refuses too. Copy the block, kept
 }
 ```
 
-## Other agents, or a whole team: install.sh
+## Uninstall
 
-One command, from the root of a git repository. It copies the gates into the repository itself, so
-everyone who clones it gets them, plugin or not:
+### The plugin
 
-```bash
-curl -fsSL https://raw.githubusercontent.com/kapadias/nonna/main/install.sh | bash
+In each repository where it ran, then once for the plugin:
+
+```
+/nonna uninstall
+/plugin uninstall nonna@nonna
 ```
 
-`--mode lite` brings the gates and nothing else: the hooks, their `settings.json` wiring and the git
-hooks, with the house rules for hosts that read a rules file. `--mode full`, today's default, brings
-the whole harness: the rules, agents, workflows and a blank `docs/STATUS.md`. The mode is recorded
-as the repository's `nonna.defaultMode`; a copy-in install detects the test command each time
-instead of recording it. A clone has no `.git/config` of its own to carry that record, so it goes
-by what the repository carries: the hooks and the rules run full, the hooks alone run lite.
+`/nonna uninstall` removes only what is hers, in every worktree, and names each thing with its
+value: her git hook links, the repository's `nonna.*` settings, `.git/nonna/`, `.git/nonna-green`
+and the branch-warning files. A git hook of yours is left alone and named, and so is one of yours
+that still runs hers. It tells you when your global git config still has `nonna.*` settings;
+`git config --global --remove-section nonna` removes them. The
+[commands by hand](#what-nonna-changes-on-your-machine) do the same for the main checkout.
 
-For another agent, name it (several at once: `--host cursor,agents`):
+Clean the repositories first: once the plugin is gone its git hooks point at nothing, and git skips
+a hook it cannot find without a word. Until then, a new session in a repository sets her up again;
+to keep the plugin but not in one repository, use `/nonna off`.
 
-| Host                                                                      | Command                           | Rules file written                |
-| ------------------------------------------------------------------------- | --------------------------------- | --------------------------------- |
-| Claude Code                                                               | `… \| bash`                       | `CLAUDE.md` + `.claude/`          |
-| Codex, Zed, Amp, opencode, Roo Code, Jules, Junie, any `AGENTS.md` reader | `… \| bash -s -- --host agents`   | `AGENTS.md`                       |
-| Cursor                                                                    | `… \| bash -s -- --host cursor`   | `.cursor/rules/nonna.mdc`         |
-| GitHub Copilot                                                            | `… \| bash -s -- --host copilot`  | `.github/copilot-instructions.md` |
-| Gemini CLI                                                                | `… \| bash -s -- --host gemini`   | `GEMINI.md`                       |
-| Windsurf                                                                  | `… \| bash -s -- --host windsurf` | `.windsurf/rules/nonna.md`        |
-| Cline                                                                     | `… \| bash -s -- --host cline`    | `.clinerules/nonna.md`            |
-| Kiro                                                                      | `… \| bash -s -- --host kiro`     | `.kiro/steering/nonna.md`         |
-| All of them                                                               | `… \| bash -s -- --host all`      | all of the above                  |
+### A copy-in install
 
-Every host gets the same thing:
+Her files are part of the repository, so taking them out is a commit, and yours to make:
 
-- **The house rules**, generated by `hosts/build.py` from `.claude/rules/00-core.md` (full) or
-  `.claude/hooks/lib/lite.md` (lite). Full also brings the whole `.claude/rules/` for depth.
-- **Git hooks that enforce them for any agent**: `pre-commit` refuses a commit on `main`, `master` or
-  `develop`, a staged secret file, and a staged credential; `pre-push` refuses any secret and a red
-  test suite, and in full mode a code push that leaves `docs/STATUS.md` stale. A repo born on `main`
-  makes its very first commit with `git commit --no-verify`, then branches.
-- In full mode, **a blank `docs/STATUS.md`** and, if it finds `pyproject.toml`, `package.json`,
-  `go.mod` or `Cargo.toml`, that stack's test-gate permissions.
-
-It never overwrites a file or a git hook that already exists, and never writes through a symlink; it
-merges into an existing `.claude/` file by file and lists what it left alone. If a gate could not be
-installed it says so and exits non-zero. If you use a hook manager (a custom `core.hooksPath`), it
-tells you which scripts to point it at. Pin a release with `curl … | NONNA_REF=<tag> bash`. Prefer to
-read before you pipe? `curl -fsSLO …/install.sh`, read it, then `bash install.sh`.
-
-Claude Code gets more than the other hosts: the tool-level hooks (a write is scanned before it
-lands, a turn cannot end on a red suite, a reviewer's verdict is machine-checked), the agents, and
-the fifteen workflows. On other hosts the rules and the git hooks do the work; the benchmark showed
-the rules are what kept agents off `main` and away from secrets.
-
-## After installing
-
-1. Full mode: pick your language pack under [`stacks/`](../stacks/README.md), copy its
-   `settings.local.json` and adapt `/test`'s commands to your stack.
-2. Try `/plan`, `/tdd`, `/review`, `/ship`, or `/fix` for a trivial change (the fast lane's
-   eligibility is decided by `check-trivial.sh`, not by prose).
+1. Delete the files `install.sh` added, not ones you had before, and commit: in lite,
+   `.claude/hooks/`, `.claude/settings.json`, `.claude/skills/nonna/` and `.claude/.claude-plugin/`;
+   in full, her whole `.claude/`, `CLAUDE.md` and `docs/STATUS.md`; the host rules files; and
+   `.claude/settings.local.json` if it wrote one.
+2. In each clone, remove the git side with the
+   [commands by hand](#what-nonna-changes-on-your-machine).
 
 Why the plugin and a copy-in install differ: [ADR 0006](adr/0006-distribute-as-plugin.md),
 [ADR 0007](adr/0007-plugin-install-is-not-equivalent.md) and

@@ -1,32 +1,63 @@
 # How Nonna's kitchen works
 
-The detail behind the [README](../README.md): the token economy, the layers, the crew, the gates,
-and the repository layout. The harness itself is indexed in [`.claude/README.md`](../.claude/README.md).
+The detail behind the [README](../README.md): the modes, the token economy, the layers, the crew,
+the gates, and the repository layout. The harness itself is indexed in
+[`.claude/README.md`](../.claude/README.md).
+
+## Modes
+
+One switch per repository: `/nonna off`, `/nonna lite` or `/nonna full`, or `git config nonna.mode`
+([configuration](INSTALL.md#configuration)).
+
+| Mode             | What it carries                                                                                                                                                                                                                          |
+| ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `off`            | Nothing. No gate runs and nothing is said, git hooks included. The branch guard still refuses an agent that changes her settings.                                                                                                        |
+| `lite` (default) | The test gate and "where's the test?" before a turn can end, the branch and secret guards, the git `pre-commit` and `pre-push` hooks, and six house rules ([`lite.md`](../.claude/hooks/lib/lite.md)) in the session and every subagent. |
+| `full`           | Lite's gates, plus the `docs/STATUS.md` gate where the file exists, and the constitution in place of the house rules: [`00-core.md`](../.claude/rules/00-core.md) under the plugin, all nine rules and `CLAUDE.md` in a copy-in install. |
+
+Under the plugin, her agents and workflows are there in both modes, and lite tells the agent to run
+them only when you ask; a copy-in install brings them with full mode only. In round 3 of the
+benchmark, full mode was no safer than lite (0 of 64 trap runs cut a corner, against lite's 1 of 64),
+so its extras are for teams, not for safety ([results](../bench/README.md)).
 
 ## The token economy
 
 Most "AI dev setups" fail the same way: they stuff every instruction into one always-on file. Every
 token in that file is re-read on **every** turn, the window fills, and the agent gets duller as the
-task gets longer. Nonna is built the other way — **progressive disclosure**:
+task gets longer. Nonna is built the other way, with **progressive disclosure**: a small always-on
+surface, and everything else loaded on demand.
 
-|                 | Always-on (paid every turn)                                                                                                                             | On-demand (paid only when needed)                                         |
-| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------- |
-| **What**        | `CLAUDE.md` + 9 rules, plus the name+description of each skill, agent and workflow                                                                      | 12 skill playbooks + 15 pipeline workflows + 8 agents — bodies only       |
-| **Footprint**   | **~7.1k tokens** — 3,681 words of prose (3,700-word budget) + 5,570 chars of descriptions (5,600-char budget), both enforced by `tests/harness_lint.py` | the bulk of Nonna — loaded only when relevant                             |
-| **When loaded** | Every request                                                                                                                                           | Only when a trigger matches, a workflow runs, or a subagent is dispatched |
+| Always-on (paid every turn)                                                                                                                       | Size                         | Budget, enforced by `tests/harness_lint.py` |
+| ------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- | ------------------------------------------- |
+| **Lite**: the six house rules ([`lite.md`](../.claude/hooks/lib/lite.md)), carried in by `SessionStart` and into each subagent by `SubagentStart` | 139 words                    | 150 words                                   |
+| **Full, copy-in**: `CLAUDE.md` + the 9 rules, which Claude Code loads itself                                                                      | 3,681 words                  | 3,700 words                                 |
+| **Full, plugin**: the constitution ([`00-core.md`](../.claude/rules/00-core.md)) alone, carried in the same way as lite's rules                   | 520 words (3,440 characters) | 520 words; 9,000 characters                 |
+| **Descriptions**: the name and description of each skill and agent the model can call; under the plugin in both modes, and in a full copy-in      | 4,684 characters             | 5,600 characters                            |
 
-The six side-effecting workflows (`/ship`, `/release`, `/rollback`, `/adr`, `/sync`, `/intake`) carry
-`disable-model-invocation: true`, so they cost **zero** always-on tokens — and Claude cannot invoke
-them at all. Only you can.
+Each session also starts with a short note on which gates are live and what the test gate runs. So
+lite's always-on surface is the house rules and that note, plus the descriptions under the plugin; a
+lite copy-in has no agents and no workflow the model can call. Words are counted as the lint counts
+them, split on whitespace. `claude plugin details nonna@nonna` (Claude Code 2.1.284, a fresh config
+and this repository as a local marketplace) puts the plugin's descriptions at about 2,300 tokens; it
+also counts the seven user-only workflows, and it counts hooks as free, so the rules `SessionStart`
+carries come on top.
+
+On demand, paid only when needed: the bodies of 12 skill playbooks, 16 workflows and 8 agents, loaded
+when a trigger matches, a workflow runs, or a subagent is dispatched.
+
+The seven side-effecting workflows (`/ship`, `/release`, `/rollback`, `/adr`, `/sync`, `/intake`,
+`/nonna`) carry `disable-model-invocation: true`: Claude cannot invoke them at all, and the lint does
+not count their descriptions, since the model is never offered them. Only you can run them.
 
 ## What's inside
 
-| Layer                  | Loaded          | Purpose                                                                                       |
-| ---------------------- | --------------- | --------------------------------------------------------------------------------------------- |
-| `CLAUDE.md` + `rules/` | **Always**      | The dense, short policy the agent obeys every turn.                                           |
-| `skills/`              | **On demand**   | Playbooks that cost nothing until triggered, plus the `/name` pipeline workflows.             |
-| `agents/`              | **On delegate** | Specialists that spend _their own_ context and return conclusions.                            |
-| `hooks/`               | **On event**    | Deterministic enforcement on edit, Bash, turn end, subagent start/stop, compaction, and push. |
+| Layer                  | Loaded                        | Purpose                                                                                                                       |
+| ---------------------- | ----------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `CLAUDE.md` + `rules/` | **Always**, in a full copy-in | The dense, short policy the agent obeys every turn. Under the plugin, full mode carries `00-core.md` alone.                   |
+| `hooks/lib/lite.md`    | **Always**, in lite           | Six house rules, carried in by the hooks.                                                                                     |
+| `skills/`              | **On demand**                 | Playbooks that cost nothing until triggered, plus the `/name` pipeline workflows.                                             |
+| `agents/`              | **On delegate**               | Specialists that spend _their own_ context and return conclusions.                                                            |
+| `hooks/`               | **On event**                  | Deterministic enforcement on session start, edit, read, Bash, turn end, subagent start and stop, compaction, commit and push. |
 
 ## The crew
 
@@ -35,23 +66,25 @@ Eight specialist agents, each model-tiered so you never burn a frontier model on
 | Agent               | Model  | Role                                                                                                                                           |
 | ------------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------- |
 | `orchestrator`      | Opus   | Router. Decomposes a request and sequences the loop. Read-only; it plans and delegates.                                                        |
-| `planner`           | Opus   | Read-only. Turns a request into a written plan — risks, decomposition, a gate per step.                                                        |
+| `planner`           | Opus   | Read-only. Turns a request into a written plan: risks, decomposition, a gate per step.                                                         |
 | `implementer`       | Sonnet | Builds features to make failing tests pass. The bulk of engineering.                                                                           |
 | `test-engineer`     | Sonnet | Writes the failing tests that pin behavior, plus golden and property tests.                                                                    |
 | `code-reviewer`     | Opus   | Independent, read-only correctness review; emits a machine-checkable JSON verdict. On a light-lane diff `/review` and `/fix` run it on Sonnet. |
-| `security-reviewer` | Opus   | Read-only security review — injection, secrets, authz, supply chain.                                                                           |
+| `security-reviewer` | Opus   | Read-only security review: injection, secrets, authz, supply chain.                                                                            |
 | `explorer`          | Haiku  | Read-only fan-out search. Returns conclusions, not file dumps. The token-saver.                                                                |
-| `debugger`          | Opus   | Reproduce, isolate, root-cause, and fix — the cause, not the symptom.                                                                          |
+| `debugger`          | Opus   | Reproduce, isolate, root-cause, and fix the cause, not the symptom.                                                                            |
 
-**On-demand skills** deepen the agents when triggered — most bundling runnable scripts/templates/
-references: `tdd-workflow`, `code-review`, `debugging`, `refactoring`, `api-design`, `security-review`,
-`migration-safety`, `observability`, `concurrency-performance`, `supply-chain`, `fast-lane`, `lean`
-(the decision ladder in depth, with `check-debt.sh`).
+**On-demand skills** deepen the agents when triggered, most bundling runnable scripts, templates or
+references: `tdd-workflow`, `code-review`, `debugging`, `refactoring`, `api-design`,
+`security-review`, `migration-safety`, `observability`, `concurrency-performance`, `supply-chain`,
+`fast-lane`, `lean` (the decision ladder in depth, with `check-debt.sh`).
 
 ## Workflows
 
-Fifteen workflows, invoked as `/<name>`. The six marked **human-only** cannot be triggered by the
-model at all. That is what makes "a human approves" a mechanism instead of a request.
+Fifteen workflows, invoked as `/<name>` (`/nonna:<name>` under the plugin), plus `/nonna`, the
+switch for her gates ([INSTALL.md](INSTALL.md)). The six marked **human-only** cannot be triggered by
+the model at all, and neither can `/nonna`. That is what makes "a human approves" a mechanism instead
+of a request.
 
 | Workflow                     | Does                                                                                  |
 | ---------------------------- | ------------------------------------------------------------------------------------- |
@@ -76,47 +109,53 @@ explorer, a debugger and a router. Who runs on which model: see the crew above.
 
 ## Safety & enforcement
 
-Hooks turn the rules into deterministic guards — gates, not suggestions. Each reads the mode first
-(`off`, `lite` or `full`, [ADR 0011](adr/0011-lite-mode-and-plugin-defaults.md)); `off` is silent,
-and only the STATUS checks are full mode's:
+Hooks turn the rules into deterministic guards: gates, not suggestions. Each reads the mode first
+(`off`, `lite` or `full`, [ADR 0011](adr/0011-lite-mode-and-plugin-defaults.md)). `off` enforces
+nothing and says nothing, except that the branch guard still keeps her settings; only the STATUS
+checks are full mode's.
 
-- **`guard-branch.sh`** — **blocks** `git commit` / `git push` to `main` / `master` / `develop` (warns
-  on edits there), plus a push of every branch (`--all`, `--mirror`, `:`, a wildcard), force pushes,
-  `--no-verify` and hook-path overrides, reading each command the way the shell will run it, brace
-  lists and globs included. A speed bump for the agent; server-side branch protection is the wall.
-  The "never commit to a protected branch" rule, actually enforced.
-- **`secret-scan.sh`** — **blocks** any edit/write that introduces a high-confidence secret (AWS /
-  GitHub / Slack / Google keys, private-key blocks, hardcoded credentials), and reads/copies of
-  secret files (Read, Grep, or `cat .env`), by any name that leads to one — parity with the Read
-  deny list.
-- **`format.sh`** — auto-formats the file you just touched (ruff / prettier / gofmt / rustfmt —
-  best-effort, never blocking).
-- **`require-status-sync.sh`** (pre-push, **auto-installed at `SessionStart`** — warns instead of
-  overwriting a foreign pre-push hook) — blocks a push with a red suite or a new secret (no fixture
-  exemption at push time), and in full mode a code push that skips `docs/STATUS.md`. The Definition
-  of Done, enforced. **`pre-commit.sh`** refuses a commit on a protected branch or a staged secret.
-- **`stop-dod.sh`** (**Stop**) — when code changed since the session began: runs the suite and sends
-  the agent back once on red, asks once for a test when no test changed, and in full mode blocks on a
-  stale `docs/STATUS.md`.
-- **`subagent-verdict.sh`** (**SubagentStop**) — runs `check-review.sh` on the reviewer's own output,
+- **`guard-branch.sh`** **blocks** `git commit` and `git push` on or to `main`, `master` or
+  `develop` (and warns once on edits there), a push of every branch (`--all`, `--mirror`, `:`, a
+  wildcard), force pushes, `--no-verify` and hook-path overrides, and the agent's changes to her own
+  settings. It reads each command the way the shell will run it, brace lists and globs included. A
+  speed bump for the agent; server-side branch protection is the wall.
+- **`secret-scan.sh`** **blocks** an edit or write that introduces a high-confidence secret (AWS,
+  GitHub, Slack, Google, Stripe and OpenAI keys, private-key blocks, hardcoded credentials; sample
+  values under test, fixture and example paths pass), and reads and searches of secret files (Read,
+  Grep, or `cat .env` in Bash). For Read and Grep it refuses every path the Read deny list refuses, by
+  any name that leads to one.
+- **`format.sh`** formats the file the agent just edited with the formatter it finds (ruff,
+  prettier, gofmt, rustfmt, shfmt). Best effort, never blocking.
+- **`session-start.sh`** (**SessionStart**) wires the git hooks, records the plugin's test command
+  and mode, carries the mode's rules into the session, and tells you once what it did.
+- **`require-status-sync.sh`**, the git `pre-push` hook (wired at `SessionStart` and by
+  `install.sh`; a hook of yours is reported, never overwritten), blocks a push with a red suite or a
+  new secret (no fixture exemption at push time), and in full mode a code push that skips
+  `docs/STATUS.md`. **`pre-commit.sh`** refuses a commit on a protected branch or a staged secret.
+- **`stop-dod.sh`** (**Stop**): when code changed since the session began, it runs the suite and
+  sends the agent back once on red, asks once for a test when no test changed, and in full mode
+  blocks on a stale `docs/STATUS.md`.
+- **`subagent-verdict.sh`** (**SubagentStop**) runs `check-review.sh` on the reviewer's own output,
   so ADR-0005 binds where the verdict is produced.
-- **`subagent-start.sh`** (**SubagentStart**) — carries the mode's rules (`00-core.md`, or lite's
-  house rules) into every subagent under a plugin install, where `SessionStart` context never
-  reaches them; silent in a standalone checkout.
-- **`post-compact.sh`** (**PostCompact**) — restates branch, STATUS state, and review verdicts after
-  a summary.
+- **`subagent-start.sh`** (**SubagentStart**) carries the mode's rules (`00-core.md`, or lite's house
+  rules) into every subagent, where `SessionStart` context never reaches. It is silent when the
+  repository has its own `.claude/rules/`, which load natively.
+- **`post-compact.sh`** (**PostCompact**) restates the branch, `HEAD`, the STATUS state and the
+  review verdicts after a summary.
 
 Review is sized by script, not by the model (ADR-0009). `review-lanes.sh` answers two questions for
 `/review`: is the diff small enough for one reviewer on the cheaper tier (the same classifier as the
-fast lane), and does any changed path or added line touch a risky surface (auth, secrets, money,
-migrations, deploy, shell, SQL, deserialization, network, env, or `NONNA_CRITICAL_PATHS`)? The
-second answer adds the security reviewer. Any doubt answers "full review, with security".
+fast lane), and does any changed path, or any added or removed line, touch a risky surface (auth,
+secrets, money, migrations, deploy, CI, dependencies, shell, SQL, deserialization, network, env,
+crypto, or `NONNA_CRITICAL_PATHS`)? The second answer adds the security reviewer. Any doubt answers
+"full review, with security".
 
-`settings.json` denies reading project paths — `./**/.env`, `./**/secrets/**`, `./**/*.pem`,
-`./**/*.key`, `./**/.ssh/**`, `./**/.aws/**`, and more — and denies `git push --force`; the Bash
-branch of `secret-scan.sh` catches Bash reads of `~/.ssh`-style paths outside the project root. The
-harness even **tests its own gates**: `bash tests/run.sh` runs golden tests proving each one blocks
-vs. allows, and CI fails if any gate regresses.
+A copy-in install's `settings.json` denies reading project paths (`./**/.env`, `./**/secrets/**`,
+`./**/*.pem`, `./**/*.key`, `./**/.ssh/**`, `./**/.aws/**`, and more) and denies `git push --force`;
+a plugin cannot carry it, and the hooks refuse the same things. The Bash branch of `secret-scan.sh`
+also catches Bash reads of `~/.ssh`-style paths outside the project root. The harness **tests its
+own gates**: `bash tests/run.sh` runs golden tests proving each one blocks and allows as it should,
+and CI fails if any gate regresses.
 
 See [`SECURITY.md`](../SECURITY.md) for how to report a vulnerability privately.
 
@@ -124,29 +163,34 @@ See [`SECURITY.md`](../SECURITY.md) for how to report a vulnerability privately.
 
 ```
 nonna/
-├── CLAUDE.md                  # always-on root guidance (read first)
+├── CLAUDE.md                  # always-on root guidance
 ├── README.md
 ├── LICENSE                    # MIT
-├── CONTRIBUTING.md            # how to extend the harness
+├── CONTRIBUTING.md            # how to extend the harness, or add an agent host
+├── CODE_OF_CONDUCT.md
 ├── SECURITY.md                # how to report a vulnerability
 ├── CHANGELOG.md               # release history
+├── install.sh                 # the copy-in install, for any agent host
 ├── .claude/
 │   ├── README.md              # harness index
 │   ├── settings.json          # secret-deny + hook wiring
 │   ├── .claude-plugin/        # plugin manifest (plugin.json)
 │   ├── rules/                 # 9 always-on rules (00-core is the constitution)
 │   ├── agents/                # 8 specialists
-│   ├── skills/                # 12 playbooks + 16 pipeline workflows (7 human-only)
-│   └── hooks/                 # 9 hooks: 8 on 7 Claude Code events + the git pre-push hook
+│   ├── skills/                # 12 playbooks + 16 workflows (7 human-only, /nonna among them)
+│   └── hooks/                 # 10 hooks: 8 on 7 Claude Code events + the git pre-commit and pre-push
+├── hosts/                     # other agents' rules files, generated by hosts/build.py (lite ones in lite/)
 ├── tests/                     # gate golden tests + harness self-validation
 ├── stacks/                    # python · typescript · go · rust gate packs
+├── bench/                     # the benchmark: tasks, hidden checks, runner, results
+├── examples/                  # one run of each trap task, word for word
 ├── docs/
 │   ├── STATUS.md              # the living state mirror
-│   ├── INSTALL.md             # copy-in vs. plugin, and their gaps
+│   ├── INSTALL.md             # the plugin, install.sh, configuration, uninstall
 │   ├── OVERVIEW.md            # this file
-│   ├── benchmarks/            # dated benchmark runs and writeups
+│   ├── benchmarks/            # earlier dated benchmark runs and writeups
 │   └── adr/                   # Architecture Decision Records
 ├── .claude-plugin/            # marketplace.json (plugin distribution)
-├── assets/                    # the banner, the scorecard, the launch images (build.py)
-└── .github/                   # CI, release workflow, release scripts, PR template
+├── assets/                    # the banner, the scorecard, the launch images (build.py), the demo
+└── .github/                   # CI, release workflow, release scripts, PR and issue templates
 ```
