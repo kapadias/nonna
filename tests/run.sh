@@ -811,6 +811,27 @@ contains "pre-commit: names the file and the class" "src/pay.py" "$out"
 printf 'PNG\000\000binary\000data\n' > "$TMP/src/logo.png"; "${GIT[@]}" -C "$TMP" add -A
 out="$("${GIT[@]}" -C "$TMP" commit -q -m logo 2>&1)"; check "pre-commit: allows a staged binary file" 0 "$?"
 ! printf '%s' "$out" | grep -q 'null byte'; check "pre-commit: a binary file draws no shell warning" 0 "$?"
+# macOS's tr reads its input in the locale: bytes that are not UTF-8 are an error, unless LC_ALL=C.
+BSDTR="$(mktemp -d)"; REALTR="$(command -v tr)"
+cat > "$BSDTR/tr" <<EOF
+#!/bin/sh
+t="\$(mktemp)"; cat > "\$t"
+if [ "\${LC_ALL:-}" != C ] && ! python3 -c 'import sys; open(sys.argv[1], "rb").read().decode("utf-8")' "\$t" 2>/dev/null; then
+  echo "tr: Illegal byte sequence" >&2; rm -f "\$t"; exit 1
+fi
+"$REALTR" "\$@" < "\$t"; rc=\$?; rm -f "\$t"; exit \$rc
+EOF
+chmod +x "$BSDTR/tr"
+printf '\211PNG\r\n\032\n\000\000\000\015IHDR' > "$TMP/src/logo2.png"; "${GIT[@]}" -C "$TMP" add -A
+PATH="$BSDTR:$PATH" "${GIT[@]}" -C "$TMP" commit -q -m logo2 2>/dev/null; check "pre-commit: allows a binary file where tr reads the locale (macOS)" 0 "$?"
+rm -rf "$BSDTR"
+# A staged change that cannot be read is a stop, never an empty diff: fail closed. git reads a
+# staged file from the working tree while the two match, so the working copy goes with the object.
+echo unreadable > "$TMP/src/gone.py"; "${GIT[@]}" -C "$TMP" add -A
+blob="$("${GIT[@]}" -C "$TMP" rev-parse :src/gone.py)"; rm -f "$TMP/.git/objects/${blob:0:2}/${blob:2}" "$TMP/src/gone.py"
+out="$("${GIT[@]}" -C "$TMP" commit -q -m gone 2>&1)"; check "pre-commit: blocks a staged change it cannot read" 1 "$?"
+contains "pre-commit: says it could not read it" "could not read what you staged" "$out"
+"${GIT[@]}" -C "$TMP" reset -q
 mkdir -p "$TMP/tests"; printf 'K = "%s"\n' "$FAKE_AWS" > "$TMP/tests/test_k.py"; "${GIT[@]}" -C "$TMP" add -A
 "${GIT[@]}" -C "$TMP" commit -q -m fixture 2>/dev/null; check "pre-commit: a key-shaped test fixture is blocked too (push parity)" 1 "$?"
 "${GIT[@]}" -C "$TMP" reset -q; rm -rf "$TMP/tests"
