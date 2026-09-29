@@ -122,6 +122,22 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
     - `assets/build.py` checks every SVG against an allow-list of what the images draw with, and the
       scorecard's alt-text lint reads the tag in any shape and fails when it compared nothing;
     - the docs say that a plugin user's clone of a full copy-in runs lite, and how to keep full.
+  - **Fourth review round** (both reviews asked for changes; each fix has a test that failed first):
+    - the secret scan reads each NUL byte both as a gap and as nothing, so the write guard,
+      pre-commit and pre-push find a key right after one, a key one cuts in two, and a key in UTF-16
+      text (what Windows PowerShell writes). The third round had made a NUL a gap only, which lost
+      UTF-16 files;
+    - the placeholder rule reads only a key's own start: a sample word before a key
+      (`${SAMPLE-key}`, `${k[FAKE]-key}`) or glued after it (`keyEXAMPLE`), or a sample glued in
+      front of it, no longer exempts a real key;
+    - a key after a shell's special parameter (`${?-key}`) or a JSON escape (`\f`, `\u0000`) is found;
+    - the TypeScript pack no longer pre-approves `npx tsc` or `npx vitest`: npx fetches and runs a
+      package that is not installed, without asking;
+    - "where's the test?" counts a new `.test.mts`, `.test.cts` or `_test.cxx`, and four Stop tests
+      that the first ask's memo had answered now decide alone;
+    - `check-debt.sh`'s `tr` and `sed` read bytes: on a Mac they refused a file with a byte that is
+      not UTF-8, so its marker went unseen. The real Mac run had failed that test too, and the
+      BSD-tools simulation, run to the end on this unit for the first time, found why.
   - **Secret scan:** it missed Anthropic keys and OpenAI's `sk-proj-`, `sk-svcacct-` and `sk-admin-`
     keys, which the docs said it caught. The write guard, pre-commit and pre-push now refuse them;
     golden tests hold each key type and a key given as a shell default, a property test holds the

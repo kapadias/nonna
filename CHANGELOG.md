@@ -247,7 +247,7 @@ Your AI agent says "done"; Nonna makes it prove it.
 - **"Where's the test?" was switched off by the suite's own bytecode.** Any untracked file under
   `tests/` counted as a new test, so in a repository that does not ignore `__pycache__`, the Stop
   hook's own test run (`tests/__pycache__/*.pyc`) silenced the question. Only a test's source
-  counts now.
+  counts now, TypeScript's `.mts` and `.cts` and C++'s `.cxx` included.
 - **On a Mac, `check-debt.sh` (and so `/review`) rejected every debt marker.** It asked grep for
   `-Z`, which is `--null` on Linux and `--decompress` on macOS; it asks for `--null`. Its `tr` and
   `sed` read bytes too, so a marker in a file with a byte that is not UTF-8 is still found there.
