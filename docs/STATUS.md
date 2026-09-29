@@ -76,7 +76,10 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   - a macOS job runs the gate self-tests under `/bin/bash` 3.2 with only Apple's tools on the PATH
     (no Homebrew), and fails if the runner is not that toolchain. It is the follow-up the branch
     guard's second review round left open. Its first run is the proof; nothing about macOS is
-    claimed until it has been read.
+    claimed until it has been read;
+  - its first run failed on six guard tests, and the cause was the tests, not the guard: bash 3.2
+    brace-expands a `{a,b}` typed inside `"$(gb "...")"`, so the guard was handed other text. The
+    six now pass their command through a variable. Local run under bash 3.2.57 and BWK awk: 992 of 992.
 
 - **2026-09-28** — Benchmark round 3, the fourth unit of the launch plan (#17), built and proven,
   not yet run (paid runs are the maintainer's). `bench/` gains:
