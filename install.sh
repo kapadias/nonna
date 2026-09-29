@@ -93,19 +93,23 @@ cd "$top" || exit 1
 # keeps its mode, so running me again never downgrades it. It is read from what an install leaves,
 # before this run adds anything: the mode it recorded, else the hooks and rules only a full install
 # copies (lib/core.sh reads a clone the same way). The user's nonna.mode outranks whatever I record,
-# at run time; I neither read it nor write it.
+# at run time; I neither read it nor write it. A recorded value that is neither lite nor full (say
+# Full) is read as full, as nonna_mode reads it: I never turn what her hooks enforce into a lite.
 # debt: nonna.mode unread here (a global full gets lite files), read it here when a user hits that
 hint=""
 if [ -z "$mode" ]; then
   mode="$(git config --local --get nonna.defaultMode 2>/dev/null)"
   case "$mode" in
     lite | full) hint="kept as this repository has it; --mode lite|full changes it" ;;
-    *)
+    "" | off) # no record (off is a mode her hooks know, but not one I install)
       if [ -f .claude/hooks/require-status-sync.sh ] && [ -f .claude/rules/00-core.md ]; then
         mode=full hint="kept as this repository has it; --mode lite|full changes it"
       else
         mode=lite hint="the default; --mode full brings the whole harness"
       fi ;;
+    *)
+      hint="'$mode' is neither lite nor full, and her hooks read that as full; --mode lite|full changes it"
+      mode=full ;;
   esac
 fi
 

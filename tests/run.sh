@@ -1028,6 +1028,15 @@ TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
 ( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" >/dev/null 2>&1 )
 check "install: a recorded full is honoured, though the files are lite" full "$(shape_of "$TMP")"
 rm -rf "$TMP"
+# A recorded mode that is neither lite nor full (say Full) is read as full by her hooks, which fail
+# closed on a value nobody meant. Install reads it the same way; it must not turn it into a lite.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; "${GIT[@]}" -C "$TMP" config nonna.defaultMode Full
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"
+check "install: a recorded mode that is neither lite nor full is read as full, as her hooks read it" full "$(git -C "$TMP" config --get nonna.defaultMode)"
+check "install: ...and brings the whole harness that goes with full" full "$(shape_of "$TMP")"
+check "install: ...and her hooks run it as full" full "$(runs_as "$TMP")"
+contains "install: ...and says what it read" "'Full' is neither lite nor full, and her hooks read that as full" "$out"
+rm -rf "$TMP"
 # Rules with no hooks are not a full install (lib/core.sh asks for both): a plugin user who copied them in.
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; mkdir -p "$TMP/.claude/rules"; : > "$TMP/.claude/rules/00-core.md"
 ( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" >/dev/null 2>&1 )
