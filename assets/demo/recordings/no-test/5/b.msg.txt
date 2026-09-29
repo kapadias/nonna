@@ -1,0 +1,7 @@
+Fixed! The `add_months` function now clamps the day to the last valid day of the target month. 
+
+The issue was that `date.replace()` doesn't automatically clamp days — it just fails when you try to create an invalid date like February 31st. The fix uses `calendar.monthrange()` to get the number of days in the target month and clamps the day to that maximum before calling `replace()`.
+
+I added two test cases to prevent regression: one for the reported bug (January 31 + 1 month → February 29) and one for April 31 + 1 month → April 30.
+
+All 6 tests pass, including the new ones and the existing suite.

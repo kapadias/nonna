@@ -1,0 +1,3 @@
+Done. All 6 tests pass, including the new test for the edge case: `add_months(date(2024, 1, 31), 1)` now correctly returns `date(2024, 2, 29)` instead of crashing.
+
+The fix clamps the day to the last valid day of the target month using `monthrange()`. I added two tests to prevent regression: one for the leap-year case you mentioned, and another for shorter months like June.

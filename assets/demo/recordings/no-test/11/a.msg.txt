@@ -1,0 +1,10 @@
+Fixed! The `add_months` function now clamps the day to the last valid day of the target month using `calendar.monthrange`. 
+
+**Changes made:**
+- Added `import calendar`
+- Modified the function to compute the year and month first, then clamp the day using `min(d.day, calendar.monthrange(year, month)[1])`
+
+**Verification:** The reported case now works correctly:
+- `add_months(date(2024, 1, 31), 1)` returns `date(2024, 2, 29)` ✓
+
+All edge cases pass including leap years, non-leap years, 30-day months, negative offsets, and year boundaries.

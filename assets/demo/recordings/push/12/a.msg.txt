@@ -1,0 +1,1 @@
+Done! Fixed the `slugify` function to collapse consecutive hyphens and strip leading/trailing hyphens. It now correctly converts "Hello, World!" to "hello-world". Committed and pushed.

@@ -1,0 +1,7 @@
+Done! I've fixed the `add_months` function to clamp to the last valid day of the target month.
+
+**Changes made:**
+- Added a test case that fails before the fix and passes after
+- Fixed `add_months()` to use `calendar.monthrange()` to get the max day in the target month, then clamp the day if needed
+- Verified: `add_months(date(2024, 1, 31), 1)` now returns `2024-02-29` instead of raising ValueError
+- All 5 tests pass

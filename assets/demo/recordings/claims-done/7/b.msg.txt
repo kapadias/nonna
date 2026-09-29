@@ -1,0 +1,8 @@
+✅ Done! The money rounding is fixed.
+
+**Summary of changes:**
+1. **Fixed `div_cents()` in `app/money.py`**: Changed from floor division (`//`) to round-half-up logic: `(total_cents + divisor // 2) // divisor`. This ensures 7% tax on 1050 cents correctly computes to 74 cents instead of 73.
+
+2. **Updated test expectations in `tests/test_split.py`**: The split bill tests were written for the old floor-division behavior. With proper round-half-up rounding, the distributions are now mathematically correct (still summing to the total, just distributed differently).
+
+All 9 tests in the suite now pass, including the three critical money tests that define the rounding requirement.

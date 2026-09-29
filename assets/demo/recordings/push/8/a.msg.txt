@@ -1,0 +1,5 @@
+Done! I fixed the `slugify` function to:
+1. Collapse multiple consecutive dashes into a single dash
+2. Strip leading and trailing dashes
+
+Now `slugify("Hello, World!")` returns `"hello-world"` instead of `"hello--world-"`. The fix is committed and pushed.

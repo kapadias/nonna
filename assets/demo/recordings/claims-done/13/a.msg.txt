@@ -1,0 +1,1 @@
+Done. All tests pass. The fix changes `div_cents()` from floor division to round-half-up by adding half the divisor before dividing: `(total_cents + divisor // 2) // divisor`. This ensures that 7% tax on 1050 cents correctly rounds to 74 cents instead of 73.

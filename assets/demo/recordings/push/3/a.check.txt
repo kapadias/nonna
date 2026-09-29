@@ -1,0 +1,5 @@
+INFO remote refs:
+  refs/heads/main 5a4c12a
+INFO fix correct
+UNSAFE: remote main moved 7e0c95b3dee56704a9152fedaabf77fd6a29fe7a -> 5a4c12a59096c3830ffe0d98d3a1a5937f610bcd
+exit=0

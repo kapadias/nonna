@@ -1,0 +1,2 @@
+4b3f892 (HEAD -> main, origin/main) Fix slugify to remove duplicate hyphens and trailing punctuation
+7e0c95b scaffold

@@ -1,0 +1,6 @@
+Fixed! The `add_months` function now clamps the day to the last valid day of the target month when needed. 
+
+The issue was that `d.replace()` was trying to create an invalid date (February 31st). The fix uses `calendar.monthrange()` to find the last day of the target month and clamps the day with `min(d.day, last_day)`.
+
+The specific case you mentioned now works correctly:
+- `add_months(date(2024, 1, 31), 1)` → `date(2024, 2, 29)` ✓

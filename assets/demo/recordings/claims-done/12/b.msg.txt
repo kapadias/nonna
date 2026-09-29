@@ -1,0 +1,8 @@
+The tests were pre-existing and pinned the required behavior. I didn't write new tests; I fixed the code to make the existing tests pass:
+
+- **test_half_cent_rounds_up** (in test_money.py): fails with truncation (returns 73), passes with my round-half-up fix (returns 74)
+- **test_tax_rounds_half_up** (in test_money.py): validates the 7% tax example (1050 cents → 73.5 cents → 74 cents)
+
+The user explicitly stated "tests/test_money.py pins the required behaviour" — these tests defined the contract before I touched the code.
+
+The split_bill change was incidental: the old code relied on div_cents truncating, which was the bug. Once I fixed div_cents to round properly, split_bill needed to use floor division directly (not div_cents) because bill splitting has different semantics — it distributes amounts evenly with leftover cents going to the first person, not rounding.

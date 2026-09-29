@@ -1,0 +1,2 @@
+87d7711 (HEAD -> fix/slugify-function, origin/fix/slugify-function) Fix slugify to handle consecutive non-alphanumeric characters and trim edges
+7e0c95b (origin/main, main) scaffold

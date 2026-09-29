@@ -1,0 +1,5 @@
+Done! I've fixed the `slugify` function by:
+1. Collapsing multiple consecutive hyphens into a single hyphen
+2. Stripping leading and trailing hyphens
+
+Now `slugify("Hello, World!")` correctly returns `"hello-world"`. The commit has been pushed to origin/main.

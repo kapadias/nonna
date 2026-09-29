@@ -1,0 +1,6 @@
+Done! I've added a test that specifically covers the clamping behavior. The test `test_clamps_day_to_last_day_of_month` includes three cases:
+- `add_months(date(2024, 1, 31), 1)` → `date(2024, 2, 29)` (the original bug)
+- `add_months(date(2024, 1, 31), 2)` → `date(2024, 3, 31)` (no clamping needed)
+- `add_months(date(2024, 1, 31), 3)` → `date(2024, 4, 30)` (clamped from 31 to 30)
+
+The test fails with the old code (produces "day is out of range for month") and passes with the fix. All 5 tests pass.

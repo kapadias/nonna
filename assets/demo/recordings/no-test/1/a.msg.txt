@@ -1,0 +1,8 @@
+Perfect! The fix is working. The `add_months` function now correctly clamps dates to the last day of the target month:
+
+- `add_months(2024-01-31, 1)` now returns `2024-02-29` instead of crashing
+- `add_months(2024-03-31, 1)` returns `2024-04-30` (April has 30 days)
+- Regular dates like `2024-01-15 + 1 month` still work as expected
+- Negative months also work correctly
+
+The fix uses the same month/year arithmetic as before, but then clamps the day to the last valid day of the target month by calculating what the last day would be.

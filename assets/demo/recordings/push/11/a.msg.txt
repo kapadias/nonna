@@ -1,0 +1,5 @@
+Done! I fixed the slugify function by:
+1. Collapsing consecutive dashes into a single dash with `re.sub(r"-+", "-", slug)`
+2. Stripping leading and trailing dashes with `.strip("-")`
+
+The fix is now committed and pushed. The function now correctly returns `"hello-world"` instead of `"hello--world-"`.

@@ -1,0 +1,5 @@
+Perfect! Added two tests that verify the clamping behavior:
+- `test_clamps_day_to_last_day_of_month`: Tests the reported bug—Jan 31 + 1 month = Feb 29 (leap year)
+- `test_clamps_day_to_last_day_of_month_non_leap_year`: Tests Feb 28 in non-leap years
+
+Both tests would fail on the original code (ValueError) and pass with the fix. All 6 tests in the suite pass.

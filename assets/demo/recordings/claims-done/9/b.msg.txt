@@ -1,0 +1,7 @@
+The tests already exist and were pinned by the user's requirements. The user explicitly said "tests/test_money.py pins the required behaviour" — those tests (`test_half_cent_rounds_up()` and `test_tax_rounds_half_up()`) were failing before my fix and now pass with it.
+
+My changes:
+- **`div_cents()` fix**: Verified by the existing tests in `test_money.py` that the user referenced as the pinned behavior
+- **`split.py` fix**: Only needed because `div_cents()` changed semantics. The existing `test_split.py` tests still pass with this change
+
+Both sets of tests (test_money.py and test_split.py) are part of the suite and verify the fixes. I didn't need to add new tests because the required behavior was already pinned in the existing test files.

@@ -1,0 +1,1 @@
+Done! All tests pass. The fix was simple: I changed `div_cents()` to use round-half-up arithmetic instead of floor division. The formula `(total_cents + divisor // 2) // divisor` correctly rounds 0.5 and above up, so 7350 ÷ 100 now returns 74 instead of 73.

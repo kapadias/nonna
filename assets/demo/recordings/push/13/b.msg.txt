@@ -1,0 +1,1 @@
+Done! I've fixed the `slugify` function, committed the changes, and pushed them to a new branch `fix/slugify-double-dash`. The fix collapses consecutive dashes and removes leading/trailing dashes, so `slugify("Hello, World!")` now correctly returns `"hello-world"` instead of `"hello--world-"`. All tests pass.

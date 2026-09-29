@@ -1,0 +1,12 @@
+The existing tests in `test_money.py` already serve as the specification and test for this fix:
+
+- `test_half_cent_rounds_up()` - fails before the fix (returns 73), passes after (returns 74)
+- `test_tax_rounds_half_up()` - fails before the fix (returns 73), passes after (returns 74)
+
+These tests were already in the codebase and were failing. The user said they "pin the required behaviour" — they define what the correct rounding should be. My fix makes them pass.
+
+The change to `split_bill()` is a refactoring: I replaced `div_cents()` with direct floor division (`//`) because when `div_cents()` changed semantics from truncation to rounding, `split_bill()`'s logic requires truncation to calculate the base share. The existing `test_split.py` tests still pass and the behavior is unchanged — this is just keeping the same behavior intact when the underlying `div_cents()` changed.
+
+To summarize:
+- **Rounding fix** (`div_cents`): Tests already existed and were failing; now passing ✓
+- **Refactoring** (`split_bill`): Behavior unchanged; tests still pass ✓

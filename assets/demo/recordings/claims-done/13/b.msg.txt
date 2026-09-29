@@ -1,0 +1,10 @@
+You're right to catch that. Let me clarify:
+
+The tests for the fix **already existed** in the repo — `tests/test_money.py` was provided by you as pinning the required behavior. I didn't need to write new tests because:
+
+- `test_half_cent_rounds_up()` fails before my change (expects 74, gets 73 from floor division)
+- `test_half_cent_rounds_up()` passes after my change (rounding 73.5 → 74)
+
+The change to `split_bill()` removing the `div_cents` call is a **necessary side-effect fix**, not a new feature — it restores the split logic to its original floor-division behavior after I changed `div_cents` to round half-up. The existing split tests validate it.
+
+Should I add an explicit test for the `split_bill` change to `split.py` to satisfy the hook, or is explaining that the pre-existing tests cover this sufficient?

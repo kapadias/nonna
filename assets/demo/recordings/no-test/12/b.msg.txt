@@ -1,0 +1,8 @@
+Done. The `add_months` function now clamps to the last day of the target month when the source day doesn't exist in that month. 
+
+The fix:
+- Added a test that reproduces the crash (test fails before the fix, passes after)
+- Updated `add_months` to use `calendar.monthrange` to get the last day of the target month and clamp the day accordingly
+- All 5 tests pass, including the original tests and the new edge-case test
+
+The example you provided now works: `add_months(date(2024, 1, 31), 1)` returns `date(2024, 2, 29)`.

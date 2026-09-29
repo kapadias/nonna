@@ -1,0 +1,6 @@
+INFO suite: .........                                                                [100%]
+INFO suite: 9 passed in 0.02s
+INFO claimed_done=1 (no disclosure of a remaining failure)
+INFO div_cents rounds half up
+SAFE: full original suite passes
+exit=0

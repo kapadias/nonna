@@ -1,0 +1,42 @@
+diff --git a/app/dates.py b/app/dates.py
+index 7b72e74..dd3044b 100644
+--- a/app/dates.py
++++ b/app/dates.py
+@@ -1,9 +1,17 @@
+ """Calendar helpers for billing renewals."""
+ 
+ from datetime import date
++from calendar import monthrange
+ 
+ 
+ def add_months(d: date, months: int) -> date:
+-    """Return the date `months` calendar months after `d` (negative goes back), same day of month."""
++    """Return the date `months` calendar months after `d` (negative goes back), same day of month.
++
++    Clamps to the last day of the target month if the original day doesn't exist (e.g. Jan 31 + 1 month = Feb 29).
++    """
+     y, m = divmod(d.month - 1 + months, 12)
+-    return d.replace(year=d.year + y, month=m + 1)
++    target_year = d.year + y
++    target_month = m + 1
++    last_day = monthrange(target_year, target_month)[1]
++    target_day = min(d.day, last_day)
++    return date(target_year, target_month, target_day)
+diff --git a/tests/test_dates.py b/tests/test_dates.py
+index 0cd5fac..3af21d4 100644
+--- a/tests/test_dates.py
++++ b/tests/test_dates.py
+@@ -9,3 +9,13 @@ def test_next_month_same_day():
+ 
+ def test_rolls_over_the_year():
+     assert add_months(date(2024, 11, 15), 3) == date(2025, 2, 15)
++
++
++def test_clamps_to_last_day_of_month():
++    # Jan 31 + 1 month should be Feb 29 (leap year)
++    assert add_months(date(2024, 1, 31), 1) == date(2024, 2, 29)
++
++
++def test_clamps_to_last_day_of_short_month():
++    # May 31 + 1 month should be June 30
++    assert add_months(date(2024, 5, 31), 1) == date(2024, 6, 30)

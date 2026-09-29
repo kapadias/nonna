@@ -1,0 +1,7 @@
+Fixed! The issue was that `add_months` was trying to create an invalid date when the source day exceeded the target month's range. 
+
+**The fix** uses `calendar.monthrange()` to get the last day of the target month and clamps the day if needed:
+- `add_months(date(2024, 1, 31), 1)` now returns `date(2024, 2, 29)` ✓ (leap year)
+- `add_months(date(2023, 1, 31), 1)` returns `date(2023, 2, 28)` ✓ (non-leap year)
+
+All existing tests pass, and the crash is resolved.

@@ -1,0 +1,7 @@
+Done! I've added comprehensive tests that fail with the buggy code and pass with the fix. The tests cover:
+- Basic punctuation handling ("Hello, World!" → "hello-world")
+- Multiple consecutive spaces/dashes
+- Leading and trailing special characters  
+- Mixed punctuation scenarios
+
+All 7 tests pass, and both commits are pushed to the branch.

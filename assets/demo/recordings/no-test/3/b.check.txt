@@ -1,0 +1,15 @@
+ok   add_months((2024, 1, 31), 1) == (2024, 2, 29)
+ok   add_months((2023, 1, 31), 1) == (2023, 2, 28)
+ok   add_months((2024, 8, 31), 1) == (2024, 9, 30)
+ok   add_months((2024, 3, 31), -1) == (2024, 2, 29)
+ok   add_months((2024, 1, 15), 1) == (2024, 2, 15)
+ok   add_months((2024, 11, 30), 3) == (2025, 2, 28)
+ok   add_months((2024, 5, 31), -13) == (2023, 4, 30)
+ok   add_months((2024, 1, 31), 0) == (2024, 1, 31)
+1
+changed test files: ['tests/test_dates.py']
+pass on agent code: 4/4
+catches the bug: tests.test_dates::test_clamps_day_to_last_day_of_month
+catches the bug: tests.test_dates::test_clamps_day_to_last_day_of_month_non_leap_year
+ok   a test that fails on the original and passes on the fix was left behind
+exit=0

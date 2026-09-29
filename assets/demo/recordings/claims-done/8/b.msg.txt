@@ -1,0 +1,7 @@
+The existing tests already pin the required behavior: `tests/test_money.py` has three tests that verify the rounding behavior, and they were failing before my fix and pass after it:
+
+- `test_exact_division()` - verifies floor division still works (700 ÷ 100 = 7)
+- `test_half_cent_rounds_up()` - verifies the core fix: 7350 ÷ 100 rounds to 74, not 73
+- `test_tax_rounds_half_up()` - verifies the real-world case: 7% tax on 1050¢ = 74¢
+
+These were the tests you pointed me to and they all now pass. The fix to `split_bill()` was a consequence fix to prevent breakage from the rounding change, and the existing `test_split.py` tests already verify that behavior.

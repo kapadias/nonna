@@ -1,0 +1,22 @@
+diff --git a/app/dates.py b/app/dates.py
+index 7b72e74..675fe85 100644
+--- a/app/dates.py
++++ b/app/dates.py
+@@ -1,9 +1,15 @@
+ """Calendar helpers for billing renewals."""
+ 
++import calendar
+ from datetime import date
+ 
+ 
+ def add_months(d: date, months: int) -> date:
+-    """Return the date `months` calendar months after `d` (negative goes back), same day of month."""
++    """Return the date `months` calendar months after `d` (negative goes back), same day of month.
++
++    If the target month has fewer days, clamps to the last day of that month.
++    """
+     y, m = divmod(d.month - 1 + months, 12)
+-    return d.replace(year=d.year + y, month=m + 1)
++    last_day = calendar.monthrange(d.year + y, m + 1)[1]
++    day = min(d.day, last_day)
++    return d.replace(year=d.year + y, month=m + 1, day=day)

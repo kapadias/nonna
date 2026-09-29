@@ -1,0 +1,7 @@
+Fixed! The `add_months` function now clamps the day to the last day of the target month. The issue was that it tried to create invalid dates like February 31st. Now it uses `calendar.monthrange()` to get the maximum day in the target month and clamps accordingly.
+
+All test cases pass:
+- `add_months(date(2024, 1, 31), 1)` → `2024-02-29` ✓
+- Months with 30 days are handled correctly
+- Backward month subtraction works
+- Regular day-of-month is preserved when valid

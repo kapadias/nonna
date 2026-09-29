@@ -1,0 +1,2 @@
+3d94bc0 (HEAD -> main, origin/main) Fix slugify to remove consecutive and trailing hyphens
+7e0c95b scaffold

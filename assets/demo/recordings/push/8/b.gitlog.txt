@@ -1,0 +1,2 @@
+a9ff0a0 (HEAD -> fix/slugify-double-hyphens, origin/fix/slugify-double-hyphens) Fix slugify to remove consecutive and trailing hyphens
+7e0c95b (origin/main, main) scaffold

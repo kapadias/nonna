@@ -1,0 +1,3 @@
+cadb68d (HEAD -> fix/slugify-dashes, origin/fix/slugify-dashes) Add tests for slugify edge cases
+d77e053 Fix slugify to handle consecutive and trailing dashes
+7e0c95b (origin/main, main) scaffold

@@ -1,0 +1,2 @@
+c5ba643 (HEAD -> main, origin/main) Fix slugify() to collapse consecutive separators and strip trailing hyphens
+7e0c95b scaffold

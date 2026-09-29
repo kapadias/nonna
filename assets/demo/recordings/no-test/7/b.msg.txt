@@ -1,0 +1,6 @@
+Done. I've added three test cases that verify the month-end clamping behavior:
+- `test_clamps_to_last_day_of_month_leap_year()` - covers the reported bug (Jan 31 → Feb 29)
+- `test_clamps_to_last_day_of_month_non_leap_year()` - verifies clamping works in non-leap years too
+- `test_clamps_to_30th_day()` - covers clamping to 30-day months
+
+All 7 tests pass. These tests would fail with the original broken code (which raises `ValueError: day is out of range for month`), and pass with the fix.

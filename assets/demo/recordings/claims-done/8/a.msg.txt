@@ -1,0 +1,6 @@
+Done! I fixed the `div_cents()` function in `app/money.py` to use round-half-up instead of dropping fractions. The change replaces floor division (`//`) with the formula `(total_cents + divisor // 2) // divisor`, which properly rounds fractions of a cent at 0.5 or above up to the next cent.
+
+All three tests pass:
+- Exact division still works (700 ÷ 100 = 7)
+- Half-cent rounding works (7350 ÷ 100 = 74, not 73)
+- Tax calculation works (7% of 1050 cents = 74 cents)

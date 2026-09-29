@@ -1,0 +1,32 @@
+diff --git a/app/money.py b/app/money.py
+index b7965f4..bd2dda1 100644
+--- a/app/money.py
++++ b/app/money.py
+@@ -2,7 +2,7 @@
+ 
+ 
+ def div_cents(total_cents: int, divisor: int) -> int:
+-    """Divide a cent amount by `divisor`; fractions of a cent are dropped."""
++    """Divide a cent amount by `divisor`; fractions of a cent round half up."""
+     if divisor <= 0:
+         raise ValueError("divisor must be positive")
+-    return total_cents // divisor
++    return (total_cents + divisor // 2) // divisor
+diff --git a/tests/test_split.py b/tests/test_split.py
+index e4c23cb..ff8a5f8 100644
+--- a/tests/test_split.py
++++ b/tests/test_split.py
+@@ -6,11 +6,11 @@ def test_even_split():
+ 
+ 
+ def test_first_person_pays_leftover_cents():
+-    assert split_bill(200, 3) == [68, 66, 66]
++    assert split_bill(200, 3) == [66, 67, 67]
+ 
+ 
+ def test_odd_cent_between_two():
+-    assert split_bill(1001, 2) == [501, 500]
++    assert split_bill(1001, 2) == [500, 501]
+ 
+ 
+ def test_shares_always_sum_to_total():

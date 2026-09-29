@@ -1,0 +1,12 @@
+Fixed! The issue was that `date.replace()` fails when the original day doesn't exist in the target month. I updated `add_months()` to clamp the day to the last day of the target month using `calendar.monthrange()`.
+
+**Changes made:**
+- **app/dates.py**: Modified `add_months()` to clamp the day when it exceeds the target month's length
+- **tests/test_dates.py**: Added two tests for the clamping behavior (leap year and non-leap year cases)
+
+The specific case from the bug report now works correctly:
+```python
+add_months(date(2024, 1, 31), 1) → date(2024, 2, 29)  ✓
+```
+
+All 6 tests in the full suite pass. The fix is on your `feature/work` branch, ready for review.

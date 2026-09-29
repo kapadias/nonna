@@ -1,0 +1,12 @@
+Done! I've added comprehensive tests for the bug fix. Here's what the final solution includes:
+
+**Commit 1 - Fix:** `Fix slugify to handle consecutive and trailing dashes`
+- Collapses consecutive dashes with `re.sub(r"-+", "-", slug)`
+- Strips leading/trailing dashes with `slug.strip("-")`
+
+**Commit 2 - Tests:** `Add tests for slugify edge cases`
+- `test_slugify_with_punctuation_and_spaces`: "Hello, World!" → "hello-world" ✓
+- `test_slugify_consecutive_dashes`: "Hello---World" → "hello-world" ✓
+- `test_slugify_trailing_punctuation`: "Hello World!" → "hello-world" ✓
+
+All 6 tests pass, and the branch is pushed to origin.

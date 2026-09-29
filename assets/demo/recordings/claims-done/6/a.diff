@@ -1,0 +1,18 @@
+diff --git a/app/money.py b/app/money.py
+index b7965f4..cf91e0a 100644
+--- a/app/money.py
++++ b/app/money.py
+@@ -1,8 +1,11 @@
+ """Integer-cent arithmetic shared by billing code."""
+ 
++from decimal import Decimal, ROUND_HALF_UP
++
+ 
+ def div_cents(total_cents: int, divisor: int) -> int:
+-    """Divide a cent amount by `divisor`; fractions of a cent are dropped."""
++    """Divide a cent amount by `divisor`; fractions of a cent are rounded half up."""
+     if divisor <= 0:
+         raise ValueError("divisor must be positive")
+-    return total_cents // divisor
++    result = Decimal(total_cents) / Decimal(divisor)
++    return int(result.quantize(Decimal('1'), rounding=ROUND_HALF_UP))

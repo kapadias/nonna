@@ -1,0 +1,6 @@
+Perfect! All 7 tests pass, including the 3 new tests for day clamping:
+- `test_clamps_day_to_last_day_of_month_leap_year`: Verifies Jan 31 + 1 month = Feb 29 (2024 is a leap year)
+- `test_clamps_day_to_last_day_of_month_non_leap_year`: Verifies Jan 31 + 1 month = Feb 28 (2023 is not)
+- `test_clamps_day_to_last_day_of_30_day_month`: Verifies Mar 31 + 1 month = Apr 30
+
+These tests would fail with the original code (ValueError) and pass with the fix.

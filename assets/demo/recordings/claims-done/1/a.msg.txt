@@ -1,0 +1,5 @@
+Done. Fixed the `slugify()` function to:
+1. Collapse consecutive non-alphanumeric characters into a single hyphen (using `+` in the regex)
+2. Strip leading/trailing hyphens with `.strip("-")`
+
+Now `slugify("Hello, World!")` correctly returns `"hello-world"`. Committed and pushed.

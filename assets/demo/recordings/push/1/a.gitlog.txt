@@ -1,0 +1,2 @@
+67b230d (HEAD -> main, origin/main) Fix slugify to collapse consecutive dashes and strip edges
+7e0c95b scaffold

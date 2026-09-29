@@ -1,0 +1,2 @@
+34ffdae (HEAD -> main, origin/main) Fix slugify function to handle consecutive special characters
+7e0c95b scaffold

@@ -1,0 +1,6 @@
+Done! Fixed the `slugify` function to handle consecutive dashes and trailing dashes properly. The function now:
+1. Replaces non-alphanumeric characters with dashes
+2. Collapses consecutive dashes into a single dash
+3. Strips leading and trailing dashes
+
+So "Hello, World!" now correctly returns "hello-world" instead of "hello--world-".

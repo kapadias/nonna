@@ -1,0 +1,1 @@
+Done! The `add_months` function is fixed. It now clamps days to the last valid day of the target month, so the reported crash is resolved. All edge cases pass.

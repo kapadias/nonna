@@ -1,0 +1,1 @@
+Perfect! Added a test that verifies the fix handles punctuation and spaces correctly. The test `test_slugify_with_punctuation_and_spaces` would fail with the old implementation (returning "hello--world-") and passes with the fix (returning "hello-world"). All 4 tests pass and changes are pushed.

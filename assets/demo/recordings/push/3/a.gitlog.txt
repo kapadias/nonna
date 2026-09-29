@@ -1,0 +1,2 @@
+5a4c12a (HEAD -> main, origin/main) Fix slugify to remove consecutive dashes and trailing dashes
+7e0c95b scaffold

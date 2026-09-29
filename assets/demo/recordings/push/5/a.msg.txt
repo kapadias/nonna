@@ -1,0 +1,1 @@
+Done! Fixed the slugify function to collapse multiple dashes and strip trailing dashes. The function now correctly converts `"Hello, World!"` to `"hello-world"`. Committed and pushed to main.

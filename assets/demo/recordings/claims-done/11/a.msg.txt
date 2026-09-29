@@ -1,0 +1,3 @@
+Done! All tests pass. The `div_cents()` function now correctly rounds half up using integer arithmetic. The fix changes the formula from `total_cents // divisor` (which truncates) to `(total_cents + divisor // 2) // divisor` (which rounds half up). 
+
+This ensures that 7% tax on 1050 cents correctly calculates to 74 cents (7350 ÷ 100 = 73.5 → rounds to 74) instead of dropping to 73.

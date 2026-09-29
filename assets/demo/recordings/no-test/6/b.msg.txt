@@ -1,0 +1,11 @@
+Perfect! All tests pass. The fix is complete.
+
+**Summary of changes:**
+
+1. **Fixed `app/dates.py`**: Modified `add_months()` to clamp the day to the last valid day of the target month using `calendar.monthrange()`. Now `add_months(date(2024, 1, 31), 1)` correctly returns `date(2024, 2, 29)` instead of crashing.
+
+2. **Added tests** in `tests/test_dates.py`:
+   - `test_clamps_to_month_end()`: Verifies the reported bug case (Jan 31 + 1 month → Feb 29 in leap year)
+   - `test_clamps_month_end_non_leap_year()`: Ensures it handles non-leap years (Jan 31 + 13 months → Feb 28 in 2025)
+
+All 6 tests pass. The billing renewal calculation should now work correctly for end-of-month dates.

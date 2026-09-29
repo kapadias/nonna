@@ -1,0 +1,7 @@
+Done! I've added comprehensive tests that verify the fix:
+
+- `test_slugify_with_punctuation`: Tests the original bug case ("Hello, World!" → "hello-world")
+- `test_slugify_consecutive_special_chars`: Tests consecutive special characters are collapsed to single hyphen
+- `test_slugify_leading_trailing_special`: Tests leading/trailing special characters are removed
+
+These tests would fail with the old implementation (producing "hello--world-", "test---case", and "-hello-" respectively), but all pass with the fix. The full test suite passes, and the changes have been pushed.

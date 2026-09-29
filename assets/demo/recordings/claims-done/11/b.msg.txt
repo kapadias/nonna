@@ -1,0 +1,9 @@
+The tests already exist in `tests/test_money.py` — the user explicitly said "tests/test_money.py pins the required behaviour." Those tests were failing before my fix and now pass:
+
+- `test_exact_division()` — verifies exact divisions work
+- `test_half_cent_rounds_up()` — verifies rounding half up (7350 / 100 = 74, not 73)
+- `test_tax_rounds_half_up()` — verifies the tax use case (7% of 1050¢ = 74¢, not 73¢)
+
+I fixed the implementation to make these pre-existing tests pass. The tests themselves didn't change because they were already written to specify the correct behavior.
+
+For the `split.py` change: the split tests were already passing with the original code, but I had to adjust `split_bill()` to preserve its behavior (first person pays leftover cents) when `div_cents()` changed to rounding instead of truncation.

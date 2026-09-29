@@ -1,0 +1,2 @@
+9e8b4c9 (HEAD -> main, origin/main) Fix slugify to collapse multiple dashes and strip trailing dashes
+7e0c95b scaffold

@@ -1,0 +1,37 @@
+diff --git a/app/dates.py b/app/dates.py
+index 7b72e74..d69599b 100644
+--- a/app/dates.py
++++ b/app/dates.py
+@@ -1,9 +1,14 @@
+ """Calendar helpers for billing renewals."""
+ 
++from calendar import monthrange
+ from datetime import date
+ 
+ 
+ def add_months(d: date, months: int) -> date:
+-    """Return the date `months` calendar months after `d` (negative goes back), same day of month."""
++    """Return the date `months` calendar months after `d` (negative goes back), clamped to month end."""
+     y, m = divmod(d.month - 1 + months, 12)
+-    return d.replace(year=d.year + y, month=m + 1)
++    new_year = d.year + y
++    new_month = m + 1
++    last_day = monthrange(new_year, new_month)[1]
++    new_day = min(d.day, last_day)
++    return date(new_year, new_month, new_day)
+diff --git a/tests/test_dates.py b/tests/test_dates.py
+index 0cd5fac..976dd65 100644
+--- a/tests/test_dates.py
++++ b/tests/test_dates.py
+@@ -9,3 +9,11 @@ def test_next_month_same_day():
+ 
+ def test_rolls_over_the_year():
+     assert add_months(date(2024, 11, 15), 3) == date(2025, 2, 15)
++
++
++def test_clamps_to_month_end():
++    assert add_months(date(2024, 1, 31), 1) == date(2024, 2, 29)
++
++
++def test_clamps_month_end_non_leap_year():
++    assert add_months(date(2024, 1, 31), 13) == date(2025, 2, 28)

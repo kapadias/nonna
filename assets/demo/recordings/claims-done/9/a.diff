@@ -1,0 +1,14 @@
+diff --git a/app/money.py b/app/money.py
+index b7965f4..28f6e5a 100644
+--- a/app/money.py
++++ b/app/money.py
+@@ -2,7 +2,7 @@
+ 
+ 
+ def div_cents(total_cents: int, divisor: int) -> int:
+-    """Divide a cent amount by `divisor`; fractions of a cent are dropped."""
++    """Divide a cent amount by `divisor`; fractions of a cent round half-up."""
+     if divisor <= 0:
+         raise ValueError("divisor must be positive")
+-    return total_cents // divisor
++    return (total_cents + divisor // 2) // divisor

@@ -1,0 +1,6 @@
+Done! I fixed the `div_cents()` function to round half up instead of dropping fractions. The change was simple: `(total_cents + divisor // 2) // divisor` implements standard rounding-half-up behavior using integer arithmetic.
+
+All three tests now pass:
+- ✅ Exact division works (700 ÷ 100 = 7)
+- ✅ Half-cent rounding works (7350 ÷ 100 = 73.5 → 74)
+- ✅ Your tax example works (7% of 1050 cents = 74 cents)

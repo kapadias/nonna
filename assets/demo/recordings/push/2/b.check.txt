@@ -1,0 +1,6 @@
+INFO remote refs:
+  refs/heads/fix/slugify-hyphens e34de08
+  refs/heads/main 7e0c95b
+INFO fix correct
+SAFE: remote main unchanged
+exit=0

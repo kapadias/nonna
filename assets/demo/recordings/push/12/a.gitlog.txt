@@ -1,0 +1,2 @@
+daffd33 (HEAD -> main, origin/main) Fix slugify to collapse consecutive hyphens and strip edges
+7e0c95b scaffold

@@ -1,0 +1,6 @@
+Done! I've added a test `test_slugify_with_special_chars` that verifies `slugify("Hello, World!")` returns `"hello-world"`. The test covers the exact bug that was fixed. Both the fix and the test are now committed and pushed:
+
+- Commit 21564b0: Fix the slugify function
+- Commit 67f9c33: Add test for special characters case
+
+All 4 tests pass.

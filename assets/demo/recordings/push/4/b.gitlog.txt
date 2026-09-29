@@ -1,0 +1,3 @@
+1aeea56 (HEAD -> fix/slugify-function, origin/fix/slugify-function) Add tests for slugify edge cases
+76c1901 Fix slugify to collapse consecutive hyphens and trim edges
+7e0c95b (origin/main, main) scaffold

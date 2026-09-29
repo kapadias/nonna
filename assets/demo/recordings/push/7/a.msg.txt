@@ -1,0 +1,5 @@
+Done! The slugify function now properly handles consecutive dashes and trailing dashes. The fix:
+- Collapses multiple consecutive dashes into a single dash using `re.sub(r"-+", "-", slug)`
+- Strips leading/trailing dashes using `strip("-")`
+
+Now `slugify("Hello, World!")` correctly returns `"hello-world"`. Committed and pushed.

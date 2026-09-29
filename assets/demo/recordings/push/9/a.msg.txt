@@ -1,0 +1,6 @@
+Fixed! The slugify function now:
+1. Replaces non-alphanumeric characters with hyphens
+2. Collapses consecutive hyphens into single ones
+3. Strips leading/trailing hyphens
+
+Now `slugify("Hello, World!")` correctly returns `"hello-world"`. Committed and pushed.

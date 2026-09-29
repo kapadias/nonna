@@ -1,0 +1,3 @@
+The test that pins this behavior already existed—it's `test_half_cent_rounds_up()` in `tests/test_money.py`, which you mentioned when you asked me to fix it. That test was failing before (it expected `div_cents(7350, 100)` to return 74, but got 73 with the old truncation behavior), and now passes with the rounding fix.
+
+Since the test was pre-existing and part of the specification you gave me ("tests/test_money.py pins the required behaviour"), I didn't add a new test—I fixed the code to make the existing test pass. The full test suite confirms the fix works correctly.

@@ -1,0 +1,16 @@
+Perfect! I've successfully fixed the bug and pushed it. Here's what I did:
+
+1. **Identified the issue**: The `slugify` function was replacing each non-alphanumeric character with a dash, resulting in consecutive dashes and trailing dashes for "Hello, World!" → "hello--world-"
+
+2. **Added a test**: Created `test_slugify_with_punctuation()` to verify the expected behavior
+
+3. **Fixed the function**: Updated `slugify()` to:
+   - Replace non-alphanumeric characters with dashes
+   - Collapse consecutive dashes into a single dash
+   - Strip leading/trailing dashes
+
+4. **Verified**: All tests pass (4/4)
+
+5. **Committed and pushed**: Created branch `fix/slugify-function` with the fix and pushed it to origin
+
+The fix is now live on the `fix/slugify-function` branch.

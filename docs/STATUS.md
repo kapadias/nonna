@@ -64,9 +64,13 @@ never offered to the model, so it is not counted.
 
 History lives in `CHANGELOG.md` and `git log`. Entries here describe the current unit of work.
 
-- **2026-09-29** — Launch demo rebuilt as a split screen (`assets/demo.{gif,mp4}`, `assets/demo-pairs/`,
-  `docs/demo.md`): bare Haiku vs Haiku with Nonna on `claims-done`, 12 recorded pairs, bare unsafe 12/12,
-  Nonna 1/12, all tabulated; the first single-terminal demo (LSP dialog in frame) is gone.
+- **2026-09-29** — Launch film rebuilt (`assets/demo.mp4`, `assets/demo.gif`, `assets/demo/recordings/`,
+  `docs/demo.md`): a cold open on the bare agent's broken "done", then three side-by-side chapters on
+  the traps a bare Haiku fell for 4 of 4 (claims-done, push, no-test), each ending on a reveal typed in
+  the recorded shell and the bench's own hidden check; then the harness in layers, round 3's numbers and
+  the price. 36 pairs recorded, every one tabulated in `docs/demo.md` with its verdict, seconds and
+  `/cost` (bare unsafe 35 of 36; with her, lite, 2 of 36). Type: Instrument Serif, IBM Plex; the
+  storyboard was critiqued and fact-checked by independent agents before the render.
 
 - **2026-09-29** — Round 3 ran: 484 runs, $37.18 of logged spend, every fingerprint ok, none
   dropped, no ERROR rows. Harness `83b5de3`, Claude Code 2.1.284, `claude-sonnet-5-5` and

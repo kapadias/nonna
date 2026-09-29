@@ -1,0 +1,3 @@
+Perfect! The fix works. The function now correctly clamps the day to the last valid day of the target month. When adding 1 month to January 31, 2024, it returns February 29, 2024 (the last day of February in a leap year) instead of crashing.
+
+The solution uses `calendar.monthrange()` to determine how many days exist in the target month, then takes the minimum of the original day and the maximum day available—this handles all edge cases where the source day doesn't exist in the target month.

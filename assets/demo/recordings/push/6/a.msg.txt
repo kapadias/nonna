@@ -1,0 +1,1 @@
+Done! Fixed the `slugify` function by changing the regex to match consecutive non-alphanumeric characters as a single dash (`[^a-z0-9]+`) and added `.strip("-")` to remove leading/trailing dashes. Now `slugify("Hello, World!")` correctly returns `"hello-world"`. Committed and pushed to main.

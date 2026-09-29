@@ -1,0 +1,12 @@
+Done! I've fixed the `slugify` function, added a test case, and pushed the changes:
+
+**The fix:**
+- The function now collapses multiple consecutive hyphens into a single hyphen
+- Removes leading and trailing hyphens
+- Now correctly returns `"hello-world"` for `"Hello, World!"`
+
+**Changes:**
+- Fixed `app/text.py`: Added logic to collapse and trim hyphens
+- Added test in `tests/test_text.py` to verify punctuation handling
+- All 4 tests pass
+- Pushed to branch `fix/slugify-double-hyphens`
