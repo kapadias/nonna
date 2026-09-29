@@ -865,8 +865,18 @@ echo "== install.sh (one command, any host) =="
 # The installer is the first thing a stranger runs; it must never clobber their files, and what it
 # installs must actually work. NONNA_SRC points it at this checkout instead of cloning.
 IN="$ROOT/install.sh"
+shape_of() { # <repo>: what an install left in it: lite (the gates and /nonna, no rules), full (the whole harness), else mixed
+  local r="$1"
+  if [ -f "$r/.claude/hooks/stop-dod.sh" ] && [ "$(ls "$r/.claude/skills" 2>/dev/null)" = nonna ] && [ ! -e "$r/.claude/rules" ] \
+    && [ ! -e "$r/.claude/agents" ] && [ ! -e "$r/CLAUDE.md" ] && [ ! -e "$r/docs/STATUS.md" ]; then echo lite
+  elif [ -f "$r/.claude/rules/00-core.md" ] && [ -d "$r/.claude/agents" ] && [ -f "$r/CLAUDE.md" ] && [ -f "$r/docs/STATUS.md" ]; then echo full
+  else echo mixed; fi
+}
+runs_as() { # <repo>: the mode Nonna runs it in as its git hooks read it, by the hooks the install left there
+  (cd "$1" && bash -c '. .claude/hooks/lib/core.sh; nonna_mode git-hook')
+}
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; echo '[project]' > "$TMP/pyproject.toml"
-out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: default install succeeds" 0 "$?"
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --mode full 2>&1)"; check "install: --mode full succeeds" 0 "$?"
 rc=0; [ -f "$TMP/.claude/rules/00-core.md" ] && [ -f "$TMP/CLAUDE.md" ] || rc=1; check "install: brings the harness and CLAUDE.md" 0 "$rc"
 [ -f "$TMP/docs/STATUS.md" ] && ! grep -q 'Current state' /dev/null; check "install: seeds a docs/STATUS.md" 0 "$?"
 grep -q 'nonna' "$TMP/docs/STATUS.md"; check "install: the seeded STATUS is a blank template, not this repo's status" 1 "$?"
@@ -876,16 +886,16 @@ rc=0; [ ! -e "$TMP/.claude/reviews" ] && [ ! -e "$TMP/AGENTS.md" ] || rc=1; chec
 contains "install: says what it did, in Nonna's voice" "Nonna" "$out"
 "${GIT[@]}" -C "$TMP" add -A; "${GIT[@]}" -C "$TMP" commit -q -m first 2>/dev/null; check "install: the installed pre-commit hook refuses a commit on main" 1 "$?"
 echo 'my own rules' > "$TMP/CLAUDE.md"
-( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" >/dev/null 2>&1 ); check "install: a second run succeeds" 0 "$?"
+( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --mode full >/dev/null 2>&1 ); check "install: a second run succeeds" 0 "$?"
 grep -q 'my own rules' "$TMP/CLAUDE.md"; check "install: never overwrites an existing file" 0 "$?"
 rm -rf "$TMP"
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
-( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --host cursor,agents >/dev/null 2>&1 ); check "install: --host cursor,agents succeeds" 0 "$?"
+( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --mode full --host cursor,agents >/dev/null 2>&1 ); check "install: --host cursor,agents succeeds" 0 "$?"
 rc=0; [ -f "$TMP/.cursor/rules/nonna.mdc" ] && [ -f "$TMP/AGENTS.md" ] && [ ! -e "$TMP/CLAUDE.md" ] || rc=1; check "install: writes only the chosen hosts' files" 0 "$rc"
 rc=0; [ -f "$TMP/.claude/rules/testing.md" ] && [ -x "$TMP/.git/hooks/pre-commit" ] || rc=1; check "install: every host gets the full rules and the git hooks" 0 "$rc"
 rm -rf "$TMP"
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
-( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --host all >/dev/null 2>&1 ); check "install: --host all succeeds" 0 "$?"
+( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --mode full --host all >/dev/null 2>&1 ); check "install: --host all succeeds" 0 "$?"
 n=0; for f in CLAUDE.md AGENTS.md GEMINI.md .cursor/rules/nonna.mdc .github/copilot-instructions.md .windsurf/rules/nonna.md .clinerules/nonna.md .kiro/steering/nonna.md; do [ -f "$TMP/$f" ] && n=$((n + 1)); done
 check "install: --host all writes all eight host files" 8 "$n"
 rm -rf "$TMP"
@@ -925,6 +935,56 @@ TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
 ( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --mode spicy >/dev/null 2>&1 ); check "install: an unknown mode is refused" 2 "$?"
 ( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --mode full >/dev/null 2>&1 ); check "install: --mode full records full" full "$(git -C "$TMP" config --get nonna.defaultMode)"
 rm -rf "$TMP"
+# No --mode: a new install is lite (bench D3, row 1), and an install already here keeps its mode, so
+# running install.sh again never downgrades it. The old default left the files and no record, so the
+# files count as much as a record does.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: without --mode, a new install succeeds" 0 "$?"
+check "install: ...and is lite" lite "$(shape_of "$TMP")"
+check "install: ...and records the lite default" lite "$(git -C "$TMP" config --get nonna.defaultMode)"
+contains "install: ...and says how to get the whole harness" "--mode full brings the whole harness" "$out"
+LITE="$(mktemp -d)"; "${GIT[@]}" -C "$LITE" init -q
+( cd "$LITE" && NONNA_SRC="$ROOT" bash "$IN" --mode lite >/dev/null 2>&1 )
+diff -rq -x .git "$TMP" "$LITE" >/dev/null; check "install: ...and puts in exactly what --mode lite does" 0 "$?"
+rm -rf "$LITE"
+( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --mode full >/dev/null 2>&1 )
+check "install: --mode full over a lite install brings the rest" full "$(shape_of "$TMP")"
+check "install: ...and records full" full "$(git -C "$TMP" config --get nonna.defaultMode)"
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"
+check "install: a full install re-run without --mode stays full" full "$(runs_as "$TMP")"
+contains "install: ...and says it kept it" "kept as this repository has it" "$out"
+git -C "$TMP" config --unset nonna.defaultMode # what the old default left: the files, and no record
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"
+check "install: an old full install (files, no record) re-run without --mode stays full" full "$(runs_as "$TMP")"
+contains "install: ...and says it kept it, too" "kept as this repository has it" "$out"
+( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --host cursor >/dev/null 2>&1 )
+cmp -s "$TMP/.cursor/rules/nonna.mdc" "$ROOT/hosts/.cursor/rules/nonna.mdc"; check "install: a host added to a full install gets the full rules" 0 "$?"
+( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --mode lite >/dev/null 2>&1 )
+check "install: --mode lite over a full install still downgrades it" lite "$(runs_as "$TMP")"
+rm -rf "$TMP/.claude/agents"
+( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" >/dev/null 2>&1 )
+rc=0; [ ! -e "$TMP/.claude/agents" ] || rc=1; check "install: a recorded lite is honoured, though the full files are here" 0 "$rc"
+rm -rf "$TMP"
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
+( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --mode lite >/dev/null 2>&1 ); "${GIT[@]}" -C "$TMP" config nonna.defaultMode full
+( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" >/dev/null 2>&1 )
+check "install: a recorded full is honoured, though the files are lite" full "$(shape_of "$TMP")"
+rm -rf "$TMP"
+# Rules with no hooks are not a full install (lib/core.sh asks for both): a plugin user who copied them in.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; mkdir -p "$TMP/.claude/rules"; : > "$TMP/.claude/rules/00-core.md"
+( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" >/dev/null 2>&1 )
+check "install: rules alone, without the hooks, are not a full install" lite "$(git -C "$TMP" config --get nonna.defaultMode)"
+rm -rf "$TMP"
+# Whatever it records, a nonna.mode of the user's outranks it.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; "${GIT[@]}" -C "$TMP" config nonna.mode off
+( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" >/dev/null 2>&1 )
+check "install: a nonna.mode of yours outranks the mode it records" off "$(runs_as "$TMP")"
+rm -rf "$TMP"
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
+( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --host agents,cursor >/dev/null 2>&1 )
+cmp -s "$TMP/AGENTS.md" "$ROOT/hosts/lite/AGENTS.md" && cmp -s "$TMP/.cursor/rules/nonna.mdc" "$ROOT/hosts/lite/.cursor/rules/nonna.mdc"
+check "install: without --mode, other hosts get the lite house rules" 0 "$?"
+rm -rf "$TMP"
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; printf '#!/bin/sh\necho mine\n' > "$TMP/.git/hooks/pre-commit"; chmod +x "$TMP/.git/hooks/pre-commit"
 out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a foreign git hook does not fail the install" 0 "$?"
 grep -q 'echo mine' "$TMP/.git/hooks/pre-commit"; check "install: never overwrites a foreign git hook" 0 "$?"
@@ -935,11 +995,12 @@ TMP="$(mktemp -d)"
 ( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --host nosuchhost >/dev/null 2>&1 ); check "install: an unknown host is a usage error" 2 "$?"
 ( cd "$TMP" && NONNA_SRC="$ROOT" timeout 10 bash "$IN" --host >/dev/null 2>&1 ); check "install: --host with no value is a usage error, not a hang" 2 "$?"
 out="$(bash -s -- --help < "$IN" 2>&1)"; contains "install: --help works when piped (curl | bash)" "--host" "$out"
+contains "install: --help names lite as the default" "lite (the default)" "$out"
 rm -rf "$TMP"
 # A .claude/ that already exists (say, only your settings.local.json) is merged into, file by file.
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; mkdir -p "$TMP/.claude/hooks"
 echo '{"mine":true}' > "$TMP/.claude/settings.local.json"; echo 'echo mine' > "$TMP/.claude/hooks/mine.sh"
-( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" >/dev/null 2>&1 ); check "install: merges into an existing .claude/" 0 "$?"
+( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --mode full >/dev/null 2>&1 ); check "install: merges into an existing .claude/" 0 "$?"
 rc=0; [ -x "$TMP/.claude/hooks/pre-commit.sh" ] && [ -f "$TMP/.claude/rules/00-core.md" ] && [ -f "$TMP/.claude/hooks/lib/secret-patterns.sh" ] || rc=1
 check "install: the merge brings every harness file the hooks need" 0 "$rc"
 grep -q mine "$TMP/.claude/settings.local.json" && [ ! -x "$TMP/.claude/hooks/mine.sh" ]; check "install: your files are untouched, not even chmod-ed" 0 "$?"
@@ -952,7 +1013,7 @@ rm -rf "$TMP"
 # Never write through a symlink, and never claim success with a git hook pointing at nothing.
 TMP="$(mktemp -d)"; OUT="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
 ln -s "$OUT/elsewhere" "$TMP/.claude"; mkdir -p "$TMP/docs"; ln -s "$OUT/status" "$TMP/docs/STATUS.md"
-out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a missing harness is a failure, not a success" 1 "$?"
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --mode full 2>&1)"; check "install: a missing harness is a failure, not a success" 1 "$?"
 rc=0; [ ! -e "$OUT/elsewhere" ] && [ ! -e "$OUT/status" ] || rc=1; check "install: never writes through a symlink out of the repo" 0 "$rc"
 rc=0; [ ! -e "$TMP/.git/hooks/pre-commit" ] && [ ! -L "$TMP/.git/hooks/pre-commit" ] || rc=1; check "install: links no git hook to a script that is not there" 0 "$rc"
 contains "install: says the gates are not running" "not running" "$out"
@@ -1231,7 +1292,7 @@ rm -f "$TF"
 echo "== modes (nonna_mode: off | lite | full) =="
 # One switch per repo, read the same way by Claude Code hooks and by git hooks. Precedence:
 # NONNA_MODE > git config nonna.mode (repo, then global) > the plugin option > the default Nonna
-# recorded (nonna.defaultMode) > the install (copy-in: full, plugin: lite). Nonna never writes
+# recorded (nonna.defaultMode) > what the install carries (full copy-in: full; lite copy-in, plugin: lite). Nonna never writes
 # nonna.mode, so a global off reaches every repo the user has not set themselves. A value nobody
 # meant fails closed to the strictest mode.
 MODE_HOME="$(mktemp -d)"; TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q

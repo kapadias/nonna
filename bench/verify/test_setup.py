@@ -85,6 +85,14 @@ def test_plugin_arms_get_a_bare_tree_and_her_config(tmp_path, arm, mode, harness
     assert branch.strip() == "feature/work"
 
 
+def test_the_installer_arm_installs_the_whole_harness(tmp_path):
+    """install.sh defaults to lite; the `nonna` arm is rounds 1-2's copy-in, the whole harness."""
+    d, r = setup(tmp_path, "nonna", INSTALLER=ROOT)
+    assert r.returncode == 0, r.stderr
+    assert (d / ".claude" / "rules" / "00-core.md").is_file()
+    assert cfg(d, "nonna.defaultMode") == "full"
+
+
 @pytest.mark.parametrize("suite", ["traps", "small"])
 def test_every_suite_names_its_test_command(suite):
     with open(os.path.join(B, "tasks", suite, "TESTCMD")) as fh:
