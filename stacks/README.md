@@ -33,6 +33,10 @@ cp /path/to/nonna/stacks/<lang>/settings.local.json .claude/settings.local.json
 
 If you already have a `.claude/settings.local.json`, merge the `permissions.allow` array entries into it.
 
+The file is yours alone: committed, its pre-approvals reach everyone who clones the repository.
+`install.sh` writes it, lists what it pre-approves and adds `.claude/settings.local.json` to your
+`.gitignore`; by hand, add that line yourself.
+
 A runner still runs your project's own code (tests, `conftest.py`, build scripts), so the pack narrows
 what runs without asking; it is not a sandbox. Each stack's README lists what it pre-approves and what
 still asks.

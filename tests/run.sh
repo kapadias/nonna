@@ -905,11 +905,42 @@ done
 check "install: no pack, present or future, pre-approves an interpreter, a package manager or a shell" 0 "$bare"
 rc=0; [ ! -e "$TMP/.claude/reviews" ] && [ ! -e "$TMP/AGENTS.md" ] || rc=1; check "install: copies no review verdicts and no other host's files" 0 "$rc"
 contains "install: says what it did, in Nonna's voice" "Nonna" "$out"
+contains "install: says what the pack pre-approves" ".claude/settings.local.json (python): pre-approves pytest, python -m pytest, python3 -m pytest, ruff, mypy, pyright" "$out"
+contains "install: says it added the pack to .gitignore" ".gitignore: added .claude/settings.local.json" "$out"
+check "install: the .gitignore line is there once" 1 "$(grep -cxF .claude/settings.local.json "$TMP/.gitignore")"
 "${GIT[@]}" -C "$TMP" add -A; "${GIT[@]}" -C "$TMP" commit -q -m first 2>/dev/null; check "install: the installed pre-commit hook refuses a commit on main" 1 "$?"
 echo 'my own rules' > "$TMP/CLAUDE.md"
 out2="$( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --mode full 2>&1 )"; check "install: a second run succeeds" 0 "$?"
 ! printf '%s' "$out2" | grep -q 'you already have a'; check "install: a second run knows her own git hooks are hers" 0 "$?"
 grep -q 'my own rules' "$TMP/CLAUDE.md"; check "install: never overwrites an existing file" 0 "$?"
+check "install: a second run leaves the .gitignore line once" 1 "$(grep -cxF .claude/settings.local.json "$TMP/.gitignore")"
+printf '%s' "$out2" | grep -q 'pre-approves'; check "install: a second run, which keeps the pack, grants nothing new" 1 "$?"
+rm -rf "$TMP"
+# The .gitignore line goes on a line of its own, and only once; a settings.local.json that was already
+# here is the user's, so install grants nothing, claims nothing and leaves .gitignore alone.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; echo '[project]' > "$TMP/pyproject.toml"; printf 'build/' > "$TMP/.gitignore"
+( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" >/dev/null 2>&1 )
+check "install: a .gitignore with no final newline gets the line on a line of its own" "build/,.claude/settings.local.json" "$(paste -sd, "$TMP/.gitignore")"
+rm -rf "$TMP"
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; echo '[project]' > "$TMP/pyproject.toml"; printf '# mine\n.claude/settings.local.json\n' > "$TMP/.gitignore"
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"
+check "install: a .gitignore that has the line already keeps it once" 1 "$(grep -cxF .claude/settings.local.json "$TMP/.gitignore")"
+printf '%s' "$out" | grep -qF .gitignore; check "install: ...and says nothing of it" 1 "$?"
+rm -rf "$TMP"
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; echo '[project]' > "$TMP/pyproject.toml"; mkdir "$TMP/.claude"; echo '{"mine":true}' > "$TMP/.claude/settings.local.json"
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"
+rc=0; ! printf '%s' "$out" | grep -q 'pre-approves' && [ ! -e "$TMP/.gitignore" ] && grep -q mine "$TMP/.claude/settings.local.json" || rc=1
+check "install: a settings.local.json of yours is kept, with no grant claimed and no .gitignore written" 0 "$rc"
+rm -rf "$TMP"
+# Where the line cannot be added, the pack is on disk and could be committed: fail, and say which file.
+TMP="$(mktemp -d)"; OUT="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; echo '[project]' > "$TMP/pyproject.toml"; ln -s "$OUT/elsewhere" "$TMP/.gitignore"
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a .gitignore that is a symlink is a failure, not a success" 1 "$?"
+rc=0; [ ! -e "$OUT/elsewhere" ] || rc=1; check "install: ...and is not written through" 0 "$rc"
+contains "install: ...and says to add the line yourself" "add .claude/settings.local.json to it yourself" "$out"
+rm -rf "$TMP" "$OUT"
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; echo '[project]' > "$TMP/pyproject.toml"; mkdir "$TMP/.gitignore"
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a .gitignore it cannot write is a failure, not a success" 1 "$?"
+contains "install: ...and says so" ".gitignore: could not write it" "$out"
 rm -rf "$TMP"
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
 ( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --mode full --host cursor,agents >/dev/null 2>&1 ); check "install: --host cursor,agents succeeds" 0 "$?"
@@ -968,6 +999,7 @@ TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
 out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: without --mode, a new install succeeds" 0 "$?"
 check "install: ...and is lite" lite "$(shape_of "$TMP")"
 check "install: ...and records the lite default" lite "$(git -C "$TMP" config --get nonna.defaultMode)"
+rc=0; [ ! -e "$TMP/.gitignore" ] || rc=1; check "install: ...and with no stack pack to keep out of git, writes no .gitignore" 0 "$rc"
 contains "install: ...and says how to get the whole harness" "--mode full brings the whole harness" "$out"
 LITE="$(mktemp -d)"; "${GIT[@]}" -C "$LITE" init -q
 ( cd "$LITE" && NONNA_SRC="$ROOT" bash "$IN" --mode lite >/dev/null 2>&1 )

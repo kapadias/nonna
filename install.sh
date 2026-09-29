@@ -211,7 +211,25 @@ stack=""
 if [ -n "$stack" ] && [ -f "$P/stacks/$stack/settings.local.json" ]; then
   n=${#copied[@]}
   put "$P/stacks/$stack/settings.local.json" ".claude/settings.local.json"
-  [ "${#copied[@]}" -gt "$n" ] && done_msgs+=(".claude/settings.local.json ($stack)")
+  if [ "${#copied[@]}" -gt "$n" ]; then
+    # What it lets run without asking is read back from the file, so the message cannot drift from the pack.
+    grants="$(grep -o '"Bash([^"]*)"' .claude/settings.local.json | sed 's/^"Bash(//; s/:\*)"$//' | paste -sd, -)"
+    done_msgs+=(".claude/settings.local.json ($stack): pre-approves ${grants//,/, }")
+    # It is this machine's alone: committed, it would pre-approve the same commands for every clone.
+    if through_link .gitignore; then
+      warn_msgs+=(".gitignore: a symlink is on the way, and I do not write through links, so add .claude/settings.local.json to it yourself")
+      failed=1
+    elif ! grep -qxF .claude/settings.local.json .gitignore 2>/dev/null; then
+      lead="" # a last line with no newline would swallow ours
+      [ ! -s .gitignore ] || [ -z "$(tail -c1 .gitignore)" ] || lead=$'\n'
+      if printf '%s.claude/settings.local.json\n' "$lead" 2>/dev/null >> .gitignore; then
+        done_msgs+=(".gitignore: added .claude/settings.local.json (yours alone, so it stays out of git)")
+      else
+        warn_msgs+=(".gitignore: could not write it, so add .claude/settings.local.json to it yourself")
+        failed=1
+      fi
+    fi
+  fi
 fi
 
 # A settings.json you already had was kept; without Nonna's hooks in it, her Claude Code gates are off.
