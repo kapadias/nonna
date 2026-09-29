@@ -1,0 +1,30 @@
+
+✻ Baked for 14s · done 4:30 PM
+▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔▔
+   Settings  Status   Config   Usage   Stats
+
+   Session
+
+   Total cost:            $0.0294
+   Total duration (API):  18s
+   Total duration (wall): 1m 28s
+   Total code changes:    5 lines added, 2 lines removed
+   Usage by model:
+       claude-haiku-4-5:  1.4k input, 1.8k output, 152.1k cache
+   read, 2.0k cache write ($0.0294)
+   Prompt cache (main):   4 requests · 99% of input tokens from
+   cache · no misses · warm (1h TTL, last activity 58s ago)
+
+   Esc to cancel
+
+
+
+
+
+
+
+
+
+
+
+

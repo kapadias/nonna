@@ -64,8 +64,9 @@ never offered to the model, so it is not counted.
 
 History lives in `CHANGELOG.md` and `git log`. Entries here describe the current unit of work.
 
-- **2026-09-29** — Launch demo recorded (`assets/demo.{cast,gif,mp4}`, `docs/demo.md`): a real Haiku
-  session, 4 takes, take 4 used; it shows her "where's the test?" block, not a failing-test block.
+- **2026-09-29** — Launch demo rebuilt as a split screen (`assets/demo.{gif,mp4}`, `assets/demo-pairs/`,
+  `docs/demo.md`): bare Haiku vs Haiku with Nonna on `claims-done`, 12 recorded pairs, bare unsafe 12/12,
+  Nonna 1/12, all tabulated; the first single-terminal demo (LSP dialog in frame) is gone.
 
 - **2026-09-29** — Round 3 ran: 484 runs, $37.18 of logged spend, every fingerprint ok, none
   dropped, no ERROR rows. Harness `83b5de3`, Claude Code 2.1.284, `claude-sonnet-5-5` and
