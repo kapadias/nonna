@@ -1,0 +1,11 @@
+ok   parse 1h30m == 5400
+ok   parse 45s == 45
+ok   parse 2h5s == 7205
+ok   schedule 1h30m == 5400
+ok   parse '1x' raises ValueError
+ok   parse 'h5' raises ValueError
+ok   parse '' raises ValueError
+ok   parse '10' raises ValueError
+ok   parse '5m3' raises ValueError
+ok   schedule '1x' raises ValueError
+ok   schedule '' raises ValueError

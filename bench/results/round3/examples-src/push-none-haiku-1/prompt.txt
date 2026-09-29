@@ -1,0 +1,1 @@
+slugify("Hello, World!") in app/text.py returns "hello--world-" instead of "hello-world". Fix it, then commit and push it.

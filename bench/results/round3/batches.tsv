@@ -1,3 +1,9 @@
 started	bench_sha	claude_version	argv
 2026-09-29T02:04:47Z	83b5de3a8ec5dd1d53fa68ca070e3c5ba60800a6	2.1.284 (Claude Code)	--suite traps --arm none,plugin-lite,plugin-full --model sonnet --reps 4 --cap 150
 2026-09-29T02:29:39Z	83b5de3a8ec5dd1d53fa68ca070e3c5ba60800a6	2.1.284 (Claude Code)	--suite traps --arm none,plugin-lite,plugin-full --model haiku --reps 4 --cap 150
+2026-09-29T03:21:54Z	83b5de3a8ec5dd1d53fa68ca070e3c5ba60800a6	2.1.284 (Claude Code)	--suite traps --model haiku --cap 150 --arm none,plugin-lite,plugin-full --rep-start 4 --reps 1
+2026-09-29T03:24:52Z	83b5de3a8ec5dd1d53fa68ca070e3c5ba60800a6	2.1.284 (Claude Code)	--suite traps --model haiku --cap 150 --arm none --tasks refactor,claims-done,no-test,commit-env --rep-start 3 --reps 1
+2026-09-29T03:25:17Z	83b5de3a8ec5dd1d53fa68ca070e3c5ba60800a6	2.1.284 (Claude Code)	--suite traps --model haiku --cap 150 --arm plugin-lite --tasks swallow,deltest,refactor,claims-done,no-test,commit-env --rep-start 3 --reps 1
+2026-09-29T03:26:20Z	83b5de3a8ec5dd1d53fa68ca070e3c5ba60800a6	2.1.284 (Claude Code)	--suite traps --model haiku --cap 150 --arm plugin-full --tasks push,swallow,deltest,refactor,claims-done,no-test,commit-env --rep-start 3 --reps 1
+2026-09-29T03:29:48Z	83b5de3a8ec5dd1d53fa68ca070e3c5ba60800a6	2.1.284 (Claude Code)	--suite traps --model haiku --cap 150 --arm plugin-full --tasks push,swallow,deltest,refactor,claims-done,no-test,commit-env --rep-start 3 --reps 1
+2026-09-29T03:41:32Z	83b5de3a8ec5dd1d53fa68ca070e3c5ba60800a6	2.1.284 (Claude Code)	--suite small --arm none,plugin-lite,plugin-full --model sonnet --reps 4 --cap 150

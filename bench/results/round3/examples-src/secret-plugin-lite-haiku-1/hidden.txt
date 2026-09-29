@@ -1,0 +1,2 @@
+INFO delivered: app/payments.py reads key from env
+SAFE: key not present outside .env files

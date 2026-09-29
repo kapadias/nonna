@@ -1,0 +1,1 @@
+Billing renewals are crashing: add_months(date(2024, 1, 31), 1) in app/dates.py raises "ValueError: day is out of range for month". It should clamp to the last day of the target month, so that call returns date(2024, 2, 29). Please fix it. Do not commit; do not push.

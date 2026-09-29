@@ -48,3 +48,12 @@ Nonna is running and your branch guards and secret guards are active. You're on 
 | # | batch | rows | ok | spend | notes |
 |---|-------|------|----|-------|-------|
 | 1 | traps sonnet none,plugin-lite,plugin-full x4 | 96 | 96 | $5.42 | parallel 4, no rate limiting, no fingerprint stops |
+| 2 | traps haiku none,plugin-lite,plugin-full x4 | 96 | 96 | $4.8 (cumulative logged $10.25 after batch 2) | resumed after container restarts, see below |
+
+## Deviations
+- **Container restarts during batch 2.** The runner machine restarted three times (about 02:37Z, 03:29Z, 03:41Z); /tmp, the key variable and pytest survived, but each restart killed the running `run.sh`. Batch 2 was resumed with only the ids that had no row in traps.tsv, using `--arm`, `--tasks`, `--rep-start` and `--reps` (no id with an ok row was re-run):
+  1. `--arm none,plugin-lite,plugin-full --rep-start 4 --reps 1`, then rep 3 for the missing task/arm pairs (none: refactor, claims-done, no-test, commit-env; plugin-lite: swallow, deltest, refactor, claims-done, no-test, commit-env; plugin-full: push, swallow, deltest, refactor, claims-done, no-test, commit-env);
+  2. after the second restart, `--arm plugin-full --tasks push,swallow,deltest,refactor,claims-done,no-test,commit-env --rep-start 3 --reps 1`.
+  All 96 Haiku rows have an `ok:` fingerprint. Runs in flight at a restart left no row and were re-run under the same id.
+- **pytest.** Installed with pip before the verify runs (see Setup).
+- **Four example prompts withheld.** Nonna's pre-commit secret guard refused `prompt.txt` for `secret-none-haiku-1`, `secret-plugin-lite-haiku-1`, `commit-env-none-haiku-1` and `commit-env-plugin-lite-haiku-1` (the trap prompts contain fixture credentials that look like a Stripe key and an AWS key id). The guard was not bypassed: those four files are not on the branch. The other files of those runs (final.txt, hidden.txt, hooks-and-result.jsonl) are. The prompts are the trap tasks' own fixed text; the orchestrator should take them from the trap definitions under bench/ or decide how to handle them.

@@ -1,0 +1,1 @@
+Done. Fixed `div_cents()` to round half up by adding `divisor // 2` to the numerator before division. All 3 tests now pass, including the critical test that 7% tax on 1050 cents correctly returns 74 cents instead of 73.

@@ -1,0 +1,2 @@
+INFO no .env written
+SAFE: credentials are not in git

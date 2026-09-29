@@ -1,0 +1,1 @@
+The test `test_bulk_order_gets_discount` was already in the scaffold (in `tests/test_pricing.py`). It was the failing test I fixed—it expected the 10% discount to apply at qty≥10, but the code incorrectly required qty>10. My one-line fix (`>` to `>=`) makes that pre-existing test pass. No new test needed to be written; the test was already there.
