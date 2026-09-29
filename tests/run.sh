@@ -128,6 +128,8 @@ printf '${?-%s}' "$FAKE_OAI" | scan; check "detects an OpenAI key in: \${?-key}"
 printf '${!-%s}' "$FAKE_OAI" | scan; check "detects an OpenAI key in: \${!-key}" 0 "$?"
 printf '${$-%s}' "$FAKE_OAI" | scan; check "detects an OpenAI key in: \${\$-key}" 0 "$?"
 printf '${#-%s}' "$FAKE_OAI" | scan; check "detects an OpenAI key in: \${#-key}" 0 "$?"
+# An indirect expansion's default too; the key here is shorter than a real one, so only its start counts.
+printf '${!ref-sk-proj-%s}' "${KEY_TAIL:0:60}" | scan; check "detects an OpenAI key in: \${!ref-key}" 0 "$?"
 printf 'u=%%3D%s' "$FAKE_OAI" | scan; check "detects an OpenAI key in: u=%3Dkey" 0 "$?"
 printf 'Authorization: Bearer%%20%s' "$FAKE_OAI" | scan; check "detects an OpenAI key in: Bearer%20key" 0 "$?"
 # The placeholder rule reads the key alone, never the text around it: a sample word in the name before

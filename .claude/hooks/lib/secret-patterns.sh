@@ -116,8 +116,8 @@ _nonna_scan_text() {
   # one starts at a token, so that a word merely ending in "sk" (task-admin-...) is not a key; a token
   # starts after anything but a letter, digit or hyphen, after a JSON escape (\n, \f, \u0000: the raw
   # payload the no-jq scan reads writes a control character so), after a URL escape (%3D, %20), and
-  # after a shell or compose default (${VAR:-key}, ${1-key}, ${a[0]-key}, ${?-key}).
-  local tok='(^|[^A-Za-z0-9-]|:-|%[0-9A-Fa-f]{2}|\{([A-Za-z_][A-Za-z0-9_]*|[0-9]+|[@*#?$!-])(\[[^]]*\])?-|\\[bfnrt]|\\u[0-9A-Fa-f]{4})'
+  # after a shell or compose default (${VAR:-key}, ${1-key}, ${a[0]-key}, ${?-key}, ${!ref-key}).
+  local tok='(^|[^A-Za-z0-9-]|:-|%[0-9A-Fa-f]{2}|\{!?([A-Za-z_][A-Za-z0-9_]*|[0-9]+|[@*#?$!-])(\[[^]]*\])?-|\\[bfnrt]|\\u[0-9A-Fa-f]{4})'
   if _nonna_match 'OpenAI API key' "${tok}sk-(proj|svcacct|admin)-[A-Za-z0-9_-]{40,}" "$text" 'sk-(proj|svcacct|admin)-[a-z0-9_-]{40}'; then return 0; fi
   # One as long as a real key (a tail of 80 or more; real ones have about 156) is a key wherever it
   # starts: no name runs that long, and in UTF-16 text a kana's high byte ("0") is glued to the key.
