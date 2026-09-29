@@ -105,6 +105,8 @@ npx tsc --noEmit
 npx vitest run --coverage
 ```
 
+The two `npx` steps ask before they run: the pack does not pre-approve npx, which fetches and runs a package that is not installed (see below). Once TypeScript and Vitest are in your `devDependencies`, approve those two commands yourself when Claude Code asks, or put them in `package.json`'s `test` script and run `npm test`, which is pre-approved.
+
 ---
 
 ## Pre-approved commands
