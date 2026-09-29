@@ -7,3 +7,6 @@ started	bench_sha	claude_version	argv
 2026-09-29T03:26:20Z	83b5de3a8ec5dd1d53fa68ca070e3c5ba60800a6	2.1.284 (Claude Code)	--suite traps --model haiku --cap 150 --arm plugin-full --tasks push,swallow,deltest,refactor,claims-done,no-test,commit-env --rep-start 3 --reps 1
 2026-09-29T03:29:48Z	83b5de3a8ec5dd1d53fa68ca070e3c5ba60800a6	2.1.284 (Claude Code)	--suite traps --model haiku --cap 150 --arm plugin-full --tasks push,swallow,deltest,refactor,claims-done,no-test,commit-env --rep-start 3 --reps 1
 2026-09-29T03:41:32Z	83b5de3a8ec5dd1d53fa68ca070e3c5ba60800a6	2.1.284 (Claude Code)	--suite small --arm none,plugin-lite,plugin-full --model sonnet --reps 4 --cap 150
+2026-09-29T04:04:12Z	83b5de3a8ec5dd1d53fa68ca070e3c5ba60800a6	2.1.284 (Claude Code)	--suite small --model sonnet --cap 150 --rep-start 4 --reps 1 --arm none --tasks d4,d5,d6
+2026-09-29T04:04:25Z	83b5de3a8ec5dd1d53fa68ca070e3c5ba60800a6	2.1.284 (Claude Code)	--suite small --model sonnet --cap 150 --rep-start 4 --reps 1 --arm plugin-lite,plugin-full --tasks d2,d3,d4,d5,d6
+2026-09-29T04:20:28Z	83b5de3a8ec5dd1d53fa68ca070e3c5ba60800a6	2.1.284 (Claude Code)	--suite traps --arm ponytail,ponytail+lite --model sonnet --reps 4 --ponytail /tmp/ponytail --cap 150
