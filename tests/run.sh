@@ -808,6 +808,9 @@ printf 'STRIPE=sk_live_%s\n' '0123456789abcdefABCD' > "$TMP/src/pay.py"; "${GIT[
 out="$("${GIT[@]}" -C "$TMP" commit -q -m key 2>&1)"; check "pre-commit: blocks a staged secret" 1 "$?"
 contains "pre-commit: names the file and the class" "src/pay.py" "$out"
 "${GIT[@]}" -C "$TMP" reset -q; rm -f "$TMP/src/pay.py"
+printf 'PNG\000\000binary\000data\n' > "$TMP/src/logo.png"; "${GIT[@]}" -C "$TMP" add -A
+out="$("${GIT[@]}" -C "$TMP" commit -q -m logo 2>&1)"; check "pre-commit: allows a staged binary file" 0 "$?"
+! printf '%s' "$out" | grep -q 'null byte'; check "pre-commit: a binary file draws no shell warning" 0 "$?"
 mkdir -p "$TMP/tests"; printf 'K = "%s"\n' "$FAKE_AWS" > "$TMP/tests/test_k.py"; "${GIT[@]}" -C "$TMP" add -A
 "${GIT[@]}" -C "$TMP" commit -q -m fixture 2>/dev/null; check "pre-commit: a key-shaped test fixture is blocked too (push parity)" 1 "$?"
 "${GIT[@]}" -C "$TMP" reset -q; rm -rf "$TMP/tests"

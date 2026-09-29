@@ -58,8 +58,9 @@ while IFS= read -r -d '' f; do
       ;;
   esac
   # A file name is never pathspec magic, a NUL byte never makes a file "binary", and a diff that
-  # cannot be read is a stop, not a clean bill.
-  if ! diff="$(git --literal-pathspecs -c core.quotePath=false diff --cached --text --no-color --no-ext-diff --no-textconv -U0 -- "$f")"; then
+  # cannot be read is a stop, not a clean bill. The NUL bytes are dropped here, as the shell would
+  # drop them anyway, so a staged image draws no shell warning; pipefail keeps git's failure.
+  if ! diff="$(git --literal-pathspecs -c core.quotePath=false diff --cached --text --no-color --no-ext-diff --no-textconv -U0 -- "$f" | tr -d '\000')"; then
     echo "✗ Nonna: I could not read what you staged in '$f', so I cannot vouch for it. (pre-commit: git diff failed.)" >&2
     fail=1
     continue
