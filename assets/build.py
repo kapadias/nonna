@@ -374,10 +374,8 @@ def text_run(
     """Outline `text` with its baseline at y. anchor="start" starts the pen at x, "end" ends the
     advance there, and "ink" starts the first glyph's ink there, so lines that open on letters with
     different side bearings share a left edge.
-
-    debt: no pair kerning, as in the banner's own lettering, add the GPOS pairs to the JSON if a
-    headline ever shows a gap between glyphs.
     """
+    # debt: no pair kerning, like the banner's lettering, add the GPOS pairs to the JSON if a headline shows a gap
     k = size / font.upm
     width = font.advance(text, weight, size, tracking)
     pen = x - width if anchor == "end" else x
@@ -800,6 +798,7 @@ def _png_problems(png: Path, rel: str, img: Image) -> list[str]:
         problems.append(f"{rel}: {got[0]}x{got[1]}, want {want[0]}x{want[1]}")
     if len(data) > PNG_BUDGET:
         problems.append(f"{rel}: over the {PNG_BUDGET}-byte budget ({len(data)} bytes)")
+    # debt: a PNG passes if it carries its SVG's hash, compare pixels if a bad render ever ships
     if png_stamp(data) != digest(img.svg):
         problems.append(f"{rel}: rendered from a different SVG")
     return problems
