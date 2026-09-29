@@ -255,11 +255,11 @@ a blank `docs/STATUS.md`. It records `nonna.defaultMode full`.
 
 In both modes, when it finds `pyproject.toml`, `setup.cfg` or `setup.py`, `package.json`, `go.mod`
 or `Cargo.toml`, it also writes that stack's `.claude/settings.local.json` from
-[`stacks/`](../stacks/README.md): Claude Code permissions that let the stack's test, lint, format
-and type-check runners run without asking. For Python that is `pytest`, `python -m pytest`,
-`python3 -m pytest`, `ruff`, `mypy` and `pyright`. No pack pre-approves an interpreter, a package
-manager or `awk`, since they run anything, and the Go and Rust runners whose flags run any program
-(`go test -exec`, cargo's `--config`) are pre-approved only as the exact commands the gate runs. The output lists what the pack grants, and the file is
+[`stacks/`](../stacks/README.md): Claude Code permissions that let the exact commands the stack's
+gate runs (its test, lint, format and type-check commands) run without asking, for Python
+`pytest`, `python3 -m pytest -q`, `ruff check .`, `mypy .` and a few more. Never a prefix, since a
+runner's flags can run any program or write any file (`go test -exec`, `npm test --node-options`),
+and never an interpreter, a package manager or `awk`. The output lists what the pack grants, and the file is
 added to your `.gitignore` because it is yours alone. Where several stacks match, the last in that
 list wins. A `settings.local.json` you already have is kept, and so is one an earlier `install.sh`
 wrote, which pre-approved more: delete it and run again to get the narrow pack.

@@ -123,13 +123,14 @@ Your AI agent says "done"; Nonna makes it prove it.
 
 ### Changed
 
-- **The stack packs pre-approve runners only, and say so.** They had let `python`, `pip`, `uv`,
-  `node`, `npm`, `pnpm`, `go`, `cargo`, `rustup` and `awk` run without asking, which is running
-  anything. Now each
-  pack allows its test, lint, format and type-check runners; `go test`, `go vet`, `cargo test`,
-  `cargo check` and `cargo clippy` only as the exact commands the gate runs, since their flags can
-  run any program. `install.sh` lists what it pre-approved and adds `.claude/settings.local.json`
-  to `.gitignore`. A pack an earlier `install.sh` wrote is kept: delete it and run again.
+- **The stack packs pre-approve exact commands only, and say so.** They had let `python`, `pip`,
+  `uv`, `node`, `npm`, `pnpm`, `go`, `cargo`, `rustup` and `awk` run without asking, which is
+  running anything. Now each pack allows the exact commands its gate runs (`pytest -q`,
+  `npm test --silent`, `go test ./...`, `cargo test --quiet` and so on), never a prefix: a runner's
+  flags can run any program or write any file (`go test -exec`, `npm test --node-options`,
+  `golangci-lint --output.text.path`, `pytest --basetemp`). `install.sh` lists what it
+  pre-approved and adds `.claude/settings.local.json` to `.gitignore`. A pack an earlier
+  `install.sh` wrote is kept: delete it and run again.
 - **`install.sh` exits non-zero when a git hook is not wired**: a foreign hook that does not run
   hers, a hook manager's directory, or a link it could not make.
 - **The plugin no longer formats the files the agent edits.** It ran whatever formatter it found on

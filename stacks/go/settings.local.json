@@ -5,9 +5,11 @@
       "Bash(go test ./...)",
       "Bash(go test -race -coverprofile=coverage.out -covermode=atomic ./...)",
       "Bash(go vet ./...)",
-      "Bash(gofmt:*)",
-      "Bash(goimports:*)",
-      "Bash(golangci-lint:*)"
+      "Bash(golangci-lint run ./...)",
+      "Bash(gofmt -l .)",
+      "Bash(gofmt -w .)",
+      "Bash(goimports -l .)",
+      "Bash(goimports -w .)"
     ]
   }
 }

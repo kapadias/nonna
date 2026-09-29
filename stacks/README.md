@@ -7,7 +7,7 @@ Nonna's `/test` skill and `format.sh` hook are deliberately language-agnostic. S
 A stack pack is a per-language directory containing:
 
 - **`README.md`** — exact commands for lint, type-check, test, and coverage; how to invoke the formatter from `format.sh`; a property-testing library recommendation; and a copy-pasteable gate command block.
-- **`settings.local.json`** — a Claude Code local-settings file that pre-approves the stack's test, lint, format and type-check runners, and only those, so they run without permission prompts. Where a runner takes a flag that runs any program (`go test -exec`, cargo's `--config`), only the exact commands the gate runs are pre-approved. It never lists an interpreter, a package manager or `awk`.
+- **`settings.local.json`** — a Claude Code local-settings file that pre-approves the exact commands the stack's gate runs (its test, lint, format and type-check commands), and only those, so they run without permission prompts. Never a prefix: a runner's flags can run any program or write any file (`go test -exec`, `npm test --node-options`, cargo's `--config`), so any other form of the command asks. It never lists an interpreter, a package manager or `awk`.
 
 ## The 3-step wire-up
 

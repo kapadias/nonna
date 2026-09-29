@@ -1018,24 +1018,25 @@ rc=0; [ -x "$TMP/.git/hooks/pre-commit" ] && [ -x "$TMP/.git/hooks/pre-push" ] |
 [ -f "$TMP/.claude/settings.local.json" ] && grep -q 'pytest' "$TMP/.claude/settings.local.json"; check "install: picks the python stack pack from pyproject.toml" 0 "$?"
 # A pack lets its commands run without asking, so it holds runners only: python, pip and uv run any
 # code or install anything, and a prompt-injected agent would use them to read .env without a prompt.
-check "install: the python pack pre-approves the test, lint and type-check runners and nothing else" "mypy,pyright,pytest,python -m pytest,python3 -m pytest,ruff" "$(grants_of "$TMP/.claude/settings.local.json")"
+check "install: the python pack pre-approves the gate's exact commands and nothing else" "mypy .,mypy src/,pyright,pytest,pytest --cov=src --cov-branch --cov-report=term-missing --cov-fail-under=80,pytest -q,python -m pytest,python -m pytest -q,python3 -m pytest,python3 -m pytest -q,ruff check .,ruff format --check .,ruff format ." "$(grants_of "$TMP/.claude/settings.local.json")"
 grep -qE 'Bash\((python|pip|uv):' "$TMP/.claude/settings.local.json"; check "install: ...and not python, pip or uv" 1 "$?"
-check "install: the typescript pack pre-approves the test, lint, format and type-check runners and nothing else" "eslint,npm run test,npm test,npx tsc,npx vitest,pnpm test,prettier,tsc,vitest" "$(stack_grants package.json)"
-# go test -exec, -toolexec and go vet -vettool run any program, and cargo's --config can set a runner or
-# a compiler wrapper: those runners are pre-approved only as the exact commands the pack's gate runs.
-check "install: the go pack pre-approves the test, lint, format and vet runners and nothing else" "go test -race -coverprofile=coverage.out -covermode=atomic ./...,go test ./...,go vet ./...,gofmt,goimports,golangci-lint" "$(stack_grants go.mod)"
-check "install: the rust pack pre-approves the test, lint, format and check runners and nothing else" "cargo check,cargo check --all-targets --all-features,cargo clippy,cargo clippy --all-targets --all-features -- -D warnings,cargo fmt,cargo test,cargo test --quiet,rustfmt" "$(stack_grants Cargo.toml)"
+check "install: the typescript pack pre-approves the gate's exact commands and nothing else" "eslint .,eslint . --max-warnings 0,npm run test,npm test,npm test --silent,npx tsc --noEmit,npx vitest run,npx vitest run --coverage,pnpm test,prettier --check .,prettier --write .,tsc --noEmit,vitest run" "$(stack_grants package.json)"
+# A runner's flags can run any program or write any file (go test -exec, cargo --config, npm test
+# --node-options, golangci-lint --output.text.path, pytest --basetemp): a pack pre-approves only the
+# exact commands its gate runs, never a prefix.
+check "install: the go pack pre-approves the gate's exact commands and nothing else" "go test -race -coverprofile=coverage.out -covermode=atomic ./...,go test ./...,go vet ./...,gofmt -l .,gofmt -w .,goimports -l .,goimports -w .,golangci-lint run ./..." "$(stack_grants go.mod)"
+check "install: the rust pack pre-approves the gate's exact commands and nothing else" "cargo check,cargo check --all-targets --all-features,cargo clippy,cargo clippy --all-targets --all-features -- -D warnings,cargo fmt,cargo fmt -- --check,cargo fmt --check,cargo test,cargo test --quiet" "$(stack_grants Cargo.toml)"
 bare=0; for pack in "$ROOT"/stacks/*/settings.local.json; do
   bare=$((bare + $(grep -o '"Bash([^"]*)"' "$pack" | sed 's/^"Bash(//; s/:\*)"$//; s/)"$//' | grep -cxE 'python3?|pip3?|uv|node|npm|npx|pnpm|yarn|go|cargo|rustup|awk|sh|bash')))
 done
 check "install: no pack, present or future, pre-approves an interpreter, a package manager or a shell" 0 "$bare"
 open=0; for pack in "$ROOT"/stacks/*/settings.local.json; do
-  open=$((open + $(grep -cE '"Bash\((go test|go vet|cargo test|cargo check|cargo clippy|cargo build|cargo run):\*\)"' "$pack")))
+  open=$((open + $(grep -c ':\*)"' "$pack")))
 done
-check "install: no pack leaves a runner open to a flag that runs any program" 0 "$open"
+check "install: no pack, present or future, pre-approves a prefix: exact commands only" 0 "$open"
 rc=0; [ ! -e "$TMP/.claude/reviews" ] && [ ! -e "$TMP/AGENTS.md" ] || rc=1; check "install: copies no review verdicts and no other host's files" 0 "$rc"
 contains "install: says what it did, in Nonna's voice" "Nonna" "$out"
-contains "install: says what the pack pre-approves" ".claude/settings.local.json (python): pre-approves pytest, python -m pytest, python3 -m pytest, ruff, mypy, pyright" "$out"
+contains "install: says what the pack pre-approves" ".claude/settings.local.json (python): pre-approves pytest, pytest -q, python -m pytest, python -m pytest -q, python3 -m pytest, python3 -m pytest -q, pytest --cov=src --cov-branch --cov-report=term-missing --cov-fail-under=80, ruff check ., ruff format ., ruff format --check ., mypy src/, mypy ., pyright" "$out"
 contains "install: says it added the pack to .gitignore" ".gitignore: added .claude/settings.local.json" "$out"
 check "install: the .gitignore line is there once" 1 "$(grep -cxF .claude/settings.local.json "$TMP/.gitignore")"
 "${GIT[@]}" -C "$TMP" add -A; "${GIT[@]}" -C "$TMP" commit -q -m first 2>/dev/null; check "install: the installed pre-commit hook refuses a commit on main" 1 "$?"

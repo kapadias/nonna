@@ -8,8 +8,9 @@
       "Bash(cargo check --all-targets --all-features)",
       "Bash(cargo clippy)",
       "Bash(cargo clippy --all-targets --all-features -- -D warnings)",
-      "Bash(cargo fmt:*)",
-      "Bash(rustfmt:*)"
+      "Bash(cargo fmt)",
+      "Bash(cargo fmt --check)",
+      "Bash(cargo fmt -- --check)"
     ]
   }
 }
