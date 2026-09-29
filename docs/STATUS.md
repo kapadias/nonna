@@ -66,6 +66,9 @@ never offered to the model, so it is not counted.
 
 History lives in `CHANGELOG.md` and `git log`. Entries here describe the current unit of work.
 
+- **2026-09-29** — Launch demo recorded (`assets/demo.{cast,gif,mp4}`, `docs/demo.md`): a real Haiku
+  session, 4 takes, take 4 used; it shows her "where's the test?" block, not a failing-test block.
+
 - **2026-09-29** — Launch images, a unit of the launch plan (#17). `assets/build.py` builds
   `assets/scorecard.svg` (and its 2400 px PNG), `assets/social-preview.svg` (1280×640, 40 px clear
   on every edge) and one 1080 px card per trap task in `assets/cards/`, all from round 3's own
