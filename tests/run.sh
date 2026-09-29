@@ -81,24 +81,47 @@ contains "names the OpenAI class, not the value" "OpenAI API key" "$out"
 ( . "$HOOKS/lib/secret-patterns.sh"; printf 'ANTHROPIC_API_KEY=sk-ant-api03-%s' 'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX' | nonna_scan_secrets ) >/dev/null; check "a placeholder Anthropic key (XXXX) is exempt" 1 "$?"
 # A hyphenated word that merely ends in "sk" is not a key: the prefixed patterns start at a token.
 ( . "$HOOKS/lib/secret-patterns.sh"; printf 'see task-admin-permissions-management-console and task-ant-colony-optimization-implementation' | nonna_scan_secrets ) >/dev/null; check "a kebab-case word that ends in sk is not a key" 1 "$?"
+# A kebab-case name that starts a token is not a key either: the prefixed patterns want a 40-character tail.
+( . "$HOOKS/lib/secret-patterns.sh"; printf 'class="sk-admin-panel-header-container"' | nonna_scan_secrets ) >/dev/null; check "a kebab-case class name after a key prefix is not a key" 1 "$?"
+# A key given as a shell or compose default (${VAR:-key}, ${VAR-key}) is still a key: :- and {NAME- start a
+# token, and the match holds no ${ for the placeholder rule to take for a variable reference.
+( . "$HOOKS/lib/secret-patterns.sh"; printf 'export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-%s}"' "$FAKE_ANT" | nonna_scan_secrets ) >/dev/null; check "detects an Anthropic key given as a shell default (:-)" 0 "$?"
+( . "$HOOKS/lib/secret-patterns.sh"; printf 'OPENAI_API_KEY: ${OPENAI_API_KEY:-%s}' "$FAKE_OAI" | nonna_scan_secrets ) >/dev/null; check "detects an OpenAI key given as a compose default (:-)" 0 "$?"
+( . "$HOOKS/lib/secret-patterns.sh"; printf 'K="${K-%s}"' "$FAKE_ANT" | nonna_scan_secrets ) >/dev/null; check "detects a key given as a default without the colon (-)" 0 "$?"
+( . "$HOOKS/lib/secret-patterns.sh"; printf 'export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}"' | nonna_scan_secrets ) >/dev/null; check "a reference to the variable alone is not a key" 1 "$?"
+# macOS's grep reads its input in the user's locale and gives up on bytes that are not text there; a scan
+# that gave up would pass the key. The patterns are ASCII, so the scan reads bytes (LC_ALL=C).
+BSDGREP="$(mktemp -d)"; REALGREP="$(command -v grep)"
+cat > "$BSDGREP/grep" <<STUB
+#!/bin/sh
+t="\$(mktemp)"; cat > "\$t"
+if [ "\${LC_ALL:-}" != C ] && ! python3 -c 'import sys; open(sys.argv[1], "rb").read().decode("utf-8")' "\$t" 2>/dev/null; then
+  echo "grep: (standard input): Illegal byte sequence" >&2; rm -f "\$t"; exit 2
+fi
+"$REALGREP" "\$@" < "\$t"; rc=\$?; rm -f "\$t"; exit \$rc
+STUB
+chmod +x "$BSDGREP/grep"
+( . "$HOOKS/lib/secret-patterns.sh"; printf 'k = "%s" \377\n' "$FAKE_AWS" | PATH="$BSDGREP:$PATH" nonna_scan_secrets ) >/dev/null
+check "a byte that is not UTF-8 does not hide a key where grep reads the locale (macOS)" 0 "$?"
+rm -rf "$BSDGREP"
 # Property: for any tail over the base64url alphabet, a vendor-prefixed key is found exactly when its
-# tail has 20 or more characters. The tails come from a seeded generator, so a failure replays. (A tail
+# tail has 40 or more characters (real ones have about 95 or more). The tails come from a seeded generator, so a failure replays. (A tail
 # that spells a placeholder word is exempt by design; this seed produces none.)
 res="$( . "$HOOKS/lib/secret-patterns.sh"
   alpha='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-'; seed=20260929; n=0; bad=0
   for p in sk-ant-api03- sk-ant-admin01- sk-ant-oat01- sk-ant-ort01- sk-proj- sk-svcacct- sk-admin-; do
-    for len in 0 7 19 20 21 48 95 160; do
+    for len in 0 7 19 20 21 39 40 41 48 95 160; do
       t=''
       for ((i = 0; i < len; i++)); do
         seed=$(( (seed * 1103515245 + 12345) & 0x7fffffff )); t="$t${alpha:$(( (seed >> 16) % 64 )):1}"
       done
-      want=1; [ "$len" -lt 20 ] || want=0
+      want=1; [ "$len" -lt 40 ] || want=0
       printf 'k = "%s%s"' "$p" "$t" | nonna_scan_secrets >/dev/null; got=$?
       n=$((n + 1)); [ "$got" = "$want" ] || bad=$((bad + 1))
     done
   done
   echo "$n cases, $bad wrong" )"
-check "property: a vendor-prefixed key is found iff its tail has 20+ characters" "56 cases, 0 wrong" "$res"
+check "property: a vendor-prefixed key is found iff its tail has 40+ characters" "77 cases, 0 wrong" "$res"
 
 echo "== secret-scan.sh (PreToolUse write gate) =="
 SS="$HOOKS/secret-scan.sh"

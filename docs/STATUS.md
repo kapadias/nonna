@@ -101,7 +101,8 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
       never writes through a symlink, and the key-class messages read "an AWS access key id".
   - **Secret scan:** it missed Anthropic keys and OpenAI's `sk-proj-`, `sk-svcacct-` and `sk-admin-`
     keys, which the docs said it caught. The write guard, pre-commit and pre-push now refuse them;
-    golden tests hold each key type, and a property test holds the 20-character tail bound.
+    golden tests hold each key type and a key given as a shell default, a property test holds the
+    40-character tail bound, and the scan reads bytes, so macOS's grep cannot give up on it.
 
 - **2026-09-29** — Round 3 ran: 484 runs, $37.18 of logged spend, every fingerprint ok, none
   dropped, no ERROR rows. Harness `83b5de3`, Claude Code 2.1.284, `claude-sonnet-5-5` and

@@ -26,11 +26,13 @@ nonna_a() {
 
 # _nonna_is_placeholder <matched-value>  -> 0 if the match is an obvious non-secret.
 _nonna_is_placeholder() {
-  printf '%s' "$1" | grep -qiE 'XXXX|EXAMPLE|YOUR[-_]|CHANGEME|DUMMY|REDACTED|PLACEHOLDER|FAKE|SAMPLE|\$\{|ENV\(|OS\.ENVIRON|PROCESS\.ENV|<[^>]+>'
+  printf '%s' "$1" | LC_ALL=C grep -qiE 'XXXX|EXAMPLE|YOUR[-_]|CHANGEME|DUMMY|REDACTED|PLACEHOLDER|FAKE|SAMPLE|\$\{|ENV\(|OS\.ENVIRON|PROCESS\.ENV|<[^>]+>'
 }
 
 # _nonna_match <class> <regex> <text>  -> print class & return 0 if a
-# NON-placeholder match for <regex> exists in <text>.
+# NON-placeholder match for <regex> exists in <text>. Bytes, not the locale's characters (LC_ALL=C): the
+# patterns are ASCII, and macOS's grep gives up on input that is not text in the locale, which would
+# read as "no secret".
 _nonna_match() {
   local class="$1" re="$2" text="$3" m
   while IFS= read -r m; do
@@ -38,7 +40,7 @@ _nonna_match() {
     if _nonna_is_placeholder "$m"; then continue; fi
     printf '%s' "$class"
     return 0
-  done < <(printf '%s' "$text" | grep -oiE -e "$re" 2>/dev/null || true)
+  done < <(printf '%s' "$text" | LC_ALL=C grep -oiE -e "$re" 2>/dev/null || true)
   return 1
 }
 
@@ -59,10 +61,12 @@ nonna_scan_secrets() {
   # Anthropic keys and OpenAI's prefixed ones (sk-ant-api03-, sk-proj-, ...) have a hyphenated tail the
   # line above cannot span. They start at a token: a word that merely ends in "sk" (task-admin-...) is
   # not a key. \n, \r and \t count as a start because a raw JSON payload, which the no-jq scan reads,
-  # writes a newline that way before a key that begins a line.
-  local tok='(^|[^A-Za-z0-9-]|\\[nrt])'
-  if _nonna_match 'OpenAI API key' "${tok}sk-(proj|svcacct|admin)-[A-Za-z0-9_-]{20,}" "$text"; then return 0; fi
-  if _nonna_match 'Anthropic API key' "${tok}sk-ant-[a-z]+[0-9]{2}-[A-Za-z0-9_-]{20,}" "$text"; then return 0; fi
+  # writes a newline that way before a key that begins a line; so do :- and {NAME-, a shell or compose
+  # default (${VAR:-key}), whose match then holds no ${ for the placeholder rule to take for a reference.
+  # The tail is 40 or more (real ones are about 95 or more), so a kebab-case name is not a key.
+  local tok='(^|[^A-Za-z0-9-]|:-|\{[A-Za-z_][A-Za-z0-9_]*-|\\[nrt])'
+  if _nonna_match 'OpenAI API key' "${tok}sk-(proj|svcacct|admin)-[A-Za-z0-9_-]{40,}" "$text"; then return 0; fi
+  if _nonna_match 'Anthropic API key' "${tok}sk-ant-[a-z]+[0-9]{2}-[A-Za-z0-9_-]{40,}" "$text"; then return 0; fi
   if _nonna_match 'private key block' '-----BEGIN [A-Z ]*PRIVATE KEY-----' "$text"; then return 0; fi
   if _nonna_match 'hardcoded secret assignment' '(api[_-]?key|secret|token|password|passwd)[[:space:]]*[:=][[:space:]]*"[^"]{16,}"' "$text"; then return 0; fi
   if _nonna_match 'hardcoded secret assignment' "(api[_-]?key|secret|token|password|passwd)[[:space:]]*[:=][[:space:]]*'[^']{16,}'" "$text"; then return 0; fi

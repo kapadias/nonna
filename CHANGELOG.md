@@ -235,8 +235,10 @@ Your AI agent says "done"; Nonna makes it prove it.
   unbroken run of letters and digits counted as an OpenAI key, so `sk-ant-api03-`, `sk-ant-admin01-`,
   the OAuth tokens (`sk-ant-oat01-`, `sk-ant-ort01-`) and OpenAI's `sk-proj-`, `sk-svcacct-` and
   `sk-admin-` keys passed the write guard, the pre-commit hook and the pre-push scan. All are refused
-  now. The prefix must start a word and be followed by 20 or more characters, so `sk-ant-` in prose,
-  a short sample and a word like `task-admin-permissions-console` are not keys.
+  now, the macOS way too (a byte that is not text in the user's locale no longer ends the scan), and so
+  is a key given as a shell or compose default (`${VAR:-key}`). The prefix must start a word and be
+  followed by 40 or more characters, so `sk-ant-` in prose, a short sample, a word like
+  `task-admin-permissions-console` and a name like `sk-admin-panel-header` are not keys.
 
 ## [1.0.0] — 2026-08-01 — "The Model Cannot Ship Itself"
 
