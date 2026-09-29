@@ -12,6 +12,7 @@ itself: if a gate is silently wrong, CI goes red.
 | ------------------------------------ | ---------------------------------------------------------------------- | ---------------------------------------------- |
 | [`run.sh`](run.sh)                   | **Every gate blocks vs. allows correctly** — gate golden tests.        | golden tests over real hook/script invocations |
 | [`harness_lint.py`](harness_lint.py) | **The harness is internally consistent** — structural self-validation. | static checks over `.claude/` + docs           |
+| [`test_assets.py`](test_assets.py)   | **The launch images match the data** — numbers, lettering, SVGs.       | unit tests, standard library only              |
 
 ### `run.sh` — gate golden tests
 
@@ -85,6 +86,14 @@ Exercises each deterministic gate with fixed inputs and asserts the exit code:
   bleed; fails closed on an absent version, an empty version, a missing
   changelog, a whitespace-only section, and a version matched literally
   rather than as a regex.
+- **assets/build.py** (the launch images): `run.sh` runs `test_assets.py`, then drives `--check` on
+  the standard library alone (`python3 -I -S`, as CI's lint job would). It passes on the real
+  tree, and on a copy that has had exactly one thing broken it fails, naming the file: an SVG
+  edited by hand, data that moved without a rebuild, a `traps.tsv` that disagrees with
+  `summary.json`, and a PNG that is missing, not a PNG, the wrong size, over the 1 MB budget or
+  rendered from a different SVG. A plain run rewrites the SVGs byte for byte; `--render` fails
+  without a browser, on a browser that fails or draws the wrong size, and with a stand-in browser
+  it renders and then passes `--check`.
 - **harness_lint itself** — see below.
 
 ### `harness_lint.py` — structural self-validation
@@ -103,6 +112,16 @@ skill/agent description metadata), a ladder rung missing from either of its two
 copies, `/review` or `/sync` no longer wiring `check-debt.sh`, the review-inflation
 rule dropping out of `dev-process.md` or the severity rubric, and an adapted
 project's name anywhere but `README.md`.
+
+### `test_assets.py` — the launch images
+
+`assets/build.py` builds the scorecard, the social preview and one card per trap task from
+`bench/results/round3`. Its tests hold the numbers to the verified round-3 values (bare agent 24 of
+64, Nonna lite 1 of 64; per task; Sonnet's mean cost) and to a tiny fixture, refuse data that
+disagrees with itself, find the `✗ Nonna` line in a hook response or a tool result, and lay text
+out from the committed glyph outlines. The banner's own lettering is the oracle: "nonna", the
+tagline, a pill and the footer come out of the same JSON **to the digit**, so the font and its
+weights are pinned rather than eyeballed.
 
 ### The linter is itself a gate
 
@@ -126,6 +145,7 @@ ADR-0005, a desynced `hooks.json` is blocked, and stripping
 ```bash
 bash tests/run.sh        # gate golden tests  (exit non-zero on any failure)
 python3 tests/harness_lint.py   # structural self-validation
+python3 tests/test_assets.py    # the launch images (run.sh runs it too)
 ```
 
 Both run in CI on every push and pull request (`.github/workflows/ci.yml`),
