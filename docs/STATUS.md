@@ -85,6 +85,20 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
     the release notes' five lines; ADR 0011 records what round 3 decided.
   - **Fixes found on the way:** a staged binary file drew a shell warning from the pre-commit hook;
     a lite install switched to full carried no rules at all. Both have golden tests.
+  - **Review fixes** (the code and security review of this unit), each with a test that failed
+    first:
+    - on a Mac the pre-commit hook blocked every commit with a binary file (`tr` read the bytes in
+      the user's locale); its fail-closed path, never reached by the old test, is now;
+    - the plugin no longer formats the files the agent edits; a copy-in install still does;
+    - `install.sh`: the stack packs pre-approve test, lint, format and type-check runners only, say
+      so, and are git-ignored; a git hook it could not wire is a non-zero exit; a recorded mode
+      that is neither lite nor full reads as full;
+    - the bench's copy-in arm passes `--mode` only to an installer that knows it;
+    - the pooled Fisher p is 1.3e-7, not 9.4e-6; lite's one miss is described as far as the rows
+      go; every benchmark number in the README is linted, and the scorecard's alt text is the
+      image's own;
+    - `assets/build.py` renders nothing that runs or reaches outside the file, `bench/examples.py`
+      never writes through a symlink, and the key-class messages read "an AWS access key id".
   - **Secret scan:** it missed Anthropic keys and OpenAI's `sk-proj-`, `sk-svcacct-` and `sk-admin-`
     keys, which the docs said it caught. The write guard, pre-commit and pre-push now refuse them;
     golden tests hold each key type, and a property test holds the 20-character tail bound.
