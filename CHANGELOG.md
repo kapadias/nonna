@@ -104,8 +104,9 @@ Your AI agent says "done"; Nonna makes it prove it.
   longer counts as `origin`, and a tag on a blob or tree is refused rather than pushed unscanned.
 - **One-command install** (`install.sh`, `--host` for eight agent hosts), host rules generated from
   `00-core.md` (`hosts/build.py`, drift-linted), and a git `pre-commit` hook every host gets.
-- **Benchmark round 3, registered before it ran** (`bench/`). Six arms: bare, the copy-in, the
-  plugin in lite and in full, another plugin alone, and that plugin with lite. Each run starts isolated (`env -i`,
+- **Benchmark round 3, registered before it ran** (`bench/`). Five arms ran: bare, the plugin in
+  lite and in full, another plugin alone, and that plugin with lite (a sixth, the copy-in, reruns
+  rounds 1–2). Each run starts isolated (`env -i`,
   a fresh config) and is fingerprinted from its first events, so a run that is not its arm is
   stopped and never counted. Every arm gets the same prompt. Rows record tokens, the model that ran
   and the subagents started. A dry run through an offline stub proves the harness for free, and
@@ -116,8 +117,9 @@ Your AI agent says "done"; Nonna makes it prove it.
   24, at 1.8× its cost on small features (about 3 cents), and full was no safer than lite (0 of 64).
   Every number, the misses included, is in `bench/README.md`, and `examples/` holds one run of each
   trap word for word (`bench/examples.py`, rule-picked).
-- **The launch README** leads with the plugin install and round 3's numbers. Each number carries a
-  mark the lint checks against the rows (`harness_lint.py`).
+- **The launch README** leads with the plugin install and round 3's numbers. Each benchmark number
+  carries a mark the lint checks against the rows (`harness_lint.py`), and the scorecard's alt text
+  must be the image's own description.
 
 ### Changed
 
