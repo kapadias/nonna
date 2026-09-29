@@ -5,6 +5,19 @@ versioning is [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [2.0.0] — 2026-10-08 — "Tests Decide Done"
 
+Your AI agent says "done"; Nonna makes it prove it.
+
+- **Install it as a plugin:** `/plugin marketplace add kapadias/nonna`, then
+  `/plugin install nonna@nonna`.
+- **The test gate runs out of the box:** the first session records your test command, and the agent
+  cannot end its turn or push on a red suite.
+- **Lite is the default:** the test gate, "where's the test?", the branch and secret guards, and six
+  house rules. `full` adds the STATUS gate and the whole harness.
+- **`/nonna`** shows what she enforces here and switches her lite, full or off.
+- **Measured on the plugin, one prompt for every arm** (benchmark round 3, Claude Sonnet and Haiku):
+  with lite, 1 of 64 trap runs cut a corner, against 24 of 64 for the bare agent, for about 3 cents
+  more per change.
+
 ### Upgrading from 1.x (Keel)
 
 - Reinstall: `/plugin uninstall keel@keel`, then `/plugin marketplace add kapadias/nonna` and
@@ -15,6 +28,8 @@ versioning is [SemVer](https://semver.org/spec/v2.0.0.html).
   repository, `git config --global nonna.mode full` for all of them, or set the plugin's `mode`
   option to full.
 - The STATUS gate runs only in full mode, and only where `docs/STATUS.md` exists.
+- `install.sh` installs lite unless you pass `--mode full`. Running it again keeps the mode a
+  repository already has, so a 1.x copy-in install stays full.
 - The plugin runs your tests before the agent can say done and before a push. The first session in a
   repository records the command it detects in `git config nonna.testCmd`. Change it with
   `/nonna test '<command>'`, turn the gate off there with `/nonna test off`, or turn the `run_tests`
@@ -40,8 +55,8 @@ versioning is [SemVer](https://semver.org/spec/v2.0.0.html).
   config includes, so a command cannot switch them off for itself.
 - **Lite**, the plugin's default: the test gate, "where's the test?", the branch and secret guards,
   the git hooks, and six house rules (`hooks/lib/lite.md`, linted to 150 words and to cover the
-  never-list) in place of the constitution. `install.sh --mode lite|full` (copy-in stays full by
-  default), with lite rules for the other hosts in `hosts/lite/`.
+  never-list) in place of the constitution. `install.sh --mode lite|full`, lite by default as round 3 decided (an
+  install already there keeps its mode), with lite rules for the other hosts in `hosts/lite/`.
 - **The plugin's test gate works out of the box, with consent.** The `run_tests` option (on) is the
   consent: the first session in a repository records the detected command in `nonna.testCmd`, where
   the Stop and pre-push hooks read it, and never overwrites one, an empty one included. The first
@@ -71,8 +86,8 @@ versioning is [SemVer](https://semver.org/spec/v2.0.0.html).
   foreign hook, a hook manager and a hook that points at nothing are reported, never overwritten.
 - In full mode, when another enabled plugin already states the "reuse before you write" ladder, the
   constitution's copy is left out (`NONNA_LADDER=on|off` decides it yourself).
-- **"Done" means the suite passes.** In the benchmark, agents said "done" on a broken suite in 16 of
-  16 bare runs and most harnessed ones: nothing deterministic ran the tests. Now the Stop hook and
+- **"Done" means the suite passes.** In rounds 1–2 of the benchmark, agents said "done" on a broken
+  suite in 16 of 16 bare runs and most harnessed ones: nothing deterministic ran the tests. Now the Stop hook and
   the pre-push hook run the project's own test command (pytest, npm, go or cargo, detected; or
   `NONNA_TEST_CMD`) whenever code changed, and refuse on red. `hooks/lib/tests.sh` holds it.
   Detection runs at every turn end only in a copy-in install; the plugin records what it detects
@@ -88,14 +103,20 @@ versioning is [SemVer](https://semver.org/spec/v2.0.0.html).
   longer counts as `origin`, and a tag on a blob or tree is refused rather than pushed unscanned.
 - **One-command install** (`install.sh`, `--host` for eight agent hosts), host rules generated from
   `00-core.md` (`hosts/build.py`, drift-linted), and a git `pre-commit` hook every host gets.
-- **Benchmark round 3, registered before it runs** (`bench/`). Six arms: bare, the copy-in, the
+- **Benchmark round 3, registered before it ran** (`bench/`). Six arms: bare, the copy-in, the
   plugin in lite and in full, another plugin alone, and that plugin with lite. Each run starts isolated (`env -i`,
   a fresh config) and is fingerprinted from its first events, so a run that is not its arm is
   stopped and never counted. Every arm gets the same prompt. Rows record tokens, the model that ran
   and the subagents started. A dry run through an offline stub proves the harness for free, and
   `bench/PREREGISTRATION.md` fixes the decision rule before any paid run. A real suite joins the
   traps: six tickets on full-stack-fastapi-template with PostgreSQL, three of them traps, scored in
-  databases of their own and proven against 25 hand-made patches (`verify.sh --real`).
+  databases of their own and proven against 25 hand-made patches (`verify.sh --real`). It ran on
+  2026-09-29: 484 runs for $37.18. Lite cut a corner in 1 of 64 trap runs against the bare agent's
+  24, at 1.8× its cost on small features (about 3 cents), and full was no safer than lite (0 of 64).
+  Every number, the misses included, is in `bench/README.md`, and `examples/` holds one run of each
+  trap word for word (`bench/examples.py`, rule-picked).
+- **The launch README** leads with the plugin install and round 3's numbers. Each number carries a
+  mark the lint checks against the rows (`harness_lint.py`).
 
 ### Changed
 
