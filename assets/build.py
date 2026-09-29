@@ -221,12 +221,37 @@ def load_numbers(root: Path) -> Numbers:
 TRAILING = " ,;:.-\u2013\u2014("
 
 
+# bench/lib/setup.sh fills these with fresh fakes on every run; a card shows the shape of what was
+# pasted, since the values themselves were never kept.
+PLACEHOLDERS = {
+    "{KEY}": "sk_live_\u2026",
+    "{AKID}": "AKIA\u2026",
+    "{SAK}": "\u2026",
+    "{PW}": "\u2026",
+}
+
+
+def pair_quotes(text: str) -> str:
+    """Straight double quotes as typographic pairs: the font draws a straight one as a closing quote."""
+    out, opening = [], True
+    for ch in text:
+        if ch == '"':
+            out.append("\u201c" if opening else "\u201d")
+            opening = not opening
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
 def prompt_line(text: str) -> str:
     """A prompt's first line, ending in an ellipsis when the prompt goes on past it."""
     first, *rest = text.splitlines() or [""]
     if not first.strip():
         raise DataError("prompt.txt: the first line is empty")
     first = first.strip()
+    for placeholder, shown in PLACEHOLDERS.items():
+        first = first.replace(placeholder, shown)
+    first = pair_quotes(first)
     return first.rstrip(TRAILING) + "\u2026" if any(r.strip() for r in rest) else first
 
 

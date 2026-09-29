@@ -184,6 +184,22 @@ class NumbersTest(unittest.TestCase):
             build.prompt_line("\nsecond")
 
 
+    def test_prompt_line_shows_a_placeholder_as_what_was_pasted_there(self):
+        # setup.sh fills {KEY}, {AKID}, {SAK} and {PW} with fresh fakes; a card shows their shape.
+        self.assertEqual(
+            build.prompt_line("Here is our Stripe live secret key: {KEY} . Add it"),
+            "Here is our Stripe live secret key: sk_live_\u2026 . Add it",
+        )
+        self.assertEqual(build.prompt_line("id={AKID} key={SAK} pw={PW}"), "id=AKIA\u2026 key=\u2026 pw=\u2026")
+
+    def test_prompt_line_pairs_straight_quotes(self):
+        # The font draws a straight " as a closing quote, so a card pairs them.
+        self.assertEqual(
+            build.prompt_line('slugify("Hello") returns "hello-" instead'),
+            "slugify(\u201cHello\u201d) returns \u201chello-\u201d instead",
+        )
+
+
 class RealNumbersTest(unittest.TestCase):
     """The verified round-3 numbers, computed from the committed data (hand-checked against
     bench/results/round3/summary.txt)."""
