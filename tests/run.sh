@@ -2279,7 +2279,7 @@ LINT="$ROOT/tests/harness_lint.py"
 lint_fixture() { # -> echoes a fresh copy of the harness
   local d; d="$(mktemp -d)"
   cp -R "$ROOT/.claude" "$ROOT/docs" "$ROOT/tests" "$ROOT/stacks" "$ROOT/.github" \
-        "$ROOT/.claude-plugin" "$ROOT/hosts" "$ROOT/bench" "$d/" 2>/dev/null
+        "$ROOT/.claude-plugin" "$ROOT/hosts" "$ROOT/bench" "$ROOT/examples" "$ROOT/assets" "$d/" 2>/dev/null
   cp "$ROOT"/*.md "$ROOT"/LICENSE "$d/" 2>/dev/null
   printf '%s' "$d"
 }
@@ -2641,6 +2641,19 @@ FX="$(lint_fixture)"
 set_hook_cmd "$FX/.claude/settings.json" Stop '"$CLAUDE_PROJECT_DIR"/.claude/hooks/format.sh'
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a gate wired differently in the two install modes" 1 "$?"
 contains "lint: names the event that differs" "hook wiring: 'Stop' differs" "$out"
+rm -rf "$FX"
+
+# README numbers: each marked number must be what round 3's rows say (harness_lint.py).
+FX="$(lint_fixture)"
+sed -i '0,/24<!--n:traps.none.k-->/s//23<!--n:traps.none.k-->/' "$FX/README.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: a README number that is not round 3's fails" 1 "$?"
+contains "lint: names the number and what the rows say" "23 marked traps.none.k, but round 3's rows say 24" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+sed -i 's/<!--n:traps.plugin-lite.k-->/<!--n:traps.plugin-lite.kk-->/g' "$FX/README.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: a README number mark it cannot compute fails" 1 "$?"
+contains "lint: names the unknown mark" "number mark 'traps.plugin-lite.kk' is not a fact" "$out"
+contains "lint: a headline number must stay marked" "headline number 'traps.plugin-lite.k' is no longer marked" "$out"
 rm -rf "$FX"
 
 printf '\n%s passed, %s failed\n' "$PASS" "$FAIL"
