@@ -64,6 +64,18 @@ sed_i() { # <sed args> <file>: sed -i for GNU and BSD alike (BSD reads the word 
   fi
   rm -f "$tmp"
 }
+# A Mac ships no timeout(1). Without one, use the hooks' own fallback (lib/tests.sh): the command in its own
+# process group, the whole group killed when the alarm goes off, and 124 for it, as GNU's does. A hang still fails.
+if ! command -v timeout >/dev/null 2>&1; then
+  timeout() { # <seconds> <command...>
+    perl -e '
+      my $secs = shift; my $pid = fork; die "fork: $!" unless defined $pid;
+      if (!$pid) { setpgrp(0, 0); exec { $ARGV[0] } @ARGV or exit 127 }
+      $SIG{ALRM} = sub { kill "TERM", -$pid; sleep 1; kill "KILL", -$pid; exit 124 };
+      alarm $secs; waitpid($pid, 0);
+      exit($? & 127 ? 128 + ($? & 127) : $? >> 8)' "$@"
+  }
+fi
 
 echo "== the suite runs on its own config =="
 git config --global --get-regexp '^nonna\.' >/dev/null 2>&1; check "suite: no global nonna.* setting reaches the gates" 1 "$?"
