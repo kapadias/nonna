@@ -114,6 +114,12 @@ cargo tarpaulin --all-features --fail-under 80
 
 ---
 
+## Pre-approved commands
+
+`settings.local.json` lets `cargo test`, `cargo check`, `cargo clippy`, `cargo fmt` and `rustfmt` run without a prompt. The other `cargo` commands (`cargo run`, `cargo install`, `cargo llvm-cov`) and `rustup` are not on the list, because they run any code or install anything, so the coverage line of the gate above asks first, and so do the install commands below.
+
+---
+
 ## Install all dev dependencies
 
 ```bash

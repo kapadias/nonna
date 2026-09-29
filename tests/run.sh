@@ -878,6 +878,13 @@ shape_of() { # <repo>: what an install left in it: lite (the gates and /nonna, n
 runs_as() { # <repo>: the mode Nonna runs it in as its git hooks read it, by the hooks the install left there
   (cd "$1" && bash -c '. .claude/hooks/lib/core.sh; nonna_mode git-hook')
 }
+grants_of() { # <settings file>: the commands it pre-approves, sorted, on one line
+  grep -o '"Bash([^"]*)"' "$1" | sed 's/^"Bash(//; s/:\*)"$//' | LC_ALL=C sort | paste -sd, -
+}
+stack_grants() { # <marker file>: what install.sh pre-approves in a new repository holding that file
+  local d; d="$(mktemp -d)"; "${GIT[@]}" -C "$d" init -q; : > "$d/$1"
+  ( cd "$d" && NONNA_SRC="$ROOT" bash "$IN" >/dev/null 2>&1 ); grants_of "$d/.claude/settings.local.json"; rm -rf "$d"
+}
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; echo '[project]' > "$TMP/pyproject.toml"
 out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --mode full 2>&1)"; check "install: --mode full succeeds" 0 "$?"
 rc=0; [ -f "$TMP/.claude/rules/00-core.md" ] && [ -f "$TMP/CLAUDE.md" ] || rc=1; check "install: brings the harness and CLAUDE.md" 0 "$rc"
@@ -885,6 +892,17 @@ rc=0; [ -f "$TMP/.claude/rules/00-core.md" ] && [ -f "$TMP/CLAUDE.md" ] || rc=1;
 grep -q 'nonna' "$TMP/docs/STATUS.md"; check "install: the seeded STATUS is a blank template, not this repo's status" 1 "$?"
 rc=0; [ -x "$TMP/.git/hooks/pre-commit" ] && [ -x "$TMP/.git/hooks/pre-push" ] || rc=1; check "install: wires the git pre-commit and pre-push hooks" 0 "$rc"
 [ -f "$TMP/.claude/settings.local.json" ] && grep -q 'pytest' "$TMP/.claude/settings.local.json"; check "install: picks the python stack pack from pyproject.toml" 0 "$?"
+# A pack lets its commands run without asking, so it holds runners only: python, pip and uv run any
+# code or install anything, and a prompt-injected agent would use them to read .env without a prompt.
+check "install: the python pack pre-approves the test, lint and type-check runners and nothing else" "mypy,pyright,pytest,python -m pytest,python3 -m pytest,ruff" "$(grants_of "$TMP/.claude/settings.local.json")"
+grep -qE 'Bash\((python|pip|uv):' "$TMP/.claude/settings.local.json"; check "install: ...and not python, pip or uv" 1 "$?"
+check "install: the typescript pack pre-approves the test, lint, format and type-check runners and nothing else" "eslint,npm run test,npm test,npx tsc,npx vitest,pnpm test,prettier,tsc,vitest" "$(stack_grants package.json)"
+check "install: the go pack pre-approves the test, lint, format and vet runners and nothing else" "go test,go vet,gofmt,goimports,golangci-lint" "$(stack_grants go.mod)"
+check "install: the rust pack pre-approves the test, lint, format and check runners and nothing else" "cargo check,cargo clippy,cargo fmt,cargo test,rustfmt" "$(stack_grants Cargo.toml)"
+bare=0; for pack in "$ROOT"/stacks/*/settings.local.json; do
+  bare=$((bare + $(grep -o '"Bash([^"]*)"' "$pack" | sed 's/^"Bash(//; s/:\*)"$//' | grep -cxE 'python3?|pip3?|uv|node|npm|npx|pnpm|yarn|go|cargo|rustup|awk|sh|bash')))
+done
+check "install: no pack, present or future, pre-approves an interpreter, a package manager or a shell" 0 "$bare"
 rc=0; [ ! -e "$TMP/.claude/reviews" ] && [ ! -e "$TMP/AGENTS.md" ] || rc=1; check "install: copies no review verdicts and no other host's files" 0 "$rc"
 contains "install: says what it did, in Nonna's voice" "Nonna" "$out"
 "${GIT[@]}" -C "$TMP" add -A; "${GIT[@]}" -C "$TMP" commit -q -m first 2>/dev/null; check "install: the installed pre-commit hook refuses a commit on main" 1 "$?"

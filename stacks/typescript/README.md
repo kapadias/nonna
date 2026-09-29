@@ -107,6 +107,12 @@ npx vitest run --coverage
 
 ---
 
+## Pre-approved commands
+
+`settings.local.json` lets `eslint`, `prettier`, `tsc`, `npx tsc`, `vitest`, `npx vitest`, `npm test`, `npm run test` and `pnpm test` run without a prompt. `node` and the other `npx`, `npm` and `pnpm` commands are not on the list, because they run any code or install anything: `node -e` and `npm install` ask first.
+
+---
+
 ## Install all dev dependencies
 
 ```bash

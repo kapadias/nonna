@@ -91,6 +91,12 @@ pytest --cov=src --cov-branch --cov-report=term-missing --cov-fail-under=80
 
 ---
 
+## Pre-approved commands
+
+`settings.local.json` lets `pytest`, `python -m pytest`, `python3 -m pytest`, `ruff`, `mypy` and `pyright` run without a prompt. `python`, `pip` and `uv` are not on the list, because they run any code or install anything: `python -c`, `pip install` and `uv add` ask first.
+
+---
+
 ## Install all dev dependencies
 
 ```bash
