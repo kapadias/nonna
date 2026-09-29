@@ -19,6 +19,7 @@ import struct
 import sys
 import tempfile
 import unittest
+import unittest.mock
 import xml.etree.ElementTree as ET
 import zlib
 from pathlib import Path
@@ -502,6 +503,42 @@ def make_png(w, h):
         + chunk(b"IDAT", zlib.compress(raw))
         + chunk(b"IEND", b"")
     )
+
+
+class PortraitTest(unittest.TestCase):
+    """The portrait goes into every image as it is: markup that draws, and nothing that runs or
+    reaches outside the file."""
+
+    OPEN = '<g transform="translate(34 34) scale(0.88)">'
+
+    def test_script_handlers_and_outside_references_are_refused(self):
+        for bad in (
+            "<script>alert(1)</script>",
+            '<rect width="1" onload="alert(1)"/>',
+            '<image href="https://example.com/x.png"/>',
+            '<use xlink:href="http://example.com/x.svg#a"/>',
+            '<image href="data:image/png;base64,AAAA"/>',
+            '<rect style="fill: url(https://example.com/x)"/>',
+            "<foreignObject><p>x</p></foreignObject>",
+            "<style>@import 'https://example.com/x.css';</style>",
+        ):
+            with self.subTest(bad=bad), self.assertRaises(build.DataError):
+                build.portrait(f"<svg>{self.OPEN}{bad}</g></svg>")
+
+    def test_references_inside_the_file_pass(self):
+        inner = '<use href="#a"/><rect fill="url(#g)"/>'
+        self.assertEqual(build.portrait(f"<svg>{self.OPEN}{inner}</g></svg>"), inner)
+
+    def test_the_real_banner_passes(self):
+        self.assertTrue(build.portrait(BANNER))
+
+    def test_render_refuses_such_an_image_before_any_browser_runs(self):
+        img = build.Image("x", "<svg><script>alert(1)</script></svg>", 1, 1, 1)
+        with tempfile.TemporaryDirectory() as d, unittest.mock.patch.dict(
+            build.os.environ, {"CHROMIUM": "/nonexistent/chromium"}
+        ):
+            with self.assertRaisesRegex(build.DataError, "runs or reaches out"):
+                build.render(Path(d), [img])
 
 
 class PngTest(unittest.TestCase):

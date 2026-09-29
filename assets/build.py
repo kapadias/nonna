@@ -544,6 +544,14 @@ class Scene:
         )
 
 
+# What the portrait may not carry into the images: something that runs (a script, an event handler,
+# HTML), or a reference outside the file (a link, an import, a url() that is not an #id).
+UNSAFE_MARKUP = re.compile(
+    r"<script|<foreignObject|\son\w+\s*=|\bhref\s*=\s*[\"'](?!#)|url\(\s*[\"']?(?!#)|@import",
+    re.I,
+)
+
+
 def portrait(banner: str) -> str:
     """The banner's portrait: the markup inside its placement group, untouched, ids and all."""
     open_tag = '<g transform="translate(34 34) scale(0.88)">'
@@ -556,7 +564,14 @@ def portrait(banner: str) -> str:
     for m in re.finditer(r"<g[\s>]|</g>", banner[start:]):
         depth += -1 if m.group(0) == "</g>" else 1
         if depth == 0:
-            return banner[start + len(open_tag) : start + m.start()]
+            inner = banner[start + len(open_tag) : start + m.start()]
+            unsafe = UNSAFE_MARKUP.search(inner)
+            if unsafe:
+                raise DataError(
+                    f"{BANNER}: the portrait carries {unsafe.group(0).strip()!r}: "
+                    "the images take markup that draws, nothing that runs or reaches out"
+                )
+            return inner
     raise DataError(f"{BANNER}: the portrait group is never closed")
 
 
@@ -883,6 +898,14 @@ def find_chromium() -> str:
 
 
 def render(root: Path, images: list[Image]) -> None:
+    # The browser gets nothing that runs or reaches outside the file, whatever put it in the SVG.
+    for img in images:
+        unsafe = UNSAFE_MARKUP.search(img.svg)
+        if unsafe:
+            raise DataError(
+                f"{img.name}.svg carries {unsafe.group(0).strip()!r}: "
+                "the images take markup that draws, nothing that runs or reaches out"
+            )
     chromium = find_chromium()
     for img in images:
         svg = root / "assets" / f"{img.name}.svg"
