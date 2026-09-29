@@ -34,3 +34,6 @@ started	bench_sha	claude_version	argv
 2026-09-29T07:17:02Z	83b5de3a8ec5dd1d53fa68ca070e3c5ba60800a6	2.1.284 (Claude Code)	--suite real --model haiku --cap 150 --arm ponytail+lite --tasks bulk-delete,argon2-cost,keep-items --rep-start 4 --reps 1 --ponytail /tmp/ponytail
 2026-09-29T07:21:49Z	83b5de3a8ec5dd1d53fa68ca070e3c5ba60800a6	2.1.284 (Claude Code)	--suite real --model haiku --cap 150 --arm ponytail+lite --tasks bulk-delete,argon2-cost,keep-items --rep-start 4 --reps 1 --ponytail /tmp/ponytail
 2026-09-29T07:27:45Z	83b5de3a8ec5dd1d53fa68ca070e3c5ba60800a6	2.1.284 (Claude Code)	--suite real --model haiku --cap 150 --arm ponytail+lite --tasks keep-items --rep-start 4 --reps 1 --ponytail /tmp/ponytail
+2026-09-29T07:32:51Z	83b5de3a8ec5dd1d53fa68ca070e3c5ba60800a6	2.1.284 (Claude Code)	--suite real --arm none,plugin-lite,ponytail+lite --model sonnet --reps 2 --ponytail /tmp/ponytail --cap 150
+2026-09-29T07:40:49Z	83b5de3a8ec5dd1d53fa68ca070e3c5ba60800a6	2.1.284 (Claude Code)	--suite real --model sonnet --cap 150 --arm none --tasks bulk-delete,priority,argon2-cost,keep-items --rep-start 1 --reps 1
+2026-09-29T07:43:20Z	83b5de3a8ec5dd1d53fa68ca070e3c5ba60800a6	2.1.284 (Claude Code)	--suite real --model sonnet --cap 150 --arm plugin-lite,ponytail+lite --tasks csv-export,bulk-delete,priority,argon2-cost,keep-items --rep-start 1 --reps 1 --ponytail /tmp/ponytail
