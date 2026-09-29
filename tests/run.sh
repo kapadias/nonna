@@ -89,6 +89,16 @@ contains "names the OpenAI class, not the value" "OpenAI API key" "$out"
 ( . "$HOOKS/lib/secret-patterns.sh"; printf 'OPENAI_API_KEY: ${OPENAI_API_KEY:-%s}' "$FAKE_OAI" | nonna_scan_secrets ) >/dev/null; check "detects an OpenAI key given as a compose default (:-)" 0 "$?"
 ( . "$HOOKS/lib/secret-patterns.sh"; printf 'K="${K-%s}"' "$FAKE_ANT" | nonna_scan_secrets ) >/dev/null; check "detects a key given as a default without the colon (-)" 0 "$?"
 ( . "$HOOKS/lib/secret-patterns.sh"; printf 'export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}"' | nonna_scan_secrets ) >/dev/null; check "a reference to the variable alone is not a key" 1 "$?"
+# A key inside a compiled or length-prefixed file sits right after its length byte, and a 108-character
+# key's is "l": an Anthropic key needs no token start (its shape is specific enough alone).
+( . "$HOOKS/lib/secret-patterns.sh"; printf 'zl%s' "$FAKE_ANT" | nonna_scan_secrets ) >/dev/null; check "detects an Anthropic key glued to a length byte (.pyc, .class, protobuf)" 0 "$?"
+# OpenAI's prefixed keys keep their token start, so it counts every way a shell or a URL can put one there.
+for k in '${1-%s}' '${a[0]-%s}' '${@-%s}' 'u=%%3D%s' 'Authorization: Bearer%%20%s'; do
+  ( . "$HOOKS/lib/secret-patterns.sh"; printf "$k" "$FAKE_OAI" | nonna_scan_secrets ) >/dev/null
+  check "detects an OpenAI key in: $k" 0 "$?"
+done
+# A NUL is a gap, not nothing: dropping it would glue the key to what came before.
+( . "$HOOKS/lib/secret-patterns.sh"; printf 'abc\000%s' "$FAKE_OAI" | nonna_scan_secrets ) >/dev/null; check "detects a key right after a NUL byte" 0 "$?"
 # macOS's grep reads its input in the user's locale and gives up on bytes that are not text there; a scan
 # that gave up would pass the key. The patterns are ASCII, so the scan reads bytes (LC_ALL=C).
 BSDGREP="$(mktemp -d)"; REALGREP="$(command -v grep)"
@@ -901,6 +911,9 @@ printf 'Anthropic keys start with sk-ant- and OpenAI project keys with sk-proj-.
 printf 'PNG\000\000binary\000data\n' > "$TMP/src/logo.png"; "${GIT[@]}" -C "$TMP" add -A
 out="$("${GIT[@]}" -C "$TMP" commit -q -m logo 2>&1)"; check "pre-commit: allows a staged binary file" 0 "$?"
 ! printf '%s' "$out" | grep -q 'null byte'; check "pre-commit: a binary file draws no shell warning" 0 "$?"
+printf 'PNG\000%s\000data\n' "$FAKE_OAI" > "$TMP/src/glued.bin"; "${GIT[@]}" -C "$TMP" add -A
+"${GIT[@]}" -C "$TMP" commit -q -m glued 2>/dev/null; check "pre-commit: a key between NUL bytes in a binary file is blocked" 1 "$?"
+"${GIT[@]}" -C "$TMP" reset -q; rm -f "$TMP/src/glued.bin"
 # macOS's tr reads its input in the locale: bytes that are not UTF-8 are an error, unless LC_ALL=C.
 BSDTR="$(mktemp -d)"; REALTR="$(command -v tr)"
 cat > "$BSDTR/tr" <<EOF

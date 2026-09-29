@@ -241,12 +241,13 @@ Your AI agent says "done"; Nonna makes it prove it.
   once, not forever. The `tests/run.sh` section is rewritten (24 checks, 8 red against the old
   hook); the old section had pinned the bug by feeding `transcript_path`.
 - **The secret guard missed Anthropic keys and OpenAI's current ones.** Only `sk-` followed by an
-  unbroken run of letters and digits counted as an OpenAI key, so `sk-ant-api03-`, `sk-ant-admin01-`,
-  the OAuth tokens (`sk-ant-oat01-`, `sk-ant-ort01-`) and OpenAI's `sk-proj-`, `sk-svcacct-` and
-  `sk-admin-` keys passed the write guard, the pre-commit hook and the pre-push scan. All are refused
-  now, the macOS way too (a byte that is not text in the user's locale no longer ends the scan), and so
-  is a key given as a shell or compose default (`${VAR:-key}`). The prefix must start a word and be
-  followed by 40 or more characters, so `sk-ant-` in prose, a short sample, a word like
+  unbroken run of letters and digits counted as an OpenAI key, so `sk-ant-api03-`,
+  `sk-ant-admin01-`, the OAuth tokens (`sk-ant-oat01-`, `sk-ant-ort01-`) and OpenAI's `sk-proj-`,
+  `sk-svcacct-` and `sk-admin-` keys passed the write guard, the pre-commit hook and the pre-push
+  scan. All are refused now: on a Mac too (a byte that is not text in the user's locale no longer
+  ends the scan), given as a shell or compose default (`${VAR:-key}`), after a NUL byte, and an
+  Anthropic key even inside a compiled file. The tail must be 40 or more characters, and an OpenAI
+  key must start a word, so `sk-ant-` in prose, a short sample, a word like
   `task-admin-permissions-console` and a name like `sk-admin-panel-header` are not keys.
 
 ## [1.0.0] — 2026-08-01 — "The Model Cannot Ship Itself"

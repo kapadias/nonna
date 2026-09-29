@@ -58,10 +58,11 @@ while IFS= read -r -d '' f; do
       ;;
   esac
   # A file name is never pathspec magic, a NUL byte never makes a file "binary", and a diff that
-  # cannot be read is a stop, not a clean bill. The NUL bytes are dropped here, as the shell would
-  # drop them anyway, so a staged image draws no shell warning; pipefail keeps git's failure. tr
-  # reads bytes (LC_ALL=C): macOS's tr refuses bytes that are not text in the user's locale.
-  if ! diff="$(git --literal-pathspecs -c core.quotePath=false diff --cached --text --no-color --no-ext-diff --no-textconv -U0 -- "$f" | LC_ALL=C tr -d '\000')"; then
+  # cannot be read is a stop, not a clean bill. The NUL bytes become spaces here: a gap, so a key
+  # after one is not glued to the text before it, and a staged image draws no shell warning;
+  # pipefail keeps git's failure. tr reads bytes (LC_ALL=C): macOS's tr refuses bytes that are not
+  # text in the user's locale.
+  if ! diff="$(git --literal-pathspecs -c core.quotePath=false diff --cached --text --no-color --no-ext-diff --no-textconv -U0 -- "$f" | LC_ALL=C tr '\000' ' ')"; then
     echo "✗ Nonna: I could not read what you staged in '$f', so I cannot vouch for it. (pre-commit: git diff failed.)" >&2
     fail=1
     continue

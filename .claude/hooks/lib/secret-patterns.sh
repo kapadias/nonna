@@ -49,7 +49,8 @@ _nonna_match() {
 #   the secret) and returns 0. Otherwise returns 1.
 nonna_scan_secrets() {
   local text
-  text="$(cat 2>/dev/null || true)"
+  # A NUL is a gap, not nothing: the shell would drop it and glue a key to what came before.
+  text="$(LC_ALL=C tr '\000' ' ' 2>/dev/null || true)"
   [ -n "$text" ] || return 1
 
   if _nonna_match 'AWS access key id' 'AKIA[0-9A-Z]{16}' "$text"; then return 0; fi
@@ -59,14 +60,16 @@ nonna_scan_secrets() {
   if _nonna_match 'Stripe secret key' 'sk_live_[0-9A-Za-z]{16,}' "$text"; then return 0; fi
   if _nonna_match 'OpenAI API key' 'sk-[A-Za-z0-9]{20,}' "$text"; then return 0; fi
   # Anthropic keys and OpenAI's prefixed ones (sk-ant-api03-, sk-proj-, ...) have a hyphenated tail the
-  # line above cannot span. They start at a token: a word that merely ends in "sk" (task-admin-...) is
-  # not a key. \n, \r and \t count as a start because a raw JSON payload, which the no-jq scan reads,
-  # writes a newline that way before a key that begins a line; so do :- and {NAME-, a shell or compose
-  # default (${VAR:-key}), whose match then holds no ${ for the placeholder rule to take for a reference.
-  # The tail is 40 or more (real ones are about 95 or more), so a kebab-case name is not a key.
-  local tok='(^|[^A-Za-z0-9-]|:-|\{[A-Za-z_][A-Za-z0-9_]*-|\\[nrt])'
+  # line above cannot span. The tail is 40 or more (real ones are about 95 or more), so a kebab-case
+  # name is not a key. An Anthropic key's shape (a word and two digits after sk-ant-) is specific
+  # enough anywhere, even glued to a length byte in a compiled file. OpenAI's start at a token, so
+  # that a word merely ending in "sk" (task-admin-...) is not a key; a token starts after anything
+  # but a letter, digit or hyphen, after \n, \r or \t (a raw JSON payload, which the no-jq scan
+  # reads, writes a newline so), after a URL escape (%3D, %20), and after a shell or compose default
+  # (${VAR:-key}, ${1-key}, ${a[0]-key}), whose match then holds no ${ for the placeholder rule.
+  local tok='(^|[^A-Za-z0-9-]|:-|%[0-9A-Fa-f]{2}|\{([A-Za-z_][A-Za-z0-9_]*|[0-9]+|[@*])(\[[^]]*\])?-|\\[nrt])'
   if _nonna_match 'OpenAI API key' "${tok}sk-(proj|svcacct|admin)-[A-Za-z0-9_-]{40,}" "$text"; then return 0; fi
-  if _nonna_match 'Anthropic API key' "${tok}sk-ant-[a-z]+[0-9]{2}-[A-Za-z0-9_-]{40,}" "$text"; then return 0; fi
+  if _nonna_match 'Anthropic API key' 'sk-ant-[a-z]+[0-9]{2}-[A-Za-z0-9_-]{40,}' "$text"; then return 0; fi
   if _nonna_match 'private key block' '-----BEGIN [A-Z ]*PRIVATE KEY-----' "$text"; then return 0; fi
   if _nonna_match 'hardcoded secret assignment' '(api[_-]?key|secret|token|password|passwd)[[:space:]]*[:=][[:space:]]*"[^"]{16,}"' "$text"; then return 0; fi
   if _nonna_match 'hardcoded secret assignment' "(api[_-]?key|secret|token|password|passwd)[[:space:]]*[:=][[:space:]]*'[^']{16,}'" "$text"; then return 0; fi
