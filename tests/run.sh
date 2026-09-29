@@ -2660,6 +2660,13 @@ contains "lint: names the unknown mark" "number mark 'traps.plugin-lite.kk' is n
 contains "lint: a headline number must stay marked" "headline number 'traps.plugin-lite.k' is no longer marked" "$out"
 rm -rf "$FX"
 
+echo "== bench/examples.py (examples/, round 3's rule-picked runs, word for word) =="
+# examples/ quotes benchmark runs verbatim; a page that no longer matches its sources is a
+# misquote. The bench's own tests cover the builder; this runs its --check on the real tree, in CI.
+out="$(python3 -I -S "$ROOT/bench/examples.py" --check 2>&1)"; rc=$?
+check "examples: --check passes on the real tree, on the standard library alone" 0 "$rc"
+[ "$rc" -eq 0 ] || printf '%s\n' "$out"
+
 echo "== assets/build.py (the launch images, built from the benchmark data) =="
 # The scorecard, the social preview and one card per trap task are functions of bench/results/round3
 # and of the committed glyph outlines. --check is the gate: an image that no longer matches a fresh
