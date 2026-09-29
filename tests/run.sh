@@ -163,6 +163,23 @@ printf 'API\343\202\255\343\203\274\343\201\257%s\r\n' "$FAKE_OAI" | utf16le | s
 printf '\345\257\206\351\222\245\346\230\257%s\r\n' "$FAKE_OAI" | utf16le | scan; check "detects an OpenAI key right after a CJK character in UTF-16 text" 0 "$?"
 printf 'word\000%s\000%s' "${FAKE_OAI:0:30}" "${FAKE_OAI:30}" | scan; check "detects an OpenAI key glued to a word by one NUL and cut by another" 0 "$?"
 printf 'ApiKey\000%s\000' "$FAKE_OAI" | utf16le | scan; check "detects an OpenAI key after a U+0000 in UTF-16 text (a string list)" 0 "$?"
+# Every place a key's prefix starts is read, overlapping ones too: a sample in front of a real key does
+# not cover it when their prefixes share letters (xoxoxb-).
+printf 'k = "xoxb-XXXXXXXXXXXXxo%s%s"' 'xox' 'b-1234567890-abcdefghij' | scan; check "a sample whose prefix overlaps a real key's does not cover it" 0 "$?"
+# Every class is found through the one pass that skips text holding none of what a pattern must contain.
+printf 'SLACK = "xox%s"' 'b-1234567890-abcdefghij' | scan; check "detects a Slack token" 0 "$?"
+printf 'k = "AIza%s"' "${KEY_TAIL:0:35}" | scan; check "detects a Google API key" 0 "$?"
+printf -- '-----BEGIN RSA PRIVATE %s-----\n' KEY | scan; check "detects a private key block" 0 "$?"
+printf 'api-key: "%s"' "${KEY_TAIL:0:20}" | scan; check "detects a hardcoded api-key" 0 "$?"
+printf 'client_secret = "%s"' "${KEY_TAIL:0:20}" | scan; check "detects a hardcoded secret" 0 "$?"
+printf "auth_token = '%s'" "${KEY_TAIL:0:20}" | scan; check "detects a hardcoded token in single quotes" 0 "$?"
+printf 'db_passwd = "%s"' "${KEY_TAIL:0:20}" | scan; check "detects a hardcoded passwd" 0 "$?"
+# ...and only grep's own "none" skips them: a first pass that fails reads every pattern.
+BADPRE="$(mktemp -d)"; REALGREP="$(command -v grep)"
+printf '#!/bin/sh\ncase "$*" in *akia*) exit 2 ;; esac\nexec "%s" "$@"\n' "$REALGREP" > "$BADPRE/grep"; chmod +x "$BADPRE/grep"
+( . "$HOOKS/lib/secret-patterns.sh"; printf 'k = "%s"' "$FAKE_ANT" | PATH="$BADPRE:$PATH" nonna_scan_secrets ) >/dev/null
+check "a first pass that fails does not hide a key" 0 "$?"
+rm -rf "$BADPRE"
 # macOS's grep reads its input in the user's locale and gives up on bytes that are not text there; a scan
 # that gave up would pass the key. The patterns are ASCII, so the scan reads bytes (LC_ALL=C).
 BSDGREP="$(mktemp -d)"; REALGREP="$(command -v grep)"

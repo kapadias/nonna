@@ -138,6 +138,16 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
     - `check-debt.sh`'s `tr` and `sed` read bytes: on a Mac they refused a file with a byte that is
       not UTF-8, so its marker went unseen. The real Mac run had failed that test too, and the
       BSD-tools simulation, run to the end on this unit for the first time, found why.
+  - **Fifth review round** (the security review approved the fourth with findings; each fix has a
+    test that failed first):
+    - without jq, the write guard reads a `\u0000` escape as the NUL byte it stands for, so a key
+      one cuts in two, or UTF-16 text read as JSON, is found there too;
+    - an OpenAI key as long as a real one (a tail of 80 or more; real ones have about 156) is a key
+      wherever it starts, so one right after a kana or a CJK character in UTF-16 text is found;
+    - the scan reads its text in lower case once, reads each key where its prefix starts, in the
+      shell, and skips text that holds nothing a pattern needs. On the review's slowest inputs it is
+      faster than before either round: 20 KB of Slack sample keys took 3.1 s before the fourth
+      round, 7.2 s after it, and 0.17 s now; a 2 MB binary 1.0 s, 2.1 s and 0.4 s.
   - **Secret scan:** it missed Anthropic keys and OpenAI's `sk-proj-`, `sk-svcacct-` and `sk-admin-`
     keys, which the docs said it caught. The write guard, pre-commit and pre-push now refuse them;
     golden tests hold each key type and a key given as a shell default, a property test holds the
