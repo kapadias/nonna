@@ -69,7 +69,7 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   `claude-haiku-4-5-20251001`. The rows, `summary.txt`, `summary.json` and the runner's report are
   in `bench/results/`; `summarize.py` reproduces the summary byte for byte. D3 rows 1 and 4 hold
   (lite 1/64 unsafe against the bare agent's 24/64, at 1.8× its small-task cost; full 0/64), row 5
-  does not (ponytail+lite writes 28% more code than ponytail), and lite's real-suite pass rate is not
+  does not (its code-size condition fails: +28% against a ±20% limit), and lite's real-suite pass rate is not
   below the bare agent's (30/36 against 28/36). The launch docs take their numbers from here.
 
 - **2026-09-28** — Benchmark round 3, the fourth unit of the launch plan (#17), built and proven,
