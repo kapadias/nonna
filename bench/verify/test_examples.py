@@ -492,6 +492,25 @@ def test_check_catches_a_stale_file_and_a_plain_run_repairs_it(repo):
     ]
 
 
+def test_a_symlinked_page_is_never_written_through(repo, tmp_path):
+    outside = tmp_path / "outside.md"
+    outside.write_text("keep\n")
+    (repo / "examples").mkdir()
+    (repo / "examples" / "alpha.md").symlink_to(outside)
+    r = cli(repo)
+    assert r.returncode == 2 and "symlink" in r.stderr, r.stderr
+    assert outside.read_text() == "keep\n"
+
+
+def test_a_symlinked_examples_directory_is_refused(repo, tmp_path):
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    (repo / "examples").symlink_to(elsewhere)
+    r = cli(repo)
+    assert r.returncode == 2 and "symlink" in r.stderr, r.stderr
+    assert os.listdir(elsewhere) == []
+
+
 def test_check_never_writes(repo):
     (repo / "examples").mkdir()
     (repo / "examples" / "alpha.md").write_text("stale\n")

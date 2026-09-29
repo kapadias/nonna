@@ -262,7 +262,13 @@ def stale(out: Path, files: dict[str, str]) -> list[str]:
 
 
 def write(out: Path, files: dict[str, str]) -> None:
+    # Never through a link: a symlinked examples/, or a page that is one, would write elsewhere.
+    if out.is_symlink():
+        raise ValueError(f"{out.name}/ is a symlink; refusing to write through it")
     out.mkdir(exist_ok=True)
+    links = sorted(p.name for p in out.iterdir() if p.is_symlink())
+    if links:
+        raise ValueError(f"{out.name}/{links[0]} is a symlink; refusing to write through it")
     for name in stale(out, files):
         if name in files:
             (out / name).write_bytes(files[name].encode("utf-8"))
@@ -300,7 +306,11 @@ def main(argv: list[str]) -> int:
                 file=sys.stderr,
             )
         return 1 if old else 0
-    write(out, files)
+    try:
+        write(out, files)
+    except (ValueError, OSError) as e:
+        print(f"examples: {e}", file=sys.stderr)
+        return 2
     return 0
 
 
