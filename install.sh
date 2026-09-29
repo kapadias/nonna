@@ -269,9 +269,9 @@ link_hook() { # <git hook name> <script under .claude/hooks>
       hers=1
     fi
     if [ -n "$hers" ]; then
-      # Git skips a link that points at nothing, in silence: that gate is off.
-      if [ ! -e "$dest" ]; then
-        warn_msgs+=("$1: $dest points at nothing, so this gate is not running")
+      # Git skips, in silence, a hook that points at nothing or at a file it cannot run: that gate is off.
+      if [ ! -x "$dest" ]; then
+        warn_msgs+=("$1: $dest points at nothing git can run, so this gate is not running")
         failed=1
       fi
       return 0

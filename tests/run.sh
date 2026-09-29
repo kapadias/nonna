@@ -1232,12 +1232,16 @@ rm -rf "$TMP"
 # no gate, though: git skips such a hook in silence, so install says so.
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
 PLUG="$CLAUDE_CONFIG_DIR/plugins/data/nonna-x/current/hooks"; mkdir -p "$PLUG"; : > "$PLUG/pre-commit.sh"; : > "$PLUG/require-status-sync.sh"
+chmod +x "$PLUG/pre-commit.sh" "$PLUG/require-status-sync.sh"
 ln -s "$PLUG/pre-commit.sh" "$TMP/.git/hooks/pre-commit"; ln -s "$PLUG/require-status-sync.sh" "$TMP/.git/hooks/pre-push"
 out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a link her plugin wired is hers, so running install succeeds" 0 "$?"
 printf '%s' "$out" | grep -q 'already have'; check "install: ...and is not read as a hook of the user's" 1 "$?"
+chmod -x "$PLUG/pre-commit.sh"  # git skips a hook it cannot run, in silence, as it does a dangling one
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a link of hers to a script git cannot run is a failure" 1 "$?"
+contains "install: ...and says which gate is not running, too" "pre-commit: .git/hooks/pre-commit points at nothing git can run" "$out"
 rm -f "$PLUG/pre-commit.sh" "$PLUG/require-status-sync.sh"
 out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a link of hers that points at nothing is a failure, since git skips it" 1 "$?"
-contains "install: ...and says which gate is not running" "pre-commit: .git/hooks/pre-commit points at nothing, so this gate is not running" "$out"
+contains "install: ...and says which gate is not running" "pre-commit: .git/hooks/pre-commit points at nothing git can run, so this gate is not running" "$out"
 rm -rf "$TMP" "$CLAUDE_CONFIG_DIR/plugins/data/nonna-x"
 # ../../ leads back to a repository root only from a directory named .git/hooks. One that merely ends
 # in .git/hooks (x.git/hooks) is not that, even where the link happens to reach her script.
