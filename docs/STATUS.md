@@ -57,12 +57,33 @@ never offered to the model, so it is not counted.
   `run_tests`, `mode`) + `.claude-plugin/marketplace.json`. Both validate with `--strict`.
 - **Docs** — this `STATUS.md`, `INSTALL.md`, `OVERVIEW.md`, `docs/benchmarks/`, `CHANGELOG.md`, the
   `docs/adr/` index, and ADRs 0001–0011.
+- **Launch images** — `assets/build.py` builds the scorecard, the social preview and one card per
+  trap task from round 3's files; `--check` (standard library only) is run by `tests/run.sh`.
 - **CI** — `.github/workflows/ci.yml`: shellcheck (all scripts) + harness-lint + gate self-tests +
   plugin manifest (`claude plugin validate --strict`, pinned CLI).
 
 ## Recently changed
 
 History lives in `CHANGELOG.md` and `git log`. Entries here describe the current unit of work.
+
+- **2026-09-29** — Launch images, a unit of the launch plan (#17). `assets/build.py` builds
+  `assets/scorecard.svg` (and its 2400 px PNG), `assets/social-preview.svg` (1280×640, 40 px clear
+  on every edge) and one 1080 px card per trap task in `assets/cards/`, all from round 3's own
+  files. Every number comes from `summary.json` and `traps.tsv`, which must agree; each card's
+  prompt from `bench/tasks/traps/`; its Nonna line from that task's example stream, and a card
+  whose example fired none shows none. The scorecard keeps its four panels: the bare agent cut a
+  corner in 24 of 64 runs against nonna lite's 1 of 64, said "done" on a broken suite in 4 of 8
+  against 1 of 8, pushed to main in 8 of 8 against 0 of 8, and lite costs $0.06 against $0.04 on
+  trap tasks and $0.07 against $0.04 on small ones (Sonnet, mean per run).
+  - Lettering is outlined from `assets/font/space-grotesk.json`, made once from Space Grotesk (SIL
+    OFL, `OFL.txt` beside it, `make_glyphs.py` to regenerate). It reproduces the banner's own
+    paths to the digit, so the font and its weights are matched, not guessed.
+  - `--check` fails on a stale SVG, moved data, or a PNG that is missing, the wrong size, over
+    1 MB or rendered from a different SVG (each PNG carries the hash of its SVG). Only `--render`
+    needs a browser.
+  - Lettering that would run off an image fails the build. 1026 harness tests.
+  - Not done, on purpose: the README still quotes round 1–2's numbers and alt text (the launch
+    README is its own unit); no CI step of its own, since the gate self-tests run `--check`.
 
 - **2026-09-29** — Round 3 ran: 484 runs, $37.18 of logged spend, every fingerprint ok, none
   dropped, no ERROR rows. Harness `83b5de3`, Claude Code 2.1.284, `claude-sonnet-5-5` and
@@ -292,9 +313,9 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
 
 ## Next / open
 
-- The rest of the launch plan (#17): the launch README, docs and assets from round 3's numbers,
-  with `install.sh` defaulting to lite as D3 row 1 decides; the demo; then the v2.0.0 release and
-  the go/no-go checks. `/nonna` ran headless in default and auto mode during the smoke runs; an
+- The rest of the launch plan (#17): the launch README and docs from round 3's numbers (the images
+  are built), with `install.sh` defaulting to lite as D3 row 1 decides; the demo; then the v2.0.0
+  release and the go/no-go checks. `/nonna` ran headless in default and auto mode during the smoke runs; an
   interactive check stays on the go/no-go list.
 
 - A behavioural eval on the failures the gates exist for (a secret in a fixture, a push to a
