@@ -31,6 +31,7 @@ import shutil
 import struct
 import subprocess
 import sys
+import xml.etree.ElementTree as ET
 import zlib
 from collections import defaultdict
 from collections.abc import Iterable, Iterator, Sequence
@@ -544,12 +545,63 @@ class Scene:
         )
 
 
-# What the portrait may not carry into the images: something that runs (a script, an event handler,
-# HTML), or a reference outside the file (a link, an import, a url() that is not an #id).
-UNSAFE_MARKUP = re.compile(
-    r"<script|<foreignObject|\son\w+\s*=|\bhref\s*=\s*[\"'](?!#)|url\(\s*[\"']?(?!#)|@import",
-    re.I,
+# What an image may carry: markup that draws, and nothing that runs or reaches outside the file.
+# So a short allow-list, not a list of what to keep out (a prefixed <s:script>, SMIL, image-set()
+# and a CSS escape all got past that): the SVG elements the ten images and the banner's portrait
+# use today, which tests/test_assets.py holds equal to the list, and attributes that stay in the
+# file. Anything else is refused however it is spelled.
+SVG_NS = "http://www.w3.org/2000/svg"
+ALLOWED_ELEMENTS = frozenset(
+    f"{{{SVG_NS}}}{name}"
+    for name in (
+        "circle",
+        "clipPath",
+        "desc",
+        "ellipse",
+        "g",
+        "path",
+        "rect",
+        "svg",
+        "title",
+    )
 )
+# The one attribute with a namespace that may appear: xlink:href, held to the rule for href.
+_XLINK_HREF = "{http://www.w3.org/1999/xlink}href"
+# Read before parsing, since a parser never shows either as an element: a DOCTYPE (an ENTITY only
+# exists inside one) and a processing instruction such as <?xml-stylesheet?>. The XML declaration
+# is not one.
+_DECLARATION = re.compile(r"<!(?:DOCTYPE|ENTITY)|<\?(?!xml\s)[^\s?>]*", re.I)
+# The only url() a value may hold: a reference to an id in the file, quoted or not.
+_LOCAL_URL = re.compile(r"""url\(\s*(["']?)#[^\s"'()]+\1\s*\)""", re.I)
+# Never in a value, whatever else it says: a CSS escape (it can spell url( another way), and the
+# two things that fetch without saying url(.
+# debt: values are checked for the CSS fetchers known today, add each new one a browser ships (src() is a candidate)
+_NEVER_IN_A_VALUE = re.compile(r"\\|image-set|@import", re.I)
+
+
+def unsafe_markup(svg: str) -> str | None:
+    """The first thing in this SVG that is more than drawing, or None when it is all drawing."""
+    found = _DECLARATION.search(svg)
+    if found:
+        return found.group(0)
+    try:
+        root = ET.fromstring(svg)
+    except ET.ParseError as e:
+        return f"markup that does not parse ({e})"
+    for el in root.iter():
+        if el.tag not in ALLOWED_ELEMENTS:
+            return f"<{el.tag}>"
+        for name, value in el.attrib.items():
+            local = name.rpartition("}")[2].lower()
+            if (
+                (name.startswith("{") and name != _XLINK_HREF)
+                or local.startswith("on")
+                or (local == "href" and not value.startswith("#"))
+                or _NEVER_IN_A_VALUE.search(value)
+                or "url(" in _LOCAL_URL.sub("", value).lower()
+            ):
+                return f'{name}="{value[:60]}"'
+    return None
 
 
 def portrait(banner: str) -> str:
@@ -565,10 +617,10 @@ def portrait(banner: str) -> str:
         depth += -1 if m.group(0) == "</g>" else 1
         if depth == 0:
             inner = banner[start + len(open_tag) : start + m.start()]
-            unsafe = UNSAFE_MARKUP.search(inner)
+            unsafe = unsafe_markup(f'<svg xmlns="{SVG_NS}">{inner}</svg>')
             if unsafe:
                 raise DataError(
-                    f"{BANNER}: the portrait carries {unsafe.group(0).strip()!r}: "
+                    f"{BANNER}: the portrait carries {unsafe}: "
                     "the images take markup that draws, nothing that runs or reaches out"
                 )
             return inner
@@ -900,10 +952,10 @@ def find_chromium() -> str:
 def render(root: Path, images: list[Image]) -> None:
     # The browser gets nothing that runs or reaches outside the file, whatever put it in the SVG.
     for img in images:
-        unsafe = UNSAFE_MARKUP.search(img.svg)
+        unsafe = unsafe_markup(img.svg)
         if unsafe:
             raise DataError(
-                f"{img.name}.svg carries {unsafe.group(0).strip()!r}: "
+                f"{img.name}.svg carries {unsafe}: "
                 "the images take markup that draws, nothing that runs or reaches out"
             )
     chromium = find_chromium()

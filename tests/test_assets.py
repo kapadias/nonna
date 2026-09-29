@@ -23,6 +23,7 @@ import unittest.mock
 import xml.etree.ElementTree as ET
 import zlib
 from pathlib import Path
+from xml.sax.saxutils import quoteattr
 
 # importing build.py must not leave a __pycache__ in the tree
 sys.dont_write_bytecode = True
@@ -507,9 +508,47 @@ def make_png(w, h):
 
 class PortraitTest(unittest.TestCase):
     """The portrait goes into every image as it is: markup that draws, and nothing that runs or
-    reaches outside the file."""
+    reaches outside the file. What may go in is a short list of SVG elements, the ones the images
+    draw with, and attributes that stay inside the file. A list of what to keep out was bypassed
+    five ways (BYPASSES) and refused in-file references that were fine."""
 
     OPEN = '<g transform="translate(34 34) scale(0.88)">'
+    SVG_OPEN = '<svg xmlns="http://www.w3.org/2000/svg">'
+    # what got past that list, each one run against it in review
+    BYPASSES = (
+        '<s:script xmlns:s="http://www.w3.org/2000/svg">alert(1)</s:script>',
+        '<h:iframe xmlns:h="http://www.w3.org/1999/xhtml" src="https://example.com/x"/>',
+        '<set attributeName="href" to="https://example.com/x"/>',
+        "<rect style=\"fill: image-set('https://example.com/a.png' 1x)\"/>",
+        r'<rect style="fill: \75 rl(https://example.com/x)"/>',
+    )
+
+    def portrait_of(self, inner):
+        return build.portrait(f"<svg>{self.OPEN}{inner}</g></svg>")
+
+    def render_of(self, svg):
+        """render() on one SVG with no browser to reach: it raises either way, and which error
+        says whether the SVG was refused before the browser was looked for."""
+        env = {"CHROMIUM": "/nonexistent/chromium"}
+        with (
+            tempfile.TemporaryDirectory() as d,
+            unittest.mock.patch.dict(build.os.environ, env),
+        ):
+            build.render(Path(d), [build.Image("x", svg, 1, 1, 1)])
+
+    def assert_refused(self, inner):
+        """Both call sites refuse it: inside the portrait's group, and inside a whole image."""
+        with self.assertRaisesRegex(build.DataError, "runs or reaches out"):
+            self.portrait_of(inner)
+        with self.assertRaisesRegex(build.DataError, "runs or reaches out"):
+            self.render_of(f"{self.SVG_OPEN}{inner}</svg>")
+
+    def assert_passes(self, inner):
+        """Both call sites take it: the portrait comes back as it went in, and render() gets as
+        far as looking for a browser."""
+        self.assertEqual(self.portrait_of(inner), inner)
+        with self.assertRaisesRegex(build.DataError, "no headless Chromium"):
+            self.render_of(f"{self.SVG_OPEN}{inner}</svg>")
 
     def test_script_handlers_and_outside_references_are_refused(self):
         for bad in (
@@ -526,7 +565,8 @@ class PortraitTest(unittest.TestCase):
                 build.portrait(f"<svg>{self.OPEN}{bad}</g></svg>")
 
     def test_references_inside_the_file_pass(self):
-        inner = '<use href="#a"/><rect fill="url(#g)"/>'
+        # a <rect>, not a <use>: no image draws with <use>, so it is not on the list
+        inner = '<rect href="#a"/><rect fill="url(#g)"/>'
         self.assertEqual(build.portrait(f"<svg>{self.OPEN}{inner}</g></svg>"), inner)
 
     def test_the_real_banner_passes(self):
@@ -539,6 +579,157 @@ class PortraitTest(unittest.TestCase):
         ):
             with self.assertRaisesRegex(build.DataError, "runs or reaches out"):
                 build.render(Path(d), [img])
+
+    def test_what_the_block_list_let_through_is_refused(self):
+        for bad in self.BYPASSES:
+            with self.subTest(bad=bad):
+                self.assert_refused(bad)
+
+    def test_an_element_off_the_list_is_refused_whatever_it_says(self):
+        for bad in (
+            "<script/>",
+            "<foreignObject/>",
+            "<style/>",
+            "<a/>",
+            "<image/>",
+            "<use/>",
+            "<animate/>",
+            "<set/>",
+            "<title><script/></title>",
+            "<g><g><g><script/></g></g></g>",
+            # a name on the list, in another namespace
+            '<x:rect xmlns:x="https://example.com/ns"/>',
+            '<rect xmlns="https://example.com/ns"/>',
+        ):
+            with self.subTest(bad=bad):
+                self.assert_refused(bad)
+        with self.assertRaisesRegex(build.DataError, "runs or reaches out"):
+            self.render_of("<svg><rect/></svg>")  # the root itself, in no namespace
+
+    def test_an_attribute_that_runs_or_reaches_out_is_refused(self):
+        for bad in (
+            '<rect onload="alert(1)"/>',
+            '<rect OnClick="alert(1)"/>',
+            '<rect href="https://example.com/x"/>',
+            '<rect href="data:image/svg+xml;base64,AAAA"/>',
+            '<rect xmlns:x="http://www.w3.org/1999/xlink" x:href="https://example.com/x"/>',
+            '<rect xml:base="https://example.com/"/>',
+            '<rect fill="url(https://example.com/x)"/>',
+            '<rect fill="URL(https://example.com/x)"/>',
+            '<rect fill="url(#g) url(https://example.com/x)"/>',
+            '<rect fill="url(#g)url(https://example.com/x)"/>',
+            '<rect fill="url(#g"/>',
+            "<rect style=\"fill: url('https://example.com/x')\"/>",
+            r'<rect cursor="\75 rl(https://example.com/x)"/>',
+            "<rect style=\"fill: IMAGE-SET('https://example.com/a.png' 1x)\"/>",
+            "<rect style=\"@import 'https://example.com/x.css'\"/>",
+        ):
+            with self.subTest(bad=bad):
+                self.assert_refused(bad)
+
+    def test_a_url_to_an_id_passes_however_it_is_written(self):
+        for ref in (
+            "url(#g)",
+            "url('#g')",
+            'url("#g")',
+            "url( #g)",
+            "url( '#g' )",
+            "URL(#g)",
+            "url(#g) red",
+        ):
+            with self.subTest(ref=ref):
+                self.assert_passes(f"<rect fill={quoteattr(ref)}/>")
+
+    def test_an_href_to_an_id_in_the_file_passes(self):
+        for inner in (
+            '<rect href="#a"/>',
+            '<rect xmlns:x="http://www.w3.org/1999/xlink" x:href="#a"/>',
+        ):
+            with self.subTest(inner=inner):
+                self.assert_passes(inner)
+
+    def test_a_url_passes_if_and_only_if_it_points_at_an_id(self):
+        rnd = random.Random(17)
+        ids = "abcdefghijklmnopqrstuvwxyz0123456789_-"
+        elsewhere = (
+            "https://example.com/x",
+            "//example.com/x",
+            "data:image/png;base64,AAAA",
+            "file:///etc/hostname",
+            "x.svg#g",
+            "../x.svg#g",
+        )
+        for _ in range(60):
+            fn = rnd.choice(("url", "URL", "Url"))
+            q = rnd.choice(("", "'", '"'))
+            pad = " " * rnd.randint(0, 3)
+            here = "#" + "".join(rnd.choices(ids, k=rnd.randint(1, 8)))
+            far = rnd.choice(elsewhere)
+            for target, points_at_an_id in ((here, True), (far, False)):
+                ref = f"{fn}({pad}{q}{target}{q}{pad})"
+                with self.subTest(ref=ref):
+                    inner = f"<rect fill={quoteattr(ref)}/>"
+                    if points_at_an_id:
+                        self.assert_passes(inner)
+                    else:
+                        self.assert_refused(inner)
+
+    def test_a_doctype_or_an_entity_is_refused(self):
+        doctype = '<!DOCTYPE svg [<!ENTITY boom "x">]>'
+        with self.assertRaisesRegex(build.DataError, "runs or reaches out"):
+            self.render_of(f"{doctype}{self.SVG_OPEN}<title>&boom;</title></svg>")
+        for bad in (doctype, "<!DOCTYPE svg>", '<!ENTITY boom "x">'):
+            with (
+                self.subTest(bad=bad),
+                self.assertRaisesRegex(build.DataError, "runs or reaches out"),
+            ):
+                self.portrait_of(f"{bad}<rect/>")
+
+    def test_a_processing_instruction_is_refused_but_the_xml_declaration_is_not(self):
+        sheet = '<?xml-stylesheet type="text/css" href="https://example.com/x.css"?>'
+        with self.assertRaisesRegex(build.DataError, "runs or reaches out"):
+            self.render_of(f"{sheet}{self.SVG_OPEN}</svg>")
+        with self.assertRaisesRegex(build.DataError, "runs or reaches out"):
+            self.portrait_of(f"{sheet}<rect/>")
+        declaration = '<?xml version="1.0" encoding="UTF-8"?>'
+        with self.assertRaisesRegex(build.DataError, "no headless Chromium"):
+            self.render_of(f"{declaration}{self.SVG_OPEN}</svg>")
+
+    def test_markup_that_does_not_parse_is_refused(self):
+        for bad in ("<rect>", "<rect", '<use xlink:href="#a"/>', "&nbsp;"):
+            with self.subTest(bad=bad):
+                self.assert_refused(bad)
+
+    def test_every_real_image_passes(self):
+        for img in build.build_all(ROOT):
+            with (
+                self.subTest(img.name),
+                self.assertRaisesRegex(build.DataError, "no headless Chromium"),
+            ):
+                self.render_of(img.svg)
+
+    def test_the_allow_list_is_exactly_what_the_images_draw_with(self):
+        drawn = {
+            SVG + name
+            for name in (
+                "circle",
+                "clipPath",
+                "desc",
+                "ellipse",
+                "g",
+                "path",
+                "rect",
+                "svg",
+                "title",
+            )
+        }
+        used = {
+            el.tag
+            for img in build.build_all(ROOT)
+            for el in ET.fromstring(img.svg).iter()
+        }
+        self.assertEqual(used, drawn)
+        self.assertEqual(set(build.ALLOWED_ELEMENTS), drawn)
 
 
 class PngTest(unittest.TestCase):
