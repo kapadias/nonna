@@ -1044,9 +1044,38 @@ cmp -s "$TMP/AGENTS.md" "$ROOT/hosts/lite/AGENTS.md" && cmp -s "$TMP/.cursor/rul
 check "install: without --mode, other hosts get the lite house rules" 0 "$?"
 rm -rf "$TMP"
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; printf '#!/bin/sh\necho mine\n' > "$TMP/.git/hooks/pre-commit"; chmod +x "$TMP/.git/hooks/pre-commit"
-out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a foreign git hook does not fail the install" 0 "$?"
+# A git hook she could not wire is a gate that is off, and on hosts other than Claude Code the git hooks
+# are the only enforcement: the install fails, says which gate and how to chain it, and never says she
+# is in the kitchen. Running it again once the gate is chained succeeds.
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a foreign git hook that does not run hers is a failure, since her gate is not wired" 1 "$?"
 grep -q 'echo mine' "$TMP/.git/hooks/pre-commit"; check "install: never overwrites a foreign git hook" 0 "$?"
-contains "install: warns that the foreign hook needs chaining" "pre-commit" "$out"
+contains "install: warns that the foreign hook needs chaining" "pre-commit: you already have a pre-commit hook" "$out"
+printf '%s' "$out" | grep -q 'in the kitchen'; check "install: ...and does not say she is in the kitchen" 1 "$?"
+printf '#!/bin/sh\necho mine\n.claude/hooks/pre-commit.sh "$@"\n' > "$TMP/.git/hooks/pre-commit"
+( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" >/dev/null 2>&1 ); check "install: once the foreign hook chains hers, running again succeeds" 0 "$?"
+rm -rf "$TMP"
+# A hook manager (core.hooksPath) owns the hooks: nothing is written there, and both gates are reported.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; git -C "$TMP" config core.hooksPath .husky
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a hook manager's directory is a failure, since her git gates are not wired" 1 "$?"
+contains "install: ...and says where to point its pre-commit" "point its pre-commit at .claude/hooks/pre-commit.sh" "$out"
+contains "install: ...and its pre-push" "point its pre-push at .claude/hooks/require-status-sync.sh" "$out"
+printf '%s' "$out" | grep -q 'in the kitchen'; check "install: ...and does not say she is in the kitchen, either" 1 "$?"
+rc=0; [ ! -e "$TMP/.husky" ] && [ ! -e "$TMP/.git/hooks/pre-commit" ] && [ ! -L "$TMP/.git/hooks/pre-commit" ] || rc=1; check "install: ...and writes no hook, in the manager's directory or in .git/hooks" 0 "$rc"
+mkdir "$TMP/.husky"; printf '#!/bin/sh\n.claude/hooks/pre-commit.sh "$@"\n' > "$TMP/.husky/pre-commit"; printf '#!/bin/sh\n.claude/hooks/require-status-sync.sh "$@"\n' > "$TMP/.husky/pre-push"
+( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" >/dev/null 2>&1 ); check "install: once the manager's hooks run hers, running again succeeds" 0 "$?"
+rm -rf "$TMP"
+# A linked worktree shares the main checkout's hooks, which a relative link from here cannot reach.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; "${GIT[@]}" -C "$TMP" commit -q --allow-empty -m init --no-verify
+"${GIT[@]}" -C "$TMP" worktree add -q "$TMP/wt" -b feature/wt 2>/dev/null
+out="$(cd "$TMP/wt" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a linked worktree is a failure, since its shared git hooks are not wired" 1 "$?"
+contains "install: ...and says which gate is not wired" "pre-commit: git hooks live in" "$out"
+rc=0; [ ! -e "$TMP/.git/hooks/pre-commit" ] && [ ! -L "$TMP/.git/hooks/pre-commit" ] || rc=1; check "install: ...and links nothing into the shared hooks" 0 "$rc"
+rm -rf "$TMP"
+# A link that could not be made is not one that was: a file where the hooks directory should be.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; rm -rf "$TMP/.git/hooks"; : > "$TMP/.git/hooks"
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a git hook it could not link is a failure, not a success" 1 "$?"
+contains "install: ...and says which gate is not running" "pre-commit: could not link .git/hooks/pre-commit, so this gate is not running" "$out"
+printf '%s' "$out" | grep -qF '+ .git/hooks/pre-commit'; check "install: ...and does not claim the link" 1 "$?"
 rm -rf "$TMP"
 TMP="$(mktemp -d)"
 ( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" >/dev/null 2>&1 ); check "install: refuses outside a git repository" 1 "$?"

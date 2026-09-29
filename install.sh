@@ -252,13 +252,22 @@ link_hook() { # <git hook name> <script under .claude/hooks>
     case "$(readlink "$dest" 2>/dev/null)" in
       "../../.claude/hooks/$2") return 0 ;;
     esac
-    grep -qsF ".claude/hooks/$2" "$dest" || warn_msgs+=("$1: you already have a $1 hook — chain .claude/hooks/$2 from it, or my gates do not run")
+    grep -qsF ".claude/hooks/$2" "$dest" || {
+      warn_msgs+=("$1: you already have a $1 hook — chain .claude/hooks/$2 from it, or my gates do not run")
+      failed=1
+    }
     return 0
   fi
+  # A gate that is not wired is off, and for hosts other than Claude Code the git hooks are all there is.
   if [ "$hooks_dir" = ".git/hooks" ]; then
-    mkdir -p "$hooks_dir" && ln -s "../../.claude/hooks/$2" "$dest"
+    { mkdir -p "$hooks_dir" && ln -s "../../.claude/hooks/$2" "$dest"; } || {
+      warn_msgs+=("$1: could not link $dest, so this gate is not running")
+      failed=1
+      return 0
+    }
   else
-    warn_msgs+=("$1: git hooks live in '$hooks_dir' (a hook manager?) — point its $1 at .claude/hooks/$2")
+    warn_msgs+=("$1: git hooks live in '$hooks_dir', not .git/hooks (a hook manager, or a linked worktree), so this gate is not running: point its $1 at .claude/hooks/$2")
+    failed=1
     return 0
   fi
   done_msgs+=("$dest -> .claude/hooks/$2")
