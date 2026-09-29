@@ -1064,6 +1064,13 @@ rc=0; [ ! -e "$TMP/.husky" ] && [ ! -e "$TMP/.git/hooks/pre-commit" ] && [ ! -L 
 mkdir "$TMP/.husky"; printf '#!/bin/sh\n.claude/hooks/pre-commit.sh "$@"\n' > "$TMP/.husky/pre-commit"; printf '#!/bin/sh\n.claude/hooks/require-status-sync.sh "$@"\n' > "$TMP/.husky/pre-push"
 ( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" >/dev/null 2>&1 ); check "install: once the manager's hooks run hers, running again succeeds" 0 "$?"
 rm -rf "$TMP"
+# Her own relative link is hers only in .git/hooks, where ../../ leads back to this repository. In any
+# other hooks directory the same link leads somewhere else, so it is judged like a hook of the user's.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; git -C "$TMP" config core.hooksPath hk; mkdir "$TMP/hk"
+ln -s ../../.claude/hooks/pre-commit.sh "$TMP/hk/pre-commit"; ln -s ../../.claude/hooks/require-status-sync.sh "$TMP/hk/pre-push"
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a link that only looks like hers, outside .git/hooks, is not hers" 1 "$?"
+contains "install: ...and is reported like any hook of the user's" "pre-commit: you already have a pre-commit hook" "$out"
+rm -rf "$TMP"
 # A linked worktree shares the main checkout's hooks, which a relative link from here cannot reach.
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; "${GIT[@]}" -C "$TMP" commit -q --allow-empty -m init --no-verify
 "${GIT[@]}" -C "$TMP" worktree add -q "$TMP/wt" -b feature/wt 2>/dev/null

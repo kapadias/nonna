@@ -247,10 +247,11 @@ link_hook() { # <git hook name> <script under .claude/hooks>
     return 0
   fi
   if [ -e "$dest" ] || [ -L "$dest" ]; then
-    # Her own link, from an earlier run, is hers. Any other hook runs hers only when it names her
-    # script's path, not a file that merely shares its name.
-    case "$(readlink "$dest" 2>/dev/null)" in
-      "../../.claude/hooks/$2") return 0 ;;
+    # Her own link, from an earlier run, is hers, but only in .git/hooks, where ../../ leads back
+    # here. Any other hook runs hers only when it names her script's path, not a file that merely
+    # shares its name.
+    case "$hooks_dir:$(readlink "$dest" 2>/dev/null)" in
+      ".git/hooks:../../.claude/hooks/$2") return 0 ;;
     esac
     grep -qsF ".claude/hooks/$2" "$dest" || {
       warn_msgs+=("$1: you already have a $1 hook — chain .claude/hooks/$2 from it, or my gates do not run")
