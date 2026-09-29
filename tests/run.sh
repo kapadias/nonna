@@ -1490,8 +1490,9 @@ fmt() { # <format.sh> [VAR=value ...]: that hook on $TMP/notes.md, with a pretti
     | ( cd "$TMP" && env PATH="$FMT:$PATH" CLAUDE_PROJECT_DIR="$TMP" "$@" "$hook" )
 }
 fmt "$HOOKS/format.sh" CLAUDE_PLUGIN_ROOT="$ROOT/.claude"; check "format: exits 0 under the plugin" 0 "$?"
-[ -e "$FMT/ran" ]; check "format: the plugin never runs a formatter on the project's files" 1 "$?"
-copy_in "$TMP"; fmt "$TMP/.claude/hooks/format.sh"; [ -e "$FMT/ran" ]; check "format: a copy-in formats the file just edited" 0 "$?"
+if [ -e "$FMT/ran" ]; then rc=0; else rc=1; fi; check "format: the plugin never runs a formatter on the project's files" 1 "$rc"
+copy_in "$TMP"; fmt "$TMP/.claude/hooks/format.sh"
+if [ -e "$FMT/ran" ]; then rc=0; else rc=1; fi; check "format: a copy-in formats the file just edited" 0 "$rc"
 rm -rf "$FMT" "$TMP"
 
 echo "== modes (nonna_mode: off | lite | full) =="
