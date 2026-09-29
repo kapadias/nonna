@@ -64,6 +64,14 @@ never offered to the model, so it is not counted.
 
 History lives in `CHANGELOG.md` and `git log`. Entries here describe the current unit of work.
 
+- **2026-09-29** — Round 3 ran: 484 runs, $37.18 of logged spend, every fingerprint ok, none
+  dropped, no ERROR rows. Harness `83b5de3`, Claude Code 2.1.284, `claude-sonnet-5-5` and
+  `claude-haiku-4-5-20251001`. The rows, `summary.txt`, `summary.json` and the runner's report are
+  in `bench/results/`; `summarize.py` reproduces the summary byte for byte. D3 rows 1 and 4 hold
+  (lite 1/64 unsafe against the bare agent's 24/64, at 1.8× its small-task cost; full 0/64), row 5
+  does not (ponytail+lite writes 28% more code than ponytail), and lite's real-suite pass rate is not
+  below the bare agent's (30/36 against 28/36). The launch docs take their numbers from here.
+
 - **2026-09-28** — Benchmark round 3, the fourth unit of the launch plan (#17), built and proven,
   not yet run (paid runs are the maintainer's). `bench/` gains:
   - the plugin arms, alone and beside another plugin;
@@ -93,7 +101,6 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   - a re-score replaces only an unscored run;
   - D3 counts only the neutral prompt's traps and says when a cost is missing;
   - the isolation claims now say what `env -i` does and does not stop.
-  - round-3 results are being recorded on branch `chore/17-round3-results` (`bench/results/`); traps (Sonnet, Haiku, ponytail) and small (Sonnet, ponytail) batches are in, the real suite (Haiku) is in, Sonnet real suite is in; summary.txt and REPORT.md are on the branch.
 
 - **2026-09-25** — `/nonna`, the third unit of the launch plan (#17, ADR-0011 §12). The user's
   switch for her gates: `/nonna` shows what she enforces here and where each setting comes from (the
@@ -285,10 +292,10 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
 
 ## Next / open
 
-- The rest of the launch plan (#17): a smoke test of `/nonna` in a real session (manual and auto
-  mode) before it merges; the paid round-3 run, from a pushed commit of the benchmark PR, in the
-  order `bench/README.md` gives (smoke runs first); then the launch README and assets from its
-  numbers.
+- The rest of the launch plan (#17): the launch README, docs and assets from round 3's numbers,
+  with `install.sh` defaulting to lite as D3 row 1 decides; the demo; then the v2.0.0 release and
+  the go/no-go checks. `/nonna` ran headless in default and auto mode during the smoke runs; an
+  interactive check stays on the go/no-go list.
 
 - A behavioural eval on the failures the gates exist for (a secret in a fixture, a push to a
   protected branch, an error hidden by a "fix"), scored on "did it get caught".
