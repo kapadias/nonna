@@ -72,7 +72,9 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   `/cost` (bare unsafe 35 of 36; with her, lite, 2 of 36). Type: Instrument Serif, IBM Plex; the
   storyboard was critiqued and fact-checked by independent agents before the render, and the
   rendered frames were QA'd the same way. The tagline is now "Done means proven." (title card,
-  README headline, plugin description).
+  README headline, plugin description). The README scorecard and its paragraph now carry round 3's
+  numbers (24 of 64 → 1 of 64 lite, 0 full; claims-done 4 of 8 → 1 of 8; push 8 of 8 → 0 of 8;
+  Sonnet $0.040 → $0.071 per small change); `docs/demo-src/scorecard.py` regenerates the card.
 
 - **2026-09-29** — Round 3 ran: 484 runs, $37.18 of logged spend, every fingerprint ok, none
   dropped, no ERROR rows. Harness `83b5de3`, Claude Code 2.1.284, `claude-sonnet-5-5` and
