@@ -151,11 +151,11 @@ if class="$(added_lines "$tmp/patch" | nonna_scan_secrets)"; then
   while IFS= read -r -d '' f; do
     "${LOG[@]}" -p -U0 --full-history "${revs[@]}" -- "$f" > "$tmp/one" || unreadable
     if c="$(added_lines "$tmp/one" | nonna_scan_secrets)"; then
-      echo "✗ Push blocked: ${f} introduces what looks like a ${c}." >&2
+      echo "✗ Push blocked: ${f} introduces what looks like $(nonna_a "$c")." >&2
       named=1
     fi
   done < <(sort -zu "$tmp/files")
-  [ -n "$named" ] || echo "✗ Push blocked: this push introduces what looks like a ${class}." >&2
+  [ -n "$named" ] || echo "✗ Push blocked: this push introduces what looks like $(nonna_a "$class")." >&2
   echo "  Remove it and ROTATE the secret (rules/safety.md). Never push secrets." >&2
 fi
 

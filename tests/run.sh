@@ -107,7 +107,7 @@ printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"config.py","content
 printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"tests/fixtures/keys.py","content":"TOKEN = \"ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\""}}' | "$SS"; check "allows secret under a test/fixture path" 0 "$?"
 printf '%s' '{"tool_name":"Edit","tool_input":{"file_path":"app.js","old_string":"a","new_string":"const k = \"'"$FAKE_AWS"'\""}}' | "$SS"; check "blocks secret in Edit new_string" 2 "$?"
 out="$(printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"config.py","content":"KEY = \"'"$FAKE_ANT"'\""}}' | "$SS" 2>&1)"; check "blocks an Anthropic key in Write content" 2 "$?"
-contains "the block names the Anthropic class" "Anthropic API key" "$out"
+contains "the block names the Anthropic class, with its article" "looks like an Anthropic API key" "$out"
 printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"config.py","content":"KEY = \"'"$FAKE_OAI"'\""}}' | "$SS" 2>/dev/null; check "blocks an OpenAI sk-proj- key in Write content" 2 "$?"
 printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"tests/fixtures/keys.py","content":"KEY = \"'"$FAKE_ANT"'\""}}' | "$SS"; check "allows an Anthropic key under a test/fixture path" 0 "$?"
 printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"docs/keys.md","content":"Anthropic keys start with sk-ant- and OpenAI project keys with sk-proj-."}}' | "$SS"; check "allows a short sk-ant- mention in prose" 0 "$?"
@@ -822,7 +822,8 @@ mkdir -p "$TMP/tests/fixtures" "$TMP/docs"
 echo ok > "$TMP/docs/STATUS.md"
 printf 'KEY = "%s"\n' "AKIA""AB12CD34EF56GH78" > "$TMP/tests/fixtures/sample.py"
 "${GIT[@]}" -C "$TMP" add -A; "${GIT[@]}" -C "$TMP" commit -q -m "realistic secret in a fixture"
-( cd "$TMP" && "$RS" ); check "blocks a realistic secret even under a fixture path" 1 "$?"
+out="$( cd "$TMP" && "$RS" 2>&1 )"; check "blocks a realistic secret even under a fixture path" 1 "$?"
+contains "names the class with its article" "looks like an AWS access key id" "$out"
 "${GIT[@]}" -C "$TMP" reset -q --hard HEAD~1  # the push scans every commit: the realistic key must leave history
 # The Anthropic class rides the same push scan: a realistic key is refused in a fixture too.
 mkdir -p "$TMP/tests/fixtures" "$TMP/docs"; echo ok > "$TMP/docs/STATUS.md"
@@ -861,6 +862,10 @@ printf 'STRIPE=sk_live_%s\n' '0123456789abcdefABCD' > "$TMP/src/pay.py"; "${GIT[
 out="$("${GIT[@]}" -C "$TMP" commit -q -m key 2>&1)"; check "pre-commit: blocks a staged secret" 1 "$?"
 contains "pre-commit: names the file and the class" "src/pay.py" "$out"
 "${GIT[@]}" -C "$TMP" reset -q; rm -f "$TMP/src/pay.py"
+printf 'AWS = "%s"\n' "$FAKE_AWS" > "$TMP/src/aws.py"; "${GIT[@]}" -C "$TMP" add -A
+out="$("${GIT[@]}" -C "$TMP" commit -q -m aws 2>&1)"
+contains "pre-commit: says 'an' before a class that starts with a vowel" "looks like an AWS access key id" "$out"
+"${GIT[@]}" -C "$TMP" reset -q; rm -f "$TMP/src/aws.py"
 printf 'ANTHROPIC_API_KEY=%s\n' "$FAKE_ANT" > "$TMP/src/ant.py"; "${GIT[@]}" -C "$TMP" add -A
 out="$("${GIT[@]}" -C "$TMP" commit -q -m key 2>&1)"; check "pre-commit: blocks a staged Anthropic key" 1 "$?"
 contains "pre-commit: names the Anthropic class" "Anthropic API key" "$out"

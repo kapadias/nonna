@@ -19,6 +19,11 @@ nonna_is_test_path() {
   esac
 }
 
+# nonna_a <class>  -> the class with its article, as a message says it: "an AWS access key id".
+nonna_a() {
+  case "$1" in [AEIOUaeiou]*) printf 'an %s' "$1" ;; *) printf 'a %s' "$1" ;; esac
+}
+
 # _nonna_is_placeholder <matched-value>  -> 0 if the match is an obvious non-secret.
 _nonna_is_placeholder() {
   printf '%s' "$1" | grep -qiE 'XXXX|EXAMPLE|YOUR[-_]|CHANGEME|DUMMY|REDACTED|PLACEHOLDER|FAKE|SAMPLE|\$\{|ENV\(|OS\.ENVIRON|PROCESS\.ENV|<[^>]+>'

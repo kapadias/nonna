@@ -69,7 +69,7 @@ while IFS= read -r -d '' f; do
   added="$(printf '%s\n' "$diff" | grep -aE '^\+' | grep -avE '^\+\+\+ ' || true)"
   [ -n "$added" ] || continue
   if class="$(printf '%s' "$added" | nonna_scan_secrets)"; then
-    echo "✗ Nonna: you don't leave the house key under the mat. (pre-commit: '$f' stages what looks like a ${class} — remove it and rotate it.)" >&2
+    echo "✗ Nonna: you don't leave the house key under the mat. (pre-commit: '$f' stages what looks like $(nonna_a "$class") — remove it and rotate it.)" >&2
     fail=1
   fi
 done < "$staged"

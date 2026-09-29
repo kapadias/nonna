@@ -189,7 +189,7 @@ fi
 
 if class="$(printf '%s' "$content" | nonna_scan_secrets)"; then
   {
-    echo "✗ Nonna: you don't leave the house key under the mat. (secret-scan: blocked — the content looks like a ${class}.)"
+    echo "✗ Nonna: you don't leave the house key under the mat. (secret-scan: blocked — the content looks like $(nonna_a "$class").)"
     echo "  Never write secrets into tracked files. Use a secret manager or a"
     echo "  git-ignored .env (read-denied in settings.json); see rules/safety.md."
     echo "  False positive? Put sample values under a test/fixture/example PATH"
