@@ -18,8 +18,9 @@ itself: if a gate is silently wrong, CI goes red.
 
 Exercises each deterministic gate with fixed inputs and asserts the exit code:
 
-- **secret detection** (`lib/secret-patterns.sh`): catches AWS/GitHub/Slack/Google/Stripe/OpenAI
-  keys and hardcoded assignments; ignores placeholders and env-var refs.
+- **secret detection** (`lib/secret-patterns.sh`): catches AWS/GitHub/Slack/Google/Stripe/OpenAI/
+  Anthropic keys and hardcoded assignments; ignores placeholders, env-var refs, key prefixes in
+  prose and short samples. A property test holds the tail bound for every prefixed key.
 - **secret-scan** (PreToolUse): blocks a write that introduces a secret and Bash
   reads/copies of secret files (segment-anchored, jq-independent); allows clean
   writes and sample secrets under `test/fixture/example` paths.

@@ -231,6 +231,12 @@ Your AI agent says "done"; Nonna makes it prove it.
   And it honours `stop_hook_active`, so a reviewer that cannot produce the contract is sent back
   once, not forever. The `tests/run.sh` section is rewritten (24 checks, 8 red against the old
   hook); the old section had pinned the bug by feeding `transcript_path`.
+- **The secret guard missed Anthropic keys and OpenAI's current ones.** Only `sk-` followed by an
+  unbroken run of letters and digits counted as an OpenAI key, so `sk-ant-api03-`, `sk-ant-admin01-`,
+  the OAuth tokens (`sk-ant-oat01-`, `sk-ant-ort01-`) and OpenAI's `sk-proj-`, `sk-svcacct-` and
+  `sk-admin-` keys passed the write guard, the pre-commit hook and the pre-push scan. All are refused
+  now. The prefix must start a word and be followed by 20 or more characters, so `sk-ant-` in prose,
+  a short sample and a word like `task-admin-permissions-console` are not keys.
 
 ## [1.0.0] — 2026-08-01 — "The Model Cannot Ship Itself"
 

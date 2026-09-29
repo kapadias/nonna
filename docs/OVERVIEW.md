@@ -120,10 +120,10 @@ checks are full mode's.
   settings. It reads each command the way the shell will run it, brace lists and globs included. A
   speed bump for the agent; server-side branch protection is the wall.
 - **`secret-scan.sh`** **blocks** an edit or write that introduces a high-confidence secret (AWS,
-  GitHub, Slack, Google, Stripe and OpenAI keys, private-key blocks, hardcoded credentials; sample
-  values under test, fixture and example paths pass), and reads and searches of secret files (Read,
-  Grep, or `cat .env` in Bash). For Read and Grep it refuses every path the Read deny list refuses, by
-  any name that leads to one.
+  GitHub, Slack, Google, Stripe, OpenAI and Anthropic keys, private-key blocks, hardcoded
+  credentials; sample values under test, fixture and example paths pass), and reads and searches of
+  secret files (Read, Grep, or `cat .env` in Bash). For Read and Grep it refuses every path the Read
+  deny list refuses, by any name that leads to one.
 - **`format.sh`** formats the file the agent just edited with the formatter it finds (ruff,
   prettier, gofmt, rustfmt, shfmt). Best effort, never blocking, and in a copy-in install only:
   the plugin never formats your files.

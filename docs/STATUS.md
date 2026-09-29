@@ -85,6 +85,9 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
     the release notes' five lines; ADR 0011 records what round 3 decided.
   - **Fixes found on the way:** a staged binary file drew a shell warning from the pre-commit hook;
     a lite install switched to full carried no rules at all. Both have golden tests.
+  - **Secret scan:** it missed Anthropic keys and OpenAI's `sk-proj-`, `sk-svcacct-` and `sk-admin-`
+    keys, which the docs said it caught. The write guard, pre-commit and pre-push now refuse them;
+    golden tests hold each key type, and a property test holds the 20-character tail bound.
 
 - **2026-09-29** — Round 3 ran: 484 runs, $37.18 of logged spend, every fingerprint ok, none
   dropped, no ERROR rows. Harness `83b5de3`, Claude Code 2.1.284, `claude-sonnet-5-5` and
