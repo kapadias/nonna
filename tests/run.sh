@@ -51,6 +51,19 @@ contains() { # <desc> <needle> <haystack>
 copy_in() { # <repo>: Nonna's hooks inside the repo, as install.sh puts them; run them from there
   mkdir -p "$1/.claude/hooks" && cp -R "$HOOKS/." "$1/.claude/hooks/"
 }
+sed_i() { # <sed args> <file>: sed -i for GNU and BSD alike (BSD reads the word after -i as a backup suffix)
+  local file="${!#}" tmp
+  tmp="$(mktemp)"
+  # An edit that fails or changes nothing is loud: the test after it would go on to check a file that never
+  # changed, and could pass without testing anything. Written back with cat, not mv, so the file keeps its
+  # mode (the hooks are +x).
+  if sed "${@:1:$#-1}" "$file" > "$tmp" && ! cmp -s "$tmp" "$file"; then
+    cat "$tmp" > "$file"
+  else
+    FAIL=$((FAIL + 1)); printf '  FAIL sed_i: the edit changed nothing in %s\n' "$file"
+  fi
+  rm -f "$tmp"
+}
 
 echo "== the suite runs on its own config =="
 git config --global --get-regexp '^nonna\.' >/dev/null 2>&1; check "suite: no global nonna.* setting reaches the gates" 1 "$?"
@@ -1283,11 +1296,11 @@ seq 1 50 | sed 's/^/line /' > "$TMP/src/app.py"
 "${GIT[@]}" -C "$TMP" add -A; "${GIT[@]}" -C "$TMP" commit -q -m base
 "${GIT[@]}" -C "$TMP" branch -M main
 "${GIT[@]}" -C "$TMP" checkout -q -b fix/tweak
-sed -i '1,3s/line/edited/' "$TMP/src/app.py"
+sed_i '1,3s/line/edited/' "$TMP/src/app.py"
 ( cd "$TMP" && bash "$CT" main ); check "3-line change qualifies" 0 "$?"
 mkdir -p "$TMP/tests"; seq 1 30 > "$TMP/tests/test_app.py"
 ( cd "$TMP" && bash "$CT" main ); check "test lines do not count against the budget" 0 "$?"
-sed -i 's/^line/edited/' "$TMP/src/app.py"
+sed_i 's/^line/edited/' "$TMP/src/app.py"
 ( cd "$TMP" && bash "$CT" main ); check "40+ changed lines is over budget" 1 "$?"
 "${GIT[@]}" -C "$TMP" checkout -q -- src/app.py
 mkdir -p "$TMP/.claude/hooks"; echo 'x' > "$TMP/.claude/hooks/x.sh"
@@ -1329,16 +1342,16 @@ seq 1 50 | sed 's/^/line /' > "$TMP/src/app.py"
 "${GIT[@]}" -C "$TMP" add -A; "${GIT[@]}" -C "$TMP" commit -q -m base
 "${GIT[@]}" -C "$TMP" branch -M main
 "${GIT[@]}" -C "$TMP" checkout -q -b feat/x
-sed -i '1,3s/line/edited/' "$TMP/src/app.py"
+sed_i '1,3s/line/edited/' "$TMP/src/app.py"
 out="$(cd "$TMP" && bash "$RL" main 2>/dev/null)"
 contains "review-lanes: small plain diff takes the light lane" "lane=light" "$out"
 contains "review-lanes: small plain diff needs no security review" "security=no" "$out"
-sed -i 's/^line/edited/' "$TMP/src/app.py"
+sed_i 's/^line/edited/' "$TMP/src/app.py"
 out="$(cd "$TMP" && bash "$RL" main 2>/dev/null)"
 contains "review-lanes: over-budget diff takes the full lane" "lane=full" "$out"
 contains "review-lanes: over-budget plain diff still needs no security review" "security=no" "$out"
 "${GIT[@]}" -C "$TMP" checkout -q -- src/app.py
-sed -i '1s/.*/subprocess.run(cmd, shell=True)/' "$TMP/src/app.py"
+sed_i '1s/.*/subprocess.run(cmd, shell=True)/' "$TMP/src/app.py"
 out="$(cd "$TMP" && bash "$RL" main 2>/dev/null)"
 contains "review-lanes: risky added code triggers security review" "security=yes" "$out"
 "${GIT[@]}" -C "$TMP" checkout -q -- src/app.py
@@ -1365,7 +1378,7 @@ contains "review-lanes: the pre-rename KEEL_CRITICAL_PATHS alone fails closed" "
 ( cd "$TMP" && KEEL_CRITICAL_PATHS='src/rates/*' bash "$SKILLS/fast-lane/scripts/check-trivial.sh" main 2>/dev/null ); check "check-trivial: the pre-rename KEEL_CRITICAL_PATHS alone fails closed" 1 "$?"
 rm -rf "$TMP/src/rates"
 # Paths and content are read from the repo root, whatever the caller's cwd or the file's name.
-sed -i '1s/.*/subprocess.run(cmd, shell=True)/' "$TMP/src/app.py"
+sed_i '1s/.*/subprocess.run(cmd, shell=True)/' "$TMP/src/app.py"
 out="$(cd "$TMP/src" && bash "$RL" main 2>/dev/null)"
 contains "review-lanes: risky code is seen from a subdirectory cwd" "security=yes" "$out"
 "${GIT[@]}" -C "$TMP" checkout -q -- src/app.py
@@ -1378,7 +1391,7 @@ rm -f "$TMP/src/café.py"
 printf 'def view(r):\n    require_auth(r)\n    return 1\n' > "$TMP/src/views.py"
 "${GIT[@]}" -C "$TMP" add -A; "${GIT[@]}" -C "$TMP" commit -q -m "views on main"
 "${GIT[@]}" -C "$TMP" checkout -q feat/x; "${GIT[@]}" -C "$TMP" merge -q main 2>/dev/null
-sed -i '/require_auth/d' "$TMP/src/views.py"
+sed_i '/require_auth/d' "$TMP/src/views.py"
 out="$(cd "$TMP" && bash "$RL" main 2>/dev/null)"
 contains "review-lanes: a removed auth check triggers security review" "security=yes" "$out"
 "${GIT[@]}" -C "$TMP" checkout -q -- src/views.py
@@ -2560,9 +2573,9 @@ rm -rf "$FX"
 
 # model tier: fable is a real Claude Code model and must be accepted; junk must not.
 FX="$(lint_fixture)"
-sed -i 's/^model: haiku$/model: fable/' "$FX/.claude/agents/explorer.md"
+sed_i 's/^model: haiku$/model: fable/' "$FX/.claude/agents/explorer.md"
 NONNA_LINT_ROOT="$FX" python3 "$LINT" >/dev/null 2>&1; check "lint: accepts model 'fable'" 0 "$?"
-sed -i 's/^model: fable$/model: gpt-4/' "$FX/.claude/agents/explorer.md"
+sed_i 's/^model: fable$/model: gpt-4/' "$FX/.claude/agents/explorer.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: rejects an unknown model tier" 1 "$?"
 contains "lint: names the offending model" "gpt-4" "$out"
 rm -rf "$FX"
@@ -2592,7 +2605,7 @@ rm -rf "$FX"
 # allowed-tools completeness: /release shipped granting `git tag` but not `git push`
 # while its own step said "Push the tag" — a command that cannot run its own steps.
 FX="$(lint_fixture)"
-sed -i 's/, Bash(git push origin v:\*)//' "$FX/.claude/skills/release/SKILL.md"
+sed_i 's/, Bash(git push origin v:\*)//' "$FX/.claude/skills/release/SKILL.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a command that cannot run its own git step" 1 "$?"
 contains "lint: names the ungranted git verb" "Bash(git push" "$out"
 rm -rf "$FX"
@@ -2636,19 +2649,19 @@ contains "lint: says descriptions load every turn" "every turn" "$out"
 rm -rf "$FX"
 # /nonna changes her settings: it is the user's alone, like /ship and /release.
 FX="$(lint_fixture)"
-sed -i '/^disable-model-invocation: true$/d' "$FX/.claude/skills/nonna/SKILL.md"
+sed_i '/^disable-model-invocation: true$/d' "$FX/.claude/skills/nonna/SKILL.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks /nonna losing disable-model-invocation" 1 "$?"
 contains "lint: names /nonna as the user's" "'nonna' has side effects" "$out"
 rm -rf "$FX"
 # A skill's ! line runs with no hook in front of it only when its allowed-tools pre-approve exactly
 # that line: a wider rule pre-approves more than the line, and a narrower one hands it to the model.
 FX="$(lint_fixture)"
-sed -i 's|^allowed-tools: .*|allowed-tools: Bash(bash:*)|' "$FX/.claude/skills/nonna/SKILL.md"
+sed_i 's|^allowed-tools: .*|allowed-tools: Bash(bash:*)|' "$FX/.claude/skills/nonna/SKILL.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a ! line pre-approved by a wider rule" 1 "$?"
 contains "lint: names the ! line" "! line" "$out"
 rm -rf "$FX"
 FX="$(lint_fixture)"
-sed -i 's|scripts/nonna.sh" \$ARGUMENTS|scripts/other.sh" $ARGUMENTS|' "$FX/.claude/skills/nonna/SKILL.md"
+sed_i 's|scripts/nonna.sh" \$ARGUMENTS|scripts/other.sh" $ARGUMENTS|' "$FX/.claude/skills/nonna/SKILL.md"
 NONNA_LINT_ROOT="$FX" python3 "$LINT" >/dev/null 2>&1; check "lint: blocks a ! line its allowed-tools do not pre-approve" 1 "$?"
 rm -rf "$FX"
 FX="$(lint_fixture)"
@@ -2666,12 +2679,12 @@ rm -rf "$FX"
 # skills: preload is what makes depth outside an always-on rule deterministic --
 # a name that does not resolve silently removes the depth it was trusted to carry.
 FX="$(lint_fixture)"
-sed -i 's/^skills: tdd-workflow$/skills: no-such-skill/' "$FX/.claude/agents/test-engineer.md"
+sed_i 's/^skills: tdd-workflow$/skills: no-such-skill/' "$FX/.claude/agents/test-engineer.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks an agent preloading a nonexistent skill" 1 "$?"
 contains "lint: names the unresolved skill" "no-such-skill" "$out"
 rm -rf "$FX"
 FX="$(lint_fixture)"
-sed -i 's/^effort: low$/effort: turbo/' "$FX/.claude/agents/explorer.md"
+sed_i 's/^effort: low$/effort: turbo/' "$FX/.claude/agents/explorer.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks an invalid effort level" 1 "$?"
 rm -rf "$FX"
 # 00-core.md rides SessionStart additionalContext, which TRUNCATES at 10k rather
@@ -2687,14 +2700,14 @@ rm -rf "$FX"
 # a token one: without it the model can decide on its own to promote to production,
 # which rules/safety.md reserves for a human.
 FX="$(lint_fixture)"
-sed -i '/^disable-model-invocation: true$/d' "$FX/.claude/skills/release/SKILL.md"
+sed_i '/^disable-model-invocation: true$/d' "$FX/.claude/skills/release/SKILL.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks /release the model could self-invoke" 1 "$?"
 contains "lint: ties it to the human-approval rule" "safety.md" "$out"
 rm -rf "$FX"
 
 # review-gate wiring (ADR-0005) must stay pinned: unwiring it is the defect it guards.
 FX="$(lint_fixture)"
-sed -i 's/check-review\.sh/checkreview.sh/g' "$FX/.claude/skills/ship/SKILL.md"
+sed_i 's/check-review\.sh/checkreview.sh/g' "$FX/.claude/skills/ship/SKILL.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks /ship that no longer wires check-review.sh" 1 "$?"
 contains "lint: cites ADR-0005 on unwiring" "ADR-0005" "$out"
 rm -rf "$FX"
@@ -2702,30 +2715,33 @@ rm -rf "$FX"
 # The ladder lives twice by design — always-on rungs in 00-core.md, on-demand depth in
 # the lean skill — so the seven rung keywords are pinned in both copies (ADR-0008).
 FX="$(lint_fixture)"
-sed -i 's/\*\*stdlib\*\*/standard library/' "$FX/.claude/rules/00-core.md"
+sed_i 's/\*\*stdlib\*\*/standard library/' "$FX/.claude/rules/00-core.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a rung dropped from the always-on ladder" 1 "$?"
 contains "lint: names the missing rung" "stdlib" "$out"
 rm -rf "$FX"
 FX="$(lint_fixture)"
-sed -i 's/YAGNI/you are not going to need it/g' "$FX/.claude/skills/lean/SKILL.md"
+sed_i 's/YAGNI/you are not going to need it/g' "$FX/.claude/skills/lean/SKILL.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a rung dropped from the lean skill" 1 "$?"
 contains "lint: names the drifted copy" "skills/lean/SKILL.md" "$out"
 rm -rf "$FX"
 # The debt gate is only a gate if /review runs it — ADR-0005's wiring lesson, applied again.
 FX="$(lint_fixture)"
-sed -i 's/check-debt\.sh/checkdebt.sh/g' "$FX/.claude/skills/review/SKILL.md"
+sed_i 's/check-debt\.sh/checkdebt.sh/g' "$FX/.claude/skills/review/SKILL.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks /review that no longer wires check-debt.sh" 1 "$?"
 contains "lint: cites ADR-0008 on unwiring the debt gate" "ADR-0008" "$out"
 rm -rf "$FX"
 # Every host's rules file is generated from 00-core.md; a hand edit or a stale copy is drift.
 FX="$(lint_fixture)"
-sed -i 's/^## Never$/## Never\n\n- One more never./' "$FX/.claude/rules/00-core.md"
+# A backslash and a real newline, not \n: BSD sed reads \n in a replacement as the letter n.
+sed_i 's/^## Never$/## Never\
+\
+- One more never./' "$FX/.claude/rules/00-core.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks host rule files that drifted from 00-core.md" 1 "$?"
 contains "lint: names the stale host file" "hosts/AGENTS.md" "$out"
 rm -rf "$FX"
 # Proportional review is only proportional if /review asks the script, not the model.
 FX="$(lint_fixture)"
-sed -i 's/review-lanes\.sh/reviewlanes.sh/g' "$FX/.claude/skills/review/SKILL.md"
+sed_i 's/review-lanes\.sh/reviewlanes.sh/g' "$FX/.claude/skills/review/SKILL.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks /review that no longer wires review-lanes.sh" 1 "$?"
 contains "lint: cites ADR-0009 on unwiring the review lanes" "ADR-0009" "$out"
 rm -rf "$FX"
@@ -2762,12 +2778,12 @@ rm -rf "$FX"
 # The review loop must not un-size what the ladder sized: a MEDIUM that only adds code is
 # answered with a debt marker, and a finding whose fix adds code names a failing input.
 FX="$(lint_fixture)"
-sed -i 's/names a failing case/is convenient/' "$FX/.claude/rules/dev-process.md"
+sed_i 's/names a failing case/is convenient/' "$FX/.claude/rules/dev-process.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks dev-process losing the MEDIUM-names-a-failing-case rule" 1 "$?"
 contains "lint: names dev-process for the review-inflation rule" "missing 'names a failing case'" "$out"
 rm -rf "$FX"
 FX="$(lint_fixture)"
-sed -i 's/Does the fix add code?/Is it nice?/' "$FX/.claude/skills/code-review/references/severity-rubric.md"
+sed_i 's/Does the fix add code?/Is it nice?/' "$FX/.claude/skills/code-review/references/severity-rubric.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks the rubric losing the adds-code calibration" 1 "$?"
 contains "lint: names the rubric for the review-inflation rule" "missing 'Does the fix add code?'" "$out"
 rm -rf "$FX"
@@ -2810,7 +2826,7 @@ contains "lint: names the missing core gate" "PreToolUse 'Bash' must run hooks/s
 rm -rf "$FX"
 # Every Read that settings.json denies, the Read hook refuses too: a plugin install has only the hook.
 FX="$(lint_fixture)"
-sed -i 's# | \*/kubeconfig##' "$FX/.claude/hooks/secret-scan.sh"
+sed_i 's# | \*/kubeconfig##' "$FX/.claude/hooks/secret-scan.sh"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a Read deny the hook does not refuse" 1 "$?"
 contains "lint: names the deny the hook lets through" "kubeconfig" "$out"
 rm -rf "$FX"
@@ -2833,18 +2849,18 @@ out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a lite.
 contains "lint: names the lite.md budget" "lite.md is" "$out"
 rm -rf "$FX"
 FX="$(lint_fixture)"
-sed -i 's/, and never force-push//' "$FX/.claude/hooks/lib/lite.md"
+sed_i 's/, and never force-push//' "$FX/.claude/hooks/lib/lite.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a lite.md that drops a never-list item" 1 "$?"
 contains "lint: names the dropped never-list item" "force-push" "$out"
 rm -rf "$FX"
 FX="$(lint_fixture)"
-sed -i 's/Never commit or push to main, master or develop, and never force-push/Never force-push/' "$FX/.claude/hooks/lib/lite.md"
+sed_i 's/Never commit or push to main, master or develop, and never force-push/Never force-push/' "$FX/.claude/hooks/lib/lite.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a lite.md that drops the protected-branch line" 1 "$?"
 contains "lint: names the protected-branch item" "'Commit or push to'" "$out"
 rm -rf "$FX"
 # A reworded never-list must not quietly switch lite's check off: the lint says what it lost.
 FX="$(lint_fixture)"
-sed -i 's/^- Put a secret in code/- Place a secret in code/' "$FX/.claude/rules/00-core.md"
+sed_i 's/^- Put a secret in code/- Place a secret in code/' "$FX/.claude/rules/00-core.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: a reworded never-list item fails the lite check" 1 "$?"
 contains "lint: names the never-list item it no longer finds" "no longer says 'Put a secret'" "$out"
 rm -rf "$FX"
@@ -2916,24 +2932,25 @@ rm -rf "$FX"
 
 # README numbers: each marked number must be what round 3's rows say (harness_lint.py).
 FX="$(lint_fixture)"
-sed -i '0,/24<!--n:traps.none.k-->/s//23<!--n:traps.none.k-->/' "$FX/README.md"
+# Only the first mark is changed (the README carries two): 0,/re/ is GNU's, so python3 does the edit.
+python3 -c 'import sys; p = sys.argv[1]; t = open(p, encoding="utf-8").read(); open(p, "w", encoding="utf-8").write(t.replace("24<!--n:traps.none.k-->", "23<!--n:traps.none.k-->", 1))' "$FX/README.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: a README number that is not round 3's fails" 1 "$?"
 contains "lint: names the number and what the rows say" "23 marked traps.none.k, but round 3's rows say 24" "$out"
 rm -rf "$FX"
 FX="$(lint_fixture)"
-sed -i 's/<!--n:traps.plugin-lite.k-->/<!--n:traps.plugin-lite.kk-->/g' "$FX/README.md"
+sed_i 's/<!--n:traps.plugin-lite.k-->/<!--n:traps.plugin-lite.kk-->/g' "$FX/README.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: a README number mark it cannot compute fails" 1 "$?"
 contains "lint: names the unknown mark" "number mark 'traps.plugin-lite.kk' is not a fact" "$out"
 contains "lint: a headline number must stay marked" "headline number 'traps.plugin-lite.k' is no longer marked" "$out"
 rm -rf "$FX"
 FX="$(lint_fixture)"
-sed -i 's/Haiku 4\.5<!--n:model\.haiku-->/Haiku 4.6<!--n:model.haiku-->/' "$FX/README.md"
+sed_i 's/Haiku 4\.5<!--n:model\.haiku-->/Haiku 4.6<!--n:model.haiku-->/' "$FX/README.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: a model version the runs did not resolve to fails" 1 "$?"
 contains "lint: names the version the rows resolved" "4.6 marked model.haiku, but round 3's rows say 4.5" "$out"
 rm -rf "$FX"
 # An alt text cannot carry marks: the scorecard's must be the image's own title and description.
 FX="$(lint_fixture)"
-sed -i '/assets\/scorecard\.svg/s/bare agent 24 of 64/bare agent 23 of 64/' "$FX/README.md"
+sed_i '/assets\/scorecard\.svg/s/bare agent 24 of 64/bare agent 23 of 64/' "$FX/README.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: a scorecard alt text that is not the image's own fails" 1 "$?"
 contains "lint: says what the image says" "the scorecard's alt text is not the image's own" "$out"
 rm -rf "$FX"
@@ -2941,39 +2958,39 @@ rm -rf "$FX"
 # and as a markdown image. Each shape first passes with the image's own alt text, so the failure that
 # follows is the alt text's and not the shape's.
 FX="$(lint_fixture)"
-sed -i '/assets\/scorecard\.svg/s/<img src="assets\/scorecard\.svg" width="860"/<img width="860" src="assets\/scorecard.svg"/' "$FX/README.md"
+sed_i '/assets\/scorecard\.svg/s/<img src="assets\/scorecard\.svg" width="860"/<img width="860" src="assets\/scorecard.svg"/' "$FX/README.md"
 NONNA_LINT_ROOT="$FX" python3 "$LINT" >/dev/null 2>&1; check "lint: a scorecard <img> with src not first passes with the image's own alt text" 0 "$?"
-sed -i '/assets\/scorecard\.svg/s/bare agent 24 of 64/bare agent 23 of 64/' "$FX/README.md"
+sed_i '/assets\/scorecard\.svg/s/bare agent 24 of 64/bare agent 23 of 64/' "$FX/README.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: a scorecard <img> with src not first and a wrong alt text fails" 1 "$?"
 contains "lint: names the alt text of the reordered <img>" "the scorecard's alt text is not the image's own" "$out"
 rm -rf "$FX"
 FX="$(lint_fixture)"
 python3 -c 'import sys; p=sys.argv[1]; t=open(p,encoding="utf-8").read(); a="<img src=\"assets/scorecard.svg\" width=\"860\" alt="; assert t.count(a)==1; open(p,"w",encoding="utf-8").write(t.replace(a,"<img\n    src=\"assets/scorecard.svg\"\n    width=\"860\"\n    alt="))' "$FX/README.md"
 NONNA_LINT_ROOT="$FX" python3 "$LINT" >/dev/null 2>&1; check "lint: a scorecard <img> broken over lines passes with the image's own alt text" 0 "$?"
-sed -i '/^ *alt="Nonna lite versus/s/bare agent 24 of 64/bare agent 23 of 64/' "$FX/README.md"
+sed_i '/^ *alt="Nonna lite versus/s/bare agent 24 of 64/bare agent 23 of 64/' "$FX/README.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: a scorecard <img> broken over lines with a wrong alt text fails" 1 "$?"
 contains "lint: names the alt text of the multi-line <img>" "the scorecard's alt text is not the image's own" "$out"
 rm -rf "$FX"
 FX="$(lint_fixture)"
-sed -i 's|<img src="assets/scorecard\.svg" width="860" alt="\([^"]*\)">|![\1](assets/scorecard.svg)|' "$FX/README.md"
+sed_i 's|<img src="assets/scorecard\.svg" width="860" alt="\([^"]*\)">|![\1](assets/scorecard.svg)|' "$FX/README.md"
 NONNA_LINT_ROOT="$FX" python3 "$LINT" >/dev/null 2>&1; check "lint: a markdown scorecard image passes with the image's own alt text" 0 "$?"
-sed -i '/assets\/scorecard\.svg/s/bare agent 24 of 64/bare agent 23 of 64/' "$FX/README.md"
+sed_i '/assets\/scorecard\.svg/s/bare agent 24 of 64/bare agent 23 of 64/' "$FX/README.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: a markdown scorecard image with a wrong alt text fails" 1 "$?"
 contains "lint: names the alt text of the markdown image" "the scorecard's alt text is not the image's own" "$out"
 rm -rf "$FX"
 # No alt text at all is no exception, and the check never ends without comparing one.
 FX="$(lint_fixture)"
-sed -i '/assets\/scorecard\.svg/s/ alt="[^"]*"//' "$FX/README.md"
+sed_i '/assets\/scorecard\.svg/s/ alt="[^"]*"//' "$FX/README.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: a scorecard <img> with no alt text fails" 1 "$?"
 contains "lint: says the <img> has none" "has no alt text" "$out"
 rm -rf "$FX"
 FX="$(lint_fixture)"
-sed -i 's|src="assets/scorecard|src="./assets/scorecard|' "$FX/README.md"
+sed_i 's|src="assets/scorecard|src="./assets/scorecard|' "$FX/README.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: a README that names the scorecard but shows it in a way the lint cannot read fails" 1 "$?"
 contains "lint: says it compared no alt text" "compared no alt text" "$out"
 rm -rf "$FX"
 FX="$(lint_fixture)"
-sed -i '/assets\/scorecard\.svg/d' "$FX/README.md"
+sed_i '/assets\/scorecard\.svg/d' "$FX/README.md"
 NONNA_LINT_ROOT="$FX" python3 "$LINT" >/dev/null 2>&1; check "lint: a README that does not show the scorecard has no alt text to check" 0 "$?"
 rm -rf "$FX"
 
