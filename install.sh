@@ -4,15 +4,18 @@
 #   curl -fsSL https://raw.githubusercontent.com/kapadias/nonna/main/install.sh | bash
 #   curl -fsSL https://raw.githubusercontent.com/kapadias/nonna/main/install.sh | bash -s -- --host cursor
 #
-# Run it from the root of a git repository. It copies the harness (.claude/), the chosen hosts'
-# rules files, a blank docs/STATUS.md and your stack's test-gate permissions, and wires the git
-# pre-commit and pre-push hooks. It never overwrites a file or a git hook that already exists: it
-# says so and moves on.
+# Run it from the root of a git repository. By default (lite) it copies the gates: the hooks and
+# their settings.json wiring, /nonna, short house rules for the chosen hosts and your stack's
+# test-gate permissions; and it wires the git pre-commit and pre-push hooks. --mode full copies the
+# whole harness (.claude/, the hosts' rules files and a blank docs/STATUS.md). It never overwrites a
+# file or a git hook that already exists: it says so and moves on.
 #
 # Hosts: claude (default), agents (AGENTS.md: Codex, Zed, Amp, opencode, Roo, Jules, Junie…),
 #        cursor, copilot, gemini, windsurf, cline, kiro, all. Several: --host cursor,agents
 # Mode:  --mode lite  the gates and short house rules only (hooks, settings.json, git hooks, /nonna)
-#        --mode full  the whole harness: rules, agents, workflows, docs/STATUS.md (the default)
+#                     (the default for a new install)
+#        --mode full  the whole harness: rules, agents, workflows, docs/STATUS.md
+#        Without --mode an install already here keeps its mode: running me again never downgrades it.
 # Env:   NONNA_REF  branch or tag to install (default: main)
 #        NONNA_SRC  install from a local checkout instead of cloning (used by the tests)
 set -uo pipefail
@@ -42,7 +45,8 @@ install.sh — Nonna in one command, for any agent host. Run it from the root of
 
 --host  claude (default), agents (AGENTS.md: Codex, Zed, Amp, opencode, Roo, Jules, Junie…),
         cursor, copilot, gemini, windsurf, cline, kiro, all. Several: --host cursor,agents
---mode  lite: the gates, /nonna and short house rules only. full: the whole harness (the default).
+--mode  lite (the default): the gates, /nonna and short house rules only. full: the whole harness.
+        Without --mode an install already here keeps its mode; --mode changes it.
 Env:    NONNA_REF  branch or tag to install (default: main)
         NONNA_SRC  install from a local checkout instead of cloning
 USAGE
@@ -84,6 +88,26 @@ top="$(git rev-parse --show-toplevel 2>/dev/null)" || {
   exit 1
 }
 cd "$top" || exit 1
+
+# Without --mode a new install is lite (bench/PREREGISTRATION.md, D3 row 1), and one already here
+# keeps its mode, so running me again never downgrades it. It is read from what an install leaves,
+# before this run adds anything: the mode it recorded, else the hooks and rules only a full install
+# copies (lib/core.sh reads a clone the same way). The user's nonna.mode outranks whatever I record,
+# at run time; I neither read it nor write it.
+# debt: nonna.mode unread here (a global full gets lite files), read it here when a user hits that
+hint=""
+if [ -z "$mode" ]; then
+  mode="$(git config --local --get nonna.defaultMode 2>/dev/null)"
+  case "$mode" in
+    lite | full) hint="kept as this repository has it; --mode lite|full changes it" ;;
+    *)
+      if [ -f .claude/hooks/require-status-sync.sh ] && [ -f .claude/rules/00-core.md ]; then
+        mode=full hint="kept as this repository has it; --mode lite|full changes it"
+      else
+        mode=lite hint="the default; --mode full brings the whole harness"
+      fi ;;
+  esac
+fi
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
@@ -221,15 +245,12 @@ link_hook pre-commit pre-commit.sh
 link_hook pre-push require-status-sync.sh
 
 # The mode lives in the repo's own git config, where every hook reads it (never committed, never
-# cloned), as the repo's default: nonna.mode, in the repo or --global, is the user's and outranks
-# it. Without --mode a copy-in install is full, and nothing is written.
-if [ -n "$mode" ]; then
-  if git config nonna.defaultMode "$mode"; then
-    done_msgs+=("mode: $mode (git config nonna.defaultMode)")
-  else
-    warn_msgs+=("could not record the mode in git config, so she runs as full")
-    failed=1
-  fi
+# cloned), as the repo's default: nonna.mode, in the repo or --global, is the user's and outranks it.
+if git config nonna.defaultMode "$mode"; then
+  done_msgs+=("mode: $mode (git config nonna.defaultMode)${hint:+ — $hint}")
+else
+  warn_msgs+=("could not record the mode in git config, so she goes by what this repository carries")
+  failed=1
 fi
 
 if [ "$failed" = 1 ]; then
