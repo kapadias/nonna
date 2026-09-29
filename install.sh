@@ -6,9 +6,10 @@
 #
 # Run it from the root of a git repository. By default (lite) it copies the gates: the hooks and
 # their settings.json wiring, /nonna, short house rules for the chosen hosts and your stack's
-# test-gate permissions; and it wires the git pre-commit and pre-push hooks. --mode full copies the
-# whole harness (.claude/, the hosts' rules files and a blank docs/STATUS.md). It never overwrites a
-# file or a git hook that already exists: it says so and moves on.
+# test-gate permissions (its test, lint and type-check runners, git-ignored); and it wires the git
+# pre-commit and pre-push hooks. --mode full copies the whole harness (.claude/, the hosts' rules
+# files and a blank docs/STATUS.md). It never overwrites a file or a git hook that already exists:
+# it says so and moves on, and exits 1 when that leaves a gate not in place.
 #
 # Hosts: claude (default), agents (AGENTS.md: Codex, Zed, Amp, opencode, Roo, Jules, Junie…),
 #        cursor, copilot, gemini, windsurf, cline, kiro, all. Several: --host cursor,agents

@@ -255,9 +255,13 @@ a blank `docs/STATUS.md`. It records `nonna.defaultMode full`.
 
 In both modes, when it finds `pyproject.toml`, `setup.cfg` or `setup.py`, `package.json`, `go.mod`
 or `Cargo.toml`, it also writes that stack's `.claude/settings.local.json` from
-[`stacks/`](../stacks/README.md): Claude Code permissions that let the stack's tools run without
-asking (for Python: `ruff`, `mypy`, `pyright`, `pytest`, `python`, `uv` and `pip`). Where several
-match, the last in that list wins.
+[`stacks/`](../stacks/README.md): Claude Code permissions that let the stack's test, lint, format
+and type-check runners run without asking. For Python that is `pytest`, `python -m pytest`,
+`python3 -m pytest`, `ruff`, `mypy` and `pyright`. No pack pre-approves an interpreter, a package
+manager or `awk`, since they run anything. The output lists what the pack grants, and the file is
+added to your `.gitignore` because it is yours alone. Where several stacks match, the last in that
+list wins. A `settings.local.json` you already have is kept, and so is one an earlier `install.sh`
+wrote, which pre-approved more: delete it and run again to get the narrow pack.
 
 Every host gets the git hooks. `pre-commit` refuses a commit on `main`, `master` or `develop`, a
 staged secret file and a staged credential; `pre-push` refuses a secret in any pushed commit, a red
@@ -271,19 +275,24 @@ of it: in lite, the test gate and the branch guard never had to fire.
 Running it again without `--mode` never changes the mode: it keeps the mode recorded in
 `nonna.defaultMode`. With no record, a repository that carries both
 `.claude/hooks/require-status-sync.sh` and `.claude/rules/00-core.md`, as every install by the old
-installer does, stays full, and the output says `kept as this repository has it`. `--mode lite` or
-`--mode full` changes it. No file is deleted or overwritten either way, so an existing full install
-needs nothing done. Your own `nonna.mode`, in the repository or `--global`, still outranks the
-recorded mode; the installer neither reads nor writes it.
+installer does, stays full, and the output says `kept as this repository has it`. A record that is
+neither `lite` nor `full`, such as a typo like `Full`, counts as full, as her hooks read it, and the
+output says so. `--mode lite` or `--mode full` changes it. No file is deleted or overwritten either
+way, so an existing full install needs nothing done. Your own `nonna.mode`, in the repository or
+`--global`, still outranks the recorded mode; the installer neither reads nor writes it.
 
 It never overwrites a file or a git hook that already exists, and never writes through a symlink. It
 merges into an existing `.claude/` file by file and lists what it left alone, so running it again
 adds what is missing and leaves every file already there as it is. Where you already have a git
 hook, it tells you to chain hers from it; where a hook manager owns the hooks (a custom
-`core.hooksPath`), it tells you which scripts to point it at. It exits non-zero when a gate could not
-be put in place: a symlink in the way, a file it could not write, or a `.claude/settings.json` of
-yours that does not run her hooks. Pin a release with `curl … | NONNA_REF=<tag> bash`. Prefer to
-read before you pipe? `curl -fsSLO …/install.sh`, read it, then `bash install.sh`.
+`core.hooksPath`) or a linked worktree shares the main checkout's, it tells you which scripts to
+point them at. It exits non-zero when a gate is not in place, and the output says which: a symlink
+in the way, a file it could not write, a `.claude/settings.json` of yours that does not run her
+hooks, or a git hook it did not wire (yours does not run hers, a hook manager or a linked worktree
+owns the directory, or the link failed). On hosts other than Claude Code the git hooks are the only
+enforcement, so read that exit as a gate that is off. Once your hook or your hook manager runs hers,
+running it again exits 0. Pin a release with `curl … | NONNA_REF=<tag> bash`. Prefer to read before
+you pipe? `curl -fsSLO …/install.sh`, read it, then `bash install.sh`.
 
 ## Copy-in install, for teams
 
@@ -291,8 +300,8 @@ read before you pipe? `curl -fsSLO …/install.sh`, read it, then `bash install.
 the repository gets them, plugin or not.
 
 - **What to commit**: `.claude/`, the host rules files, and in full mode `CLAUDE.md` and
-  `docs/STATUS.md`. `.claude/settings.local.json` is for local overrides; Nonna's own `.gitignore`
-  keeps it out of git.
+  `docs/STATUS.md`. `.claude/settings.local.json` is yours alone: `install.sh` adds it to your
+  `.gitignore`, so it stays out of the commit.
 - **Each clone wires its own git hooks**, because git never copies hooks. Claude Code wires them
   when a session starts in the clone. With another agent, run `install.sh` once in the clone: it adds
   nothing that is already there, links the hooks and records the mode.
@@ -367,7 +376,7 @@ Her files are part of the repository, so taking them out is a commit, and yours 
 1. Delete the files `install.sh` added, not ones you had before, and commit: in lite,
    `.claude/hooks/`, `.claude/settings.json`, `.claude/skills/nonna/` and `.claude/.claude-plugin/`;
    in full, her whole `.claude/`, `CLAUDE.md` and `docs/STATUS.md`; the host rules files; and
-   `.claude/settings.local.json` if it wrote one.
+   `.claude/settings.local.json` with its line in `.gitignore`, if it wrote them.
 2. In each clone, remove the git side with the
    [commands by hand](#what-nonna-changes-on-your-machine).
 
