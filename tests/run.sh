@@ -1431,6 +1431,26 @@ M='debt:'
 TMP="$(mktemp -d)"; mkdir -p "$TMP/src" "$TMP/node_modules/x" "$TMP/docs"
 printf 'lock = Lock()  # %s global lock, per-account locks if throughput matters\n' "$M" > "$TMP/src/ok.py"
 ( cd "$TMP" && bash "$CD" ); check "check-debt: marker with a trigger passes" 0 "$?"
+# macOS's grep reads -Z as --decompress, not --null: no NUL after the file name, so every record
+# would read as unparsable. A stand-in grep that drops -Z, as macOS's would, must change nothing.
+BSDZ="$(mktemp -d)"; REALGREP="$(command -v grep)"
+cat > "$BSDZ/grep" <<STUB
+#!/usr/bin/env bash
+a=(); past=""
+for x in "\$@"; do
+  if [ -n "\$past" ]; then a+=("\$x"); continue; fi
+  case "\$x" in
+    --) past=1; a+=("\$x") ;;
+    --*) a+=("\$x") ;;
+    -*Z*) y="\${x//Z/}"; [ "\$y" = - ] || a+=("\$y") ;;
+    *) a+=("\$x") ;;
+  esac
+done
+exec "$REALGREP" "\${a[@]}"
+STUB
+chmod +x "$BSDZ/grep"
+( cd "$TMP" && PATH="$BSDZ:$PATH" bash "$CD" 2>/dev/null ); check "check-debt: a marker with a trigger passes where grep -Z is not --null (macOS)" 0 "$?"
+rm -rf "$BSDZ"
 out="$(cd "$TMP" && bash "$CD" --ledger 2>/dev/null)"; contains "check-debt: ledger counts it" "1 markers, 0 with no trigger." "$out"
 contains "check-debt: ledger names the trigger" "upgrade: per-account locks" "$out"
 printf 'for a in xs:  # %s O(n^2) scan\n' "$M" > "$TMP/src/rot.py"

@@ -82,7 +82,7 @@ collect() {
       case "$p" in -*) paths[i]="./$p" ;; esac   # grep reads "-" as stdin even after --
     done
     # A tab or newline in a path would let the path forge a record (the classifier splits
-    # on the tab grep -Z's NUL becomes). Refuse such trees outright: exit 2, never a guess.
+    # on the tab grep's NUL becomes). Refuse such trees outright: exit 2, never a guess.
     local prune=() hit
     for d in "${SKIP_DIRS[@]}"; do prune+=(-name "$d" -prune -o); done
     hit="$(find "${paths[@]}" "${prune[@]}" \( -path "*"$'\t'"*" -o -path "*"$'\n'"*" \) -print -quit)" \
@@ -92,8 +92,9 @@ collect() {
     fi
     for d in "${SKIP_DIRS[@]}"; do args+=("--exclude-dir=$d"); done
     # -a: a NUL byte must not make a file "binary" and skipped; -H: a single-file operand
-    # still carries its name; LC_ALL=C: an invalid UTF-8 byte must not skip the file either.
-    LC_ALL=C grep -rnHaZE "${args[@]}" --exclude='*.md' -- "$PATTERN" "${paths[@]}" | tr '\0' '\t' | sed 's#^\./##'
+    # still carries its name; LC_ALL=C: an invalid UTF-8 byte must not skip the file either;
+    # --null, not -Z, which macOS's grep reads as --decompress and so writes no NUL at all.
+    LC_ALL=C grep -rnHaE --null "${args[@]}" --exclude='*.md' -- "$PATTERN" "${paths[@]}" | tr '\0' '\t' | sed 's#^\./##'
     rc=${PIPESTATUS[0]}
     [ "$rc" -le 1 ] || { printf 'check-debt: grep failed (%s)\n' "$rc" >&2; return 2; }
   fi
