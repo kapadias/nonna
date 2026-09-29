@@ -133,6 +133,8 @@ Your AI agent says "done"; Nonna makes it prove it.
   `install.sh` wrote is kept: delete it and run again.
 - **`install.sh` exits non-zero when a git hook is not wired**: a foreign hook that does not run
   hers, a hook manager's directory, or a link it could not make.
+- **CI pins every action to a commit SHA, runs with a read-only token, and runs the gate self-tests
+  on a stock Mac too** (`/bin/bash` 3.2 and Apple's own tools); only the release job can write.
 - **The plugin no longer formats the files the agent edits.** It ran whatever formatter it found on
   each edited file, which rewrote whole files a project never formatted, and a formatter's config
   can run the repository's own code (a prettier config can be JavaScript). A copy-in install still
@@ -241,6 +243,12 @@ Your AI agent says "done"; Nonna makes it prove it.
   And it honours `stop_hook_active`, so a reviewer that cannot produce the contract is sent back
   once, not forever. The `tests/run.sh` section is rewritten (24 checks, 8 red against the old
   hook); the old section had pinned the bug by feeding `transcript_path`.
+- **"Where's the test?" was switched off by the suite's own bytecode.** Any untracked file under
+  `tests/` counted as a new test, so in a repository that does not ignore `__pycache__`, the Stop
+  hook's own test run (`tests/__pycache__/*.pyc`) silenced the question. Only a test's source
+  counts now.
+- **On a Mac, `check-debt.sh` (and so `/review`) rejected every debt marker.** It asked grep for
+  `-Z`, which is `--null` on Linux and `--decompress` on macOS; it asks for `--null`.
 - **The secret guard missed Anthropic keys and OpenAI's current ones.** Only `sk-` followed by an
   unbroken run of letters and digits counted as an OpenAI key, so `sk-ant-api03-`,
   `sk-ant-admin01-`, the OAuth tokens (`sk-ant-oat01-`, `sk-ant-ort01-`) and OpenAI's `sk-proj-`,
