@@ -20,6 +20,11 @@ PASS=0
 FAIL=0
 # A fake AWS key id, split so this file never holds a key-shaped literal (the push gate scans it).
 FAKE_AWS="AKIA""1234567890ABCDEF"
+# Fake Anthropic and OpenAI keys, the same way: a 96-character base64url tail that is no key alone,
+# joined to its prefix only at run time.
+KEY_TAIL="Zx9Kq2Lm-7Rt4Vw1_Yb8Np3Hd6Jf5Gc0Zx9Kq2Lm-7Rt4Vw1_Yb8Np3Hd6Jf5Gc0Zx9Kq2Lm-7Rt4Vw1_Yb8Np3Hd6Jf5Gc0"
+FAKE_ANT="sk-ant-api03-$KEY_TAIL"
+FAKE_OAI="sk-proj-$KEY_TAIL"
 GIT=(git -c user.email=nonna@test -c user.name=nonna-test -c init.defaultBranch=main -c commit.gpgsign=false)
 # The hooks read the user's Claude Code settings (which plugins are enabled); never the developer's own.
 CLAUDE_CONFIG_DIR="$(mktemp -d)"; export CLAUDE_CONFIG_DIR
@@ -58,6 +63,42 @@ contains "names the matched class, not the value" "AWS access key id" "$out"
 ( . "$HOOKS/lib/secret-patterns.sh"; printf 'let total = price * quantity' | nonna_scan_secrets ) >/dev/null; check "clean code passes" 1 "$?"
 ( . "$HOOKS/lib/secret-patterns.sh"; printf 'api_key = "your-key-here-placeholder"' | nonna_scan_secrets ) >/dev/null; check "ignores obvious placeholder" 1 "$?"
 ( . "$HOOKS/lib/secret-patterns.sh"; printf 'token = os.environ["TOKEN"]' | nonna_scan_secrets ) >/dev/null; check "ignores env-var reference" 1 "$?"
+# Anthropic keys and OpenAI's prefixed keys carry a hyphenated tail that the legacy sk- pattern cannot span.
+out="$( . "$HOOKS/lib/secret-patterns.sh"; printf 'k = "%s"' "$FAKE_ANT" | nonna_scan_secrets )"; rc=$?
+check "detects an Anthropic API key" 0 "$rc"
+contains "names the Anthropic class, not the value" "Anthropic API key" "$out"
+( . "$HOOKS/lib/secret-patterns.sh"; printf 'k = "sk-ant-admin01-%s"' "$KEY_TAIL" | nonna_scan_secrets ) >/dev/null; check "detects an Anthropic admin key" 0 "$?"
+( . "$HOOKS/lib/secret-patterns.sh"; printf 'k = "sk-ant-oat01-%s"' "$KEY_TAIL" | nonna_scan_secrets ) >/dev/null; check "detects an Anthropic OAuth token" 0 "$?"
+( . "$HOOKS/lib/secret-patterns.sh"; printf 'k = "sk-ant-ort01-%s"' "$KEY_TAIL" | nonna_scan_secrets ) >/dev/null; check "detects an Anthropic OAuth refresh token" 0 "$?"
+out="$( . "$HOOKS/lib/secret-patterns.sh"; printf 'k = "%s"' "$FAKE_OAI" | nonna_scan_secrets )"; rc=$?
+check "detects an OpenAI project key (sk-proj-)" 0 "$rc"
+contains "names the OpenAI class, not the value" "OpenAI API key" "$out"
+( . "$HOOKS/lib/secret-patterns.sh"; printf 'k = "sk-svcacct-%s"' "$KEY_TAIL" | nonna_scan_secrets ) >/dev/null; check "detects an OpenAI service-account key" 0 "$?"
+( . "$HOOKS/lib/secret-patterns.sh"; printf 'k = "sk-admin-%s"' "$KEY_TAIL" | nonna_scan_secrets ) >/dev/null; check "detects an OpenAI admin key" 0 "$?"
+( . "$HOOKS/lib/secret-patterns.sh"; printf 'k = "sk-%s"' 'abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGH' | nonna_scan_secrets ) >/dev/null; check "still detects a legacy OpenAI key (sk- and 48 alphanumerics)" 0 "$?"
+( . "$HOOKS/lib/secret-patterns.sh"; printf 'Anthropic keys start with sk-ant- and OpenAI project keys with sk-proj-.' | nonna_scan_secrets ) >/dev/null; check "a short sk-ant- mention in prose is not a key" 1 "$?"
+( . "$HOOKS/lib/secret-patterns.sh"; printf 'e.g. sk-ant-api03-abc123 or sk-proj-abc123' | nonna_scan_secrets ) >/dev/null; check "a short sample after a key prefix is not a key" 1 "$?"
+( . "$HOOKS/lib/secret-patterns.sh"; printf 'ANTHROPIC_API_KEY=sk-ant-api03-%s' 'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX' | nonna_scan_secrets ) >/dev/null; check "a placeholder Anthropic key (XXXX) is exempt" 1 "$?"
+# A hyphenated word that merely ends in "sk" is not a key: the prefixed patterns start at a token.
+( . "$HOOKS/lib/secret-patterns.sh"; printf 'see task-admin-permissions-management-console and task-ant-colony-optimization-implementation' | nonna_scan_secrets ) >/dev/null; check "a kebab-case word that ends in sk is not a key" 1 "$?"
+# Property: for any tail over the base64url alphabet, a vendor-prefixed key is found exactly when its
+# tail has 20 or more characters. The tails come from a seeded generator, so a failure replays. (A tail
+# that spells a placeholder word is exempt by design; this seed produces none.)
+res="$( . "$HOOKS/lib/secret-patterns.sh"
+  alpha='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-'; seed=20260929; n=0; bad=0
+  for p in sk-ant-api03- sk-ant-admin01- sk-ant-oat01- sk-ant-ort01- sk-proj- sk-svcacct- sk-admin-; do
+    for len in 0 7 19 20 21 48 95 160; do
+      t=''
+      for ((i = 0; i < len; i++)); do
+        seed=$(( (seed * 1103515245 + 12345) & 0x7fffffff )); t="$t${alpha:$(( (seed >> 16) % 64 )):1}"
+      done
+      want=1; [ "$len" -lt 20 ] || want=0
+      printf 'k = "%s%s"' "$p" "$t" | nonna_scan_secrets >/dev/null; got=$?
+      n=$((n + 1)); [ "$got" = "$want" ] || bad=$((bad + 1))
+    done
+  done
+  echo "$n cases, $bad wrong" )"
+check "property: a vendor-prefixed key is found iff its tail has 20+ characters" "56 cases, 0 wrong" "$res"
 
 echo "== secret-scan.sh (PreToolUse write gate) =="
 SS="$HOOKS/secret-scan.sh"
@@ -65,6 +106,11 @@ printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"config.py","content
 printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"config.py","content":"x = 1"}}' | "$SS"; check "allows clean Write" 0 "$?"
 printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"tests/fixtures/keys.py","content":"TOKEN = \"ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\""}}' | "$SS"; check "allows secret under a test/fixture path" 0 "$?"
 printf '%s' '{"tool_name":"Edit","tool_input":{"file_path":"app.js","old_string":"a","new_string":"const k = \"'"$FAKE_AWS"'\""}}' | "$SS"; check "blocks secret in Edit new_string" 2 "$?"
+out="$(printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"config.py","content":"KEY = \"'"$FAKE_ANT"'\""}}' | "$SS" 2>&1)"; check "blocks an Anthropic key in Write content" 2 "$?"
+contains "the block names the Anthropic class" "Anthropic API key" "$out"
+printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"config.py","content":"KEY = \"'"$FAKE_OAI"'\""}}' | "$SS" 2>/dev/null; check "blocks an OpenAI sk-proj- key in Write content" 2 "$?"
+printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"tests/fixtures/keys.py","content":"KEY = \"'"$FAKE_ANT"'\""}}' | "$SS"; check "allows an Anthropic key under a test/fixture path" 0 "$?"
+printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"docs/keys.md","content":"Anthropic keys start with sk-ant- and OpenAI project keys with sk-proj-."}}' | "$SS"; check "allows a short sk-ant- mention in prose" 0 "$?"
 printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"a.py"}}' | "$SS"; check "no content -> allow (fail safe)" 0 "$?"
 printf '%s' '{"tool_name":"Bash","tool_input":{"command":"cat .env"}}' | "$SS"; check "blocks Bash read of .env" 2 "$?"
 printf '%s' '{"tool_name":"Bash","tool_input":{"command":"head -5 secrets/creds.pem"}}' | "$SS"; check "blocks Bash read of a .pem" 2 "$?"
@@ -778,6 +824,13 @@ printf 'KEY = "%s"\n' "AKIA""AB12CD34EF56GH78" > "$TMP/tests/fixtures/sample.py"
 "${GIT[@]}" -C "$TMP" add -A; "${GIT[@]}" -C "$TMP" commit -q -m "realistic secret in a fixture"
 ( cd "$TMP" && "$RS" ); check "blocks a realistic secret even under a fixture path" 1 "$?"
 "${GIT[@]}" -C "$TMP" reset -q --hard HEAD~1  # the push scans every commit: the realistic key must leave history
+# The Anthropic class rides the same push scan: a realistic key is refused in a fixture too.
+mkdir -p "$TMP/tests/fixtures" "$TMP/docs"; echo ok > "$TMP/docs/STATUS.md"
+printf 'KEY = "%s"\n' "$FAKE_ANT" > "$TMP/tests/fixtures/sample.py"
+"${GIT[@]}" -C "$TMP" add -A; "${GIT[@]}" -C "$TMP" commit -q -m "realistic Anthropic key in a fixture"
+out="$(cd "$TMP" && "$RS" 2>&1)"; check "blocks a realistic Anthropic key even under a fixture path" 1 "$?"
+contains "the push block names the Anthropic class" "Anthropic API key" "$out"
+"${GIT[@]}" -C "$TMP" reset -q --hard HEAD~1
 mkdir -p "$TMP/tests/fixtures" "$TMP/docs"; echo ok > "$TMP/docs/STATUS.md"
 printf 'KEY = "%s"\n' "AKIAIOSFODNN7EXAMPLE" > "$TMP/tests/fixtures/sample.py"
 "${GIT[@]}" -C "$TMP" add -A; "${GIT[@]}" -C "$TMP" commit -q -m "placeholder fixture value"
@@ -808,6 +861,15 @@ printf 'STRIPE=sk_live_%s\n' '0123456789abcdefABCD' > "$TMP/src/pay.py"; "${GIT[
 out="$("${GIT[@]}" -C "$TMP" commit -q -m key 2>&1)"; check "pre-commit: blocks a staged secret" 1 "$?"
 contains "pre-commit: names the file and the class" "src/pay.py" "$out"
 "${GIT[@]}" -C "$TMP" reset -q; rm -f "$TMP/src/pay.py"
+printf 'ANTHROPIC_API_KEY=%s\n' "$FAKE_ANT" > "$TMP/src/ant.py"; "${GIT[@]}" -C "$TMP" add -A
+out="$("${GIT[@]}" -C "$TMP" commit -q -m key 2>&1)"; check "pre-commit: blocks a staged Anthropic key" 1 "$?"
+contains "pre-commit: names the Anthropic class" "Anthropic API key" "$out"
+"${GIT[@]}" -C "$TMP" reset -q; rm -f "$TMP/src/ant.py"
+printf 'OPENAI_API_KEY=%s\n' "$FAKE_OAI" > "$TMP/src/oai.py"; "${GIT[@]}" -C "$TMP" add -A
+"${GIT[@]}" -C "$TMP" commit -q -m key 2>/dev/null; check "pre-commit: blocks a staged OpenAI sk-proj- key" 1 "$?"
+"${GIT[@]}" -C "$TMP" reset -q; rm -f "$TMP/src/oai.py"
+printf 'Anthropic keys start with sk-ant- and OpenAI project keys with sk-proj-.\n' > "$TMP/src/notes.md"; "${GIT[@]}" -C "$TMP" add -A
+"${GIT[@]}" -C "$TMP" commit -q -m prose 2>/dev/null; check "pre-commit: a short sk-ant- mention in prose is allowed" 0 "$?"
 printf 'PNG\000\000binary\000data\n' > "$TMP/src/logo.png"; "${GIT[@]}" -C "$TMP" add -A
 out="$("${GIT[@]}" -C "$TMP" commit -q -m logo 2>&1)"; check "pre-commit: allows a staged binary file" 0 "$?"
 ! printf '%s' "$out" | grep -q 'null byte'; check "pre-commit: a binary file draws no shell warning" 0 "$?"
@@ -1825,6 +1887,8 @@ for b in bash sh env cat grep sed head tr dirname; do
   if [ -n "$p" ]; then ln -s "$p" "$NOJQ/$b" 2>/dev/null || true; fi
 done
 printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"c.py","content":"K = \"'"$FAKE_AWS"'\""}}' | PATH="$NOJQ" "$SS"; check "secret-scan: blocks a secret when jq is absent" 2 "$?"
+# The raw payload writes a newline as backslash-n, so a key that starts a line follows a letter there.
+printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"c.py","content":"x = 1\n'"$FAKE_ANT"'\n"}}' | PATH="$NOJQ" "$SS" 2>/dev/null; check "secret-scan: blocks a key that starts a line when jq is absent" 2 "$?"
 rm -rf "$NOJQ"
 # Branch guard tolerates global options and blocks wide pushes.
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; "${GIT[@]}" -C "$TMP" commit -q --allow-empty -m init; "${GIT[@]}" -C "$TMP" branch -M main

@@ -51,6 +51,13 @@ nonna_scan_secrets() {
   if _nonna_match 'Google API key' 'AIza[0-9A-Za-z_-]{35}' "$text"; then return 0; fi
   if _nonna_match 'Stripe secret key' 'sk_live_[0-9A-Za-z]{16,}' "$text"; then return 0; fi
   if _nonna_match 'OpenAI API key' 'sk-[A-Za-z0-9]{20,}' "$text"; then return 0; fi
+  # Anthropic keys and OpenAI's prefixed ones (sk-ant-api03-, sk-proj-, ...) have a hyphenated tail the
+  # line above cannot span. They start at a token: a word that merely ends in "sk" (task-admin-...) is
+  # not a key. \n, \r and \t count as a start because a raw JSON payload, which the no-jq scan reads,
+  # writes a newline that way before a key that begins a line.
+  local tok='(^|[^A-Za-z0-9-]|\\[nrt])'
+  if _nonna_match 'OpenAI API key' "${tok}sk-(proj|svcacct|admin)-[A-Za-z0-9_-]{20,}" "$text"; then return 0; fi
+  if _nonna_match 'Anthropic API key' "${tok}sk-ant-[a-z]+[0-9]{2}-[A-Za-z0-9_-]{20,}" "$text"; then return 0; fi
   if _nonna_match 'private key block' '-----BEGIN [A-Z ]*PRIVATE KEY-----' "$text"; then return 0; fi
   if _nonna_match 'hardcoded secret assignment' '(api[_-]?key|secret|token|password|passwd)[[:space:]]*[:=][[:space:]]*"[^"]{16,}"' "$text"; then return 0; fi
   if _nonna_match 'hardcoded secret assignment' "(api[_-]?key|secret|token|password|passwd)[[:space:]]*[:=][[:space:]]*'[^']{16,}'" "$text"; then return 0; fi
