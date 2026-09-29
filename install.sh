@@ -244,20 +244,38 @@ if [ -f .claude/settings.json ] && ! grep -q '\.claude/hooks/' .claude/settings.
 fi
 
 hooks_dir="$(git rev-parse --git-path hooks)"
+# Her own links are told apart by nonna_hook_is_hers, as session start and /nonna tell them. It is
+# loaded from the source I fetched, not from the core.sh in this repository: put keeps a file that
+# was already there (an older one, or not mine), and sourcing it would run the repository's code in me.
+# shellcheck source=/dev/null
+. "$P/.claude/hooks/lib/core.sh"
 link_hook() { # <git hook name> <script under .claude/hooks>
-  local dest="$hooks_dir/$1"
+  local dest="$hooks_dir/$1" link hers=""
   if [ -L .claude ] || [ -L .claude/hooks ] || [ ! -x ".claude/hooks/$2" ] || [ ! -f .claude/hooks/lib/secret-patterns.sh ]; then
     warn_msgs+=("$1: .claude/hooks/$2 is not here, so this gate is not running")
     failed=1
     return 0
   fi
   if [ -e "$dest" ] || [ -L "$dest" ]; then
-    # Her own link, from an earlier run, is hers, but only in .git/hooks, where ../../ leads back
-    # here. Any other hook runs hers only when it names her script's path, not a file that merely
-    # shares its name.
-    case "$hooks_dir:$(readlink "$dest" 2>/dev/null)" in
-      ".git/hooks:../../.claude/hooks/$2") return 0 ;;
-    esac
+    # Her own link is hers: one from an earlier run of mine, one her plugin wired, or, in a linked
+    # worktree, the one the main checkout made in the hooks they share. Her ../../.claude/hooks link
+    # counts only in a .git/hooks, where ../../ leads back to a repository root; from a hook
+    # manager's directory (.husky) it leads elsewhere, so it is judged like any other hook, which
+    # runs hers only when it names her script's path, not a file that merely shares its name.
+    link="$(readlink "$dest" 2>/dev/null)"
+    if [ "$link" = "../../.claude/hooks/$2" ]; then
+      case "$hooks_dir" in .git/hooks | */.git/hooks) hers=1 ;; esac
+    elif nonna_hook_is_hers "$link" "$2"; then
+      hers=1
+    fi
+    if [ -n "$hers" ]; then
+      # Git skips a link that points at nothing, in silence: that gate is off.
+      if [ ! -e "$dest" ]; then
+        warn_msgs+=("$1: $dest points at nothing, so this gate is not running")
+        failed=1
+      fi
+      return 0
+    fi
     grep -qsF ".claude/hooks/$2" "$dest" || {
       warn_msgs+=("$1: you already have a $1 hook — chain .claude/hooks/$2 from it, or my gates do not run")
       failed=1

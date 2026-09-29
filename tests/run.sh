@@ -1205,6 +1205,40 @@ out="$(cd "$TMP/wt" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a li
 contains "install: ...and says which gate is not wired" "pre-commit: git hooks live in" "$out"
 rc=0; [ ! -e "$TMP/.git/hooks/pre-commit" ] && [ ! -L "$TMP/.git/hooks/pre-commit" ] || rc=1; check "install: ...and links nothing into the shared hooks" 0 "$rc"
 rm -rf "$TMP"
+# Once the main checkout is installed, the hooks it shares with its linked worktrees hold her links,
+# and running install again from a worktree finds them: they are hers, not a hook of the user's.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; "${GIT[@]}" -C "$TMP" commit -q --allow-empty -m init --no-verify
+( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" >/dev/null 2>&1 )
+"${GIT[@]}" -C "$TMP" worktree add -q "$TMP/wt" -b feature/wt 2>/dev/null
+out="$(cd "$TMP/wt" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: running it again in a linked worktree of an installed repository succeeds" 0 "$?"
+printf '%s' "$out" | grep -q 'already have'; check "install: ...and does not read her shared links as a hook of the user's" 1 "$?"
+rm -rf "$TMP"
+# A link her plugin wired, into its data directory, is hers too when a plugin user runs install later.
+# Her scripts do not name their own path, so their text cannot tell. A link that points at nothing is
+# no gate, though: git skips such a hook in silence, so install says so.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
+PLUG="$CLAUDE_CONFIG_DIR/plugins/data/nonna-x/current/hooks"; mkdir -p "$PLUG"; : > "$PLUG/pre-commit.sh"; : > "$PLUG/require-status-sync.sh"
+ln -s "$PLUG/pre-commit.sh" "$TMP/.git/hooks/pre-commit"; ln -s "$PLUG/require-status-sync.sh" "$TMP/.git/hooks/pre-push"
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a link her plugin wired is hers, so running install succeeds" 0 "$?"
+printf '%s' "$out" | grep -q 'already have'; check "install: ...and is not read as a hook of the user's" 1 "$?"
+rm -f "$PLUG/pre-commit.sh" "$PLUG/require-status-sync.sh"
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a link of hers that points at nothing is a failure, since git skips it" 1 "$?"
+contains "install: ...and says which gate is not running" "pre-commit: .git/hooks/pre-commit points at nothing, so this gate is not running" "$out"
+rm -rf "$TMP" "$CLAUDE_CONFIG_DIR/plugins/data/nonna-x"
+# ../../ leads back to a repository root only from a directory named .git/hooks. One that merely ends
+# in .git/hooks (x.git/hooks) is not that, even where the link happens to reach her script.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; mkdir -p "$TMP/x.git/hooks"; git -C "$TMP" config core.hooksPath "$TMP/x.git/hooks"
+ln -s ../../.claude/hooks/pre-commit.sh "$TMP/x.git/hooks/pre-commit"; ln -s ../../.claude/hooks/require-status-sync.sh "$TMP/x.git/hooks/pre-push"
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a link that only looks like hers, in a directory that merely ends in .git/hooks, is not hers" 1 "$?"
+contains "install: ...and is reported like any hook of the user's, too" "pre-commit: you already have a pre-commit hook" "$out"
+rm -rf "$TMP"
+# It tells her links apart with the library from the source it fetched. A core.sh already in the repository
+# is kept, not overwritten, and running it would be running the repository's code inside the installer.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; mkdir -p "$TMP/.claude/hooks/lib"
+printf 'touch "%s/ran"\n' "$TMP" > "$TMP/.claude/hooks/lib/core.sh"
+( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" >/dev/null 2>&1 )
+rc=0; [ ! -e "$TMP/ran" ] || rc=1; check "install: never runs a core.sh that is already in the repository" 0 "$rc"
+rm -rf "$TMP"
 # A link that could not be made is not one that was: a file where the hooks directory should be.
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; rm -rf "$TMP/.git/hooks"; : > "$TMP/.git/hooks"
 out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a git hook it could not link is a failure, not a success" 1 "$?"
