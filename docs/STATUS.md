@@ -93,7 +93,7 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   - a re-score replaces only an unscored run;
   - D3 counts only the neutral prompt's traps and says when a cost is missing;
   - the isolation claims now say what `env -i` does and does not stop.
-  - round-3 results are being recorded on branch `chore/17-round3-results` (`bench/results/`); traps (Sonnet, Haiku, ponytail) and small (Sonnet) batches are in, the rest are running.
+  - round-3 results are being recorded on branch `chore/17-round3-results` (`bench/results/`); traps (Sonnet, Haiku, ponytail) and small (Sonnet, ponytail) batches are in, the rest are running.
 
 - **2026-09-25** — `/nonna`, the third unit of the launch plan (#17, ADR-0011 §12). The user's
   switch for her gates: `/nonna` shows what she enforces here and where each setting comes from (the
