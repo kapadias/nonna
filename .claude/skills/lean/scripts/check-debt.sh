@@ -92,9 +92,11 @@ collect() {
     fi
     for d in "${SKIP_DIRS[@]}"; do args+=("--exclude-dir=$d"); done
     # -a: a NUL byte must not make a file "binary" and skipped; -H: a single-file operand
-    # still carries its name; LC_ALL=C: an invalid UTF-8 byte must not skip the file either;
+    # still carries its name; LC_ALL=C: an invalid UTF-8 byte must not skip the file either,
+    # nor stop tr or sed, which on macOS refuse a byte that is not text in the user's locale;
     # --null, not -Z, which macOS's grep reads as --decompress and so writes no NUL at all.
-    LC_ALL=C grep -rnHaE --null "${args[@]}" --exclude='*.md' -- "$PATTERN" "${paths[@]}" | tr '\0' '\t' | sed 's#^\./##'
+    LC_ALL=C grep -rnHaE --null "${args[@]}" --exclude='*.md' -- "$PATTERN" "${paths[@]}" \
+      | LC_ALL=C tr '\0' '\t' | LC_ALL=C sed 's#^\./##'
     rc=${PIPESTATUS[0]}
     [ "$rc" -le 1 ] || { printf 'check-debt: grep failed (%s)\n' "$rc" >&2; return 2; }
   fi
