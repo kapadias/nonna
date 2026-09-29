@@ -1,0 +1,3 @@
+started	bench_sha	claude_version	argv
+2026-09-29T02:04:47Z	83b5de3a8ec5dd1d53fa68ca070e3c5ba60800a6	2.1.284 (Claude Code)	--suite traps --arm none,plugin-lite,plugin-full --model sonnet --reps 4 --cap 150
+2026-09-29T02:29:39Z	83b5de3a8ec5dd1d53fa68ca070e3c5ba60800a6	2.1.284 (Claude Code)	--suite traps --arm none,plugin-lite,plugin-full --model haiku --reps 4 --cap 150
