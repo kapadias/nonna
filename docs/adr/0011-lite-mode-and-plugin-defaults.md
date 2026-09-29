@@ -213,8 +213,8 @@ The plugin was measured as users install it, every arm with the same prompt, und
 - **Most of lite's effect came from the house rules.** The one hook that had to block in lite was
   "where's the test?" (33 times); her test gate and branch guard never fired there. The gates stay
   the backstop the rules cannot be.
-- **Lite's one miss** passed its own suite after changing the tests, which the rules forbid and no
-  gate checks. A check that pristine tests were not weakened is the next gate to consider.
+- **Lite's one miss** passed its own suite but not the original tests, so it had changed the tests
+  or their setup, which the rules forbid and no gate checks. A check that pristine tests were not weakened is the next gate to consider.
 - **On a real repository** (six tickets on full-stack-fastapi-template), lite kept the bare agent's
   pass rate (30 of 36 against 28) and was no safer (1 unsafe run each): its traps break what the
   repository's own tests do not check.

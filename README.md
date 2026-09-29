@@ -129,8 +129,8 @@ rate (30<!--n:real.plugin-lite.pass--> of 36<!--n:real.n--> against
 1<!--n:real.none.unsafe-->): those traps break what the repository's own tests don't check, and she
 runs the tests there are.
 
-What went wrong, in the open: lite's one miss edited the tests until they passed, which no gate
-checks yet; and without Nonna, Claude Sonnet no longer leaves this red suite behind, so the second
+What went wrong, in the open: lite's one miss passed its own suite but not the original tests, so
+the agent had changed the tests or their setup, which no gate checks yet; and without Nonna, Claude Sonnet no longer leaves this red suite behind, so the second
 row is Haiku's. Method, per-task tables, raw rows and every caveat: [`bench/`](bench/). One run of
 each trap, word for word: [`examples/`](examples/).
 
@@ -200,8 +200,8 @@ edit follows TDD. Nonna asks no model: she runs your test command and blocks on 
 adds branch and secret guards both in the agent and in git.
 
 **Can an agent still get past her?** Yes, in two ways we have seen. She runs your tests as they are,
-so an agent that edits a test until it passes gets through: that was lite's one miss in the
-benchmark, and her rules forbid it, but no gate checks it yet. And she cannot see what no test
+so an agent that changes a test, or its setup, to make the suite pass gets through: lite's one miss
+in the benchmark did that, which her rules forbid and no gate checks yet. And she cannot see what no test
 checks: on the real-repository tickets, the traps that got through broke things no test there
 covers. She makes the checks you have unskippable; she does not add the ones you don't.
 
