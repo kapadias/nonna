@@ -59,8 +59,10 @@ never offered to the model, so it is not counted.
   `docs/adr/` index, and ADRs 0001–0011.
 - **Launch images** — `assets/build.py` builds the scorecard, the social preview and one card per
   trap task from round 3's files; `--check` (standard library only) is run by `tests/run.sh`.
-- **CI** — `.github/workflows/ci.yml`: shellcheck (all scripts) + harness-lint + gate self-tests +
-  plugin manifest (`claude plugin validate --strict`, pinned CLI).
+- **CI** — `.github/workflows/ci.yml`: shellcheck (all scripts) + harness-lint + gate self-tests
+  (on Linux, and again on a stock Mac) + plugin manifest (`claude plugin validate --strict`, pinned
+  CLI). Every action is pinned to a commit SHA, the token is read-only by default, and only the
+  release job can write.
 
 ## Recently changed
 
@@ -111,6 +113,23 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   (lite 1/64 unsafe against the bare agent's 24/64, at 1.8× its small-task cost; full 0/64), row 5
   does not (its code-size condition fails: +28% against a ±20% limit), and lite's real-suite pass rate is not
   below the bare agent's (30/36 against 28/36). The launch docs take their numbers from here.
+
+- **2026-09-29** — CI hardening, the follow-ups on the launch plan's tracking issue (#17), folded
+  into the launch unit so the macOS job ships with the fixes it found:
+  - every third-party action is pinned to a full commit SHA with its tag beside it (checkout 4.4.0,
+    setup-python 5.6.0, setup-node 4.4.0, shellcheck 2.0.0). The shellcheck action had been
+    `@master`, two commits past 2.0.0 that change only its own tests and README, so it is the same
+    action;
+  - the token is read-only by default in both workflows, and only the release job, which creates
+    the release, has `contents: write`;
+  - a macOS job runs the gate self-tests under `/bin/bash` 3.2 with only Apple's tools on the PATH
+    (no Homebrew), and fails if the runner is not that toolchain. It is not proven yet. Its first
+    run failed 62 tests and its second 59: three were brace lists typed inside `"$(gb "...")"`,
+    which bash 3.2 expands (the tests now pass them through a variable); 46 were the suite's own
+    GNU habits (`sed -i`, `timeout`), which it no longer has; 12 were a real bug, `check-debt.sh`'s
+    `grep -Z` (decompress, on a Mac); and one found a real bug in the Stop hook (see the launch
+    entry). The next run, on this unit's PR, is the proof, and a local simulation with BSD-style
+    `sed`, `grep` and `tr` is the check before it.
 
 - **2026-09-28** — Benchmark round 3, the fourth unit of the launch plan (#17), built and proven,
   not yet run (paid runs are the maintainer's). `bench/` gains:

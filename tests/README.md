@@ -151,5 +151,7 @@ python3 tests/test_assets.py    # the launch images (run.sh runs it too)
 
 Both run in CI on every push and pull request (`.github/workflows/ci.yml`),
 alongside `shellcheck` over every script and `claude plugin validate --strict` on both
-manifests. Adopters wire their own
+manifests. `run.sh` also runs on a macOS runner under `/bin/bash` 3.2 with only Apple's tools on
+the PATH (no Homebrew), because the guards parse shell in bash and awk and those differ from
+Linux's. Adopters wire their own
 lint/type/test/coverage gate as additional jobs — see [`stacks/`](../stacks/).
