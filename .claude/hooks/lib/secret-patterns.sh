@@ -28,9 +28,12 @@ nonna_a() {
 _nonna_sample_words='xxxx|example|your[-_]|changeme|dummy|redacted|placeholder|fake|sample'
 
 # _nonna_is_placeholder <matched-value>  -> 0 if the match is an obvious non-secret: a sample word, or
-# a reference to a value kept elsewhere (${VAR}, env(...), os.environ, process.env, <name>).
+# a reference to a value kept elsewhere (${VAR}, env(...), os.environ, process.env, <name>). Read in
+# the shell, with no process per match (the scan's text is in lower case): thousands of sample ids
+# must not outlast the hook's timeout, since a hook that times out does not block.
 _nonna_is_placeholder() {
-  printf '%s' "$1" | LC_ALL=C grep -qiE -e "$_nonna_sample_words"'|\$\{|env\(|os\.environ|process\.env|<[^>]+>'
+  local re="$_nonna_sample_words"'|\$\{|env\(|os\.environ|process\.env|<[^>]+>'
+  [[ $1 =~ $re ]]
 }
 
 # _nonna_real_key <match> <key-ERE>  -> 0 unless every key in the match is a placeholder. A key starts

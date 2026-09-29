@@ -157,7 +157,10 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
     - the TypeScript pack's README says its gate's two `npx` steps ask first, and how to approve
       them;
     - a key pattern with no literal prefix counts as a key at once: the walk from each prefix had
-      nothing to walk from and would have looped (no pattern has one yet).
+      nothing to walk from and would have looped (no pattern has one yet);
+    - the sample-word test of the patterns with no key window (an AWS access key id, a Google key,
+      a quoted assignment) runs in the shell too: a 312 KB write of 12,000 sample ids before a
+      NUL-cut key took 64 s to block, longer than a hook's timeout, and now takes 1.5 s.
   - **Secret scan:** it missed Anthropic keys and OpenAI's `sk-proj-`, `sk-svcacct-` and `sk-admin-`
     keys, which the docs said it caught. The write guard, pre-commit and pre-push now refuse them;
     golden tests hold each key type and a key given as a shell default, a property test holds the

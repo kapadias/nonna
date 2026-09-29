@@ -188,6 +188,14 @@ printf '#!/bin/sh\ncase "$*" in *akia*) exit 2 ;; esac\nexec "%s" "$@"\n' "$REAL
 ( . "$HOOKS/lib/secret-patterns.sh"; printf 'k = "%s"' "$FAKE_ANT" | PATH="$BADPRE:$PATH" nonna_scan_secrets ) >/dev/null
 check "a first pass that fails does not hide a key" 0 "$?"
 rm -rf "$BADPRE"
+# The scan starts a bounded number of processes, however many sample keys the text holds: one per
+# match let 12,000 sample ids outlast the write guard's timeout, and a hook that times out does not
+# block. Counted by a grep that counts itself.
+CNTG="$(mktemp -d)"
+printf '#!/bin/sh\necho x >> "%s/n"\nexec "%s" "$@"\n' "$CNTG" "$REALGREP" > "$CNTG/grep"; chmod +x "$CNTG/grep"
+( . "$HOOKS/lib/secret-patterns.sh"; i=0; while [ "$i" -lt 1000 ]; do printf 'k%s = AKIAIOSFODNN7EXAMPLE\n' "$i"; i=$((i + 1)); done | PATH="$CNTG:$PATH" nonna_scan_secrets ) >/dev/null
+check "1000 sample key ids are read without one process each" 0 "$(( $(wc -l < "$CNTG/n") > 50 ))"
+rm -rf "$CNTG"
 # macOS's grep reads its input in the user's locale and gives up on bytes that are not text there; a scan
 # that gave up would pass the key. The patterns are ASCII, so the scan reads bytes (LC_ALL=C).
 BSDGREP="$(mktemp -d)"; REALGREP="$(command -v grep)"
