@@ -50,6 +50,7 @@ Nonna is running and your branch guards and secret guards are active. You're on 
 | 1 | traps sonnet none,plugin-lite,plugin-full x4 | 96 | 96 | $5.42 | parallel 4, no rate limiting, no fingerprint stops |
 | 2 | traps haiku none,plugin-lite,plugin-full x4 | 96 | 96 | $4.8 (cumulative logged $10.25 after batch 2) | resumed after container restarts, see below |
 | 3 | small sonnet none,plugin-lite,plugin-full x4 | 72 | 72 | cumulative logged $15.23 | resumed after a container restart at 04:03Z (13 rep-4 ids); parallel 4 |
+| 4 | traps sonnet ponytail,ponytail+lite x4 | 64 | 64 | cumulative logged $18.84 | ran without interruption (restart at 04:36Z came right after it finished) |
 
 ## Deviations
 - **Container restarts during batch 2.** The runner machine restarted three times (about 02:37Z, 03:29Z, 03:41Z); /tmp, the key variable and pytest survived, but each restart killed the running `run.sh`. Batch 2 was resumed with only the ids that had no row in traps.tsv, using `--arm`, `--tasks`, `--rep-start` and `--reps` (no id with an ok row was re-run):
