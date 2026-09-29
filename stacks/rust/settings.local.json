@@ -2,9 +2,12 @@
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "permissions": {
     "allow": [
-      "Bash(cargo test:*)",
-      "Bash(cargo check:*)",
-      "Bash(cargo clippy:*)",
+      "Bash(cargo test)",
+      "Bash(cargo test --quiet)",
+      "Bash(cargo check)",
+      "Bash(cargo check --all-targets --all-features)",
+      "Bash(cargo clippy)",
+      "Bash(cargo clippy --all-targets --all-features -- -D warnings)",
       "Bash(cargo fmt:*)",
       "Bash(rustfmt:*)"
     ]

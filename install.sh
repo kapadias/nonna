@@ -218,7 +218,7 @@ if [ -n "$stack" ] && [ -f "$P/stacks/$stack/settings.local.json" ]; then
   put "$P/stacks/$stack/settings.local.json" ".claude/settings.local.json"
   if [ "${#copied[@]}" -gt "$n" ]; then
     # What it lets run without asking is read back from the file, so the message cannot drift from the pack.
-    grants="$(grep -o '"Bash([^"]*)"' .claude/settings.local.json | sed 's/^"Bash(//; s/:\*)"$//' | paste -sd, -)"
+    grants="$(grep -o '"Bash([^"]*)"' .claude/settings.local.json | sed 's/^"Bash(//; s/:\*)"$//; s/)"$//' | paste -sd, -)"
     done_msgs+=(".claude/settings.local.json ($stack): pre-approves ${grants//,/, }")
     # It is this machine's alone: committed, it would pre-approve the same commands for every clone.
     if through_link .gitignore; then

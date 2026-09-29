@@ -123,6 +123,15 @@ Your AI agent says "done"; Nonna makes it prove it.
 
 ### Changed
 
+- **The stack packs pre-approve runners only, and say so.** They had let `python`, `pip`, `uv`,
+  `node`, `npm`, `pnpm`, `go`, `cargo`, `rustup` and `awk` run without asking, which is running
+  anything. Now each
+  pack allows its test, lint, format and type-check runners; `go test`, `go vet`, `cargo test`,
+  `cargo check` and `cargo clippy` only as the exact commands the gate runs, since their flags can
+  run any program. `install.sh` lists what it pre-approved and adds `.claude/settings.local.json`
+  to `.gitignore`. A pack an earlier `install.sh` wrote is kept: delete it and run again.
+- **`install.sh` exits non-zero when a git hook is not wired**: a foreign hook that does not run
+  hers, a hook manager's directory, or a link it could not make.
 - **The plugin no longer formats the files the agent edits.** It ran whatever formatter it found on
   each edited file, which rewrote whole files a project never formatted, and a formatter's config
   can run the repository's own code (a prettier config can be JavaScript). A copy-in install still

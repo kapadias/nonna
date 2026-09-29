@@ -110,7 +110,7 @@ awk -v cov="$(go tool cover -func=coverage.out | grep '^total:' | awk '{print $3
 
 ## Pre-approved commands
 
-`settings.local.json` lets `go test`, `go vet`, `gofmt`, `goimports` and `golangci-lint` run without a prompt. The other `go` commands (`go run`, `go install`, `go get`, `go tool cover`) and `awk` are not on the list, because they run any code or install anything, so the coverage-floor check above (`go tool cover` and `awk`) asks first, and so do the install commands below.
+`settings.local.json` lets `gofmt`, `goimports` and `golangci-lint` run without a prompt, and `go test` and `go vet` only as the gate runs them: `go test ./...`, the coverage run above and `go vet ./...`. Their `-exec`, `-toolexec` and `-vettool` flags run any program, so any other form asks first. The other `go` commands (`go run`, `go install`, `go get`, `go tool cover`) and `awk` are not on the list, because they run any code or install anything, so the coverage-floor check above (`go tool cover` and `awk`) asks first, and so do the install commands below.
 
 ---
 
