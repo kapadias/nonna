@@ -81,7 +81,9 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   - **Images:** `assets/build.py` builds the scorecard, the social preview and a card per trap task
     from the rows, lettered from Space Grotesk's own outlines (OFL); `--check` fails on a stale
     image. The demo (`assets/demo.{gif,mp4,cast}`, `docs/demo.md`) is a real Haiku session, 4
-    takes, take 4 used; it shows her "where's the test?" block, not a failing-test block.
+    takes, take 4 used; it shows her "where's the test?" block, not a failing-test block. A
+    split-screen film (bare against Nonna, every pair recorded) is being finished on its own branch
+    (`chore/17-demo`) and lands as its own PR.
   - **Docs:** INSTALL, OVERVIEW and CONTRIBUTING reordered for the plugin and cleared of em dashes;
     `bench/README.md` has round 3's results and a new break-even table; CHANGELOG 2.0.0 opens with
     the release notes' five lines; ADR 0011 records what round 3 decided.
@@ -101,6 +103,25 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
       image's own;
     - `assets/build.py` renders nothing that runs or reaches outside the file, `bench/examples.py`
       never writes through a symlink, and the key-class messages read "an AWS access key id".
+  - **Second and third review rounds** (each approved the one before with findings; each fix has a
+    test that failed first):
+    - the stack packs pre-approve only the exact commands their gate runs, never a prefix: a
+      runner's own flags run any program or write any file (`npm test --node-options`,
+      `go test -exec`, `golangci-lint --output.text.path`, `pytest --basetemp`);
+    - the secret scan finds a key given as a shell or compose default (`${VAR:-key}`,
+      `${1-key}`), after a URL escape or a NUL byte, and an Anthropic key even inside a compiled
+      file; it reads bytes, so macOS's grep cannot give up on it; a prefixed key needs a 40-character
+      tail, so a kebab-case name is not one;
+    - the Stop hook's "where's the test?" had been switched off by the suite's own bytecode
+      (`tests/__pycache__/*.pyc` counted as a new test) in any repo that does not ignore it: only a
+      test's source counts now. Found by the macOS CI job, where no bytecode was written;
+    - `check-debt.sh` (and so `/review`) rejected every marker on a Mac: `grep -Z` is decompress
+      there; `--null` works on both;
+    - `install.sh`: a re-run in a linked worktree knows her shared hook links, and a link of hers
+      that git cannot run is reported, not counted as a gate;
+    - `assets/build.py` checks every SVG against an allow-list of what the images draw with, and the
+      scorecard's alt-text lint reads the tag in any shape and fails when it compared nothing;
+    - the docs say that a plugin user's clone of a full copy-in runs lite, and how to keep full.
   - **Secret scan:** it missed Anthropic keys and OpenAI's `sk-proj-`, `sk-svcacct-` and `sk-admin-`
     keys, which the docs said it caught. The write guard, pre-commit and pre-push now refuse them;
     golden tests hold each key type and a key given as a shell default, a property test holds the
