@@ -899,6 +899,13 @@ shape_of() { # <repo>: what an install left in it: lite (the gates and /nonna, n
 runs_as() { # <repo>: the mode Nonna runs it in as its git hooks read it, by the hooks the install left there
   (cd "$1" && bash -c '. .claude/hooks/lib/core.sh; nonna_mode git-hook')
 }
+grants_of() { # <settings file>: the commands it pre-approves, sorted, on one line
+  grep -o '"Bash([^"]*)"' "$1" | sed 's/^"Bash(//; s/:\*)"$//' | LC_ALL=C sort | paste -sd, -
+}
+stack_grants() { # <marker file>: what install.sh pre-approves in a new repository holding that file
+  local d; d="$(mktemp -d)"; "${GIT[@]}" -C "$d" init -q; : > "$d/$1"
+  ( cd "$d" && NONNA_SRC="$ROOT" bash "$IN" >/dev/null 2>&1 ); grants_of "$d/.claude/settings.local.json"; rm -rf "$d"
+}
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; echo '[project]' > "$TMP/pyproject.toml"
 out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --mode full 2>&1)"; check "install: --mode full succeeds" 0 "$?"
 rc=0; [ -f "$TMP/.claude/rules/00-core.md" ] && [ -f "$TMP/CLAUDE.md" ] || rc=1; check "install: brings the harness and CLAUDE.md" 0 "$rc"
@@ -906,13 +913,55 @@ rc=0; [ -f "$TMP/.claude/rules/00-core.md" ] && [ -f "$TMP/CLAUDE.md" ] || rc=1;
 grep -q 'nonna' "$TMP/docs/STATUS.md"; check "install: the seeded STATUS is a blank template, not this repo's status" 1 "$?"
 rc=0; [ -x "$TMP/.git/hooks/pre-commit" ] && [ -x "$TMP/.git/hooks/pre-push" ] || rc=1; check "install: wires the git pre-commit and pre-push hooks" 0 "$rc"
 [ -f "$TMP/.claude/settings.local.json" ] && grep -q 'pytest' "$TMP/.claude/settings.local.json"; check "install: picks the python stack pack from pyproject.toml" 0 "$?"
+# A pack lets its commands run without asking, so it holds runners only: python, pip and uv run any
+# code or install anything, and a prompt-injected agent would use them to read .env without a prompt.
+check "install: the python pack pre-approves the test, lint and type-check runners and nothing else" "mypy,pyright,pytest,python -m pytest,python3 -m pytest,ruff" "$(grants_of "$TMP/.claude/settings.local.json")"
+grep -qE 'Bash\((python|pip|uv):' "$TMP/.claude/settings.local.json"; check "install: ...and not python, pip or uv" 1 "$?"
+check "install: the typescript pack pre-approves the test, lint, format and type-check runners and nothing else" "eslint,npm run test,npm test,npx tsc,npx vitest,pnpm test,prettier,tsc,vitest" "$(stack_grants package.json)"
+check "install: the go pack pre-approves the test, lint, format and vet runners and nothing else" "go test,go vet,gofmt,goimports,golangci-lint" "$(stack_grants go.mod)"
+check "install: the rust pack pre-approves the test, lint, format and check runners and nothing else" "cargo check,cargo clippy,cargo fmt,cargo test,rustfmt" "$(stack_grants Cargo.toml)"
+bare=0; for pack in "$ROOT"/stacks/*/settings.local.json; do
+  bare=$((bare + $(grep -o '"Bash([^"]*)"' "$pack" | sed 's/^"Bash(//; s/:\*)"$//' | grep -cxE 'python3?|pip3?|uv|node|npm|npx|pnpm|yarn|go|cargo|rustup|awk|sh|bash')))
+done
+check "install: no pack, present or future, pre-approves an interpreter, a package manager or a shell" 0 "$bare"
 rc=0; [ ! -e "$TMP/.claude/reviews" ] && [ ! -e "$TMP/AGENTS.md" ] || rc=1; check "install: copies no review verdicts and no other host's files" 0 "$rc"
 contains "install: says what it did, in Nonna's voice" "Nonna" "$out"
+contains "install: says what the pack pre-approves" ".claude/settings.local.json (python): pre-approves pytest, python -m pytest, python3 -m pytest, ruff, mypy, pyright" "$out"
+contains "install: says it added the pack to .gitignore" ".gitignore: added .claude/settings.local.json" "$out"
+check "install: the .gitignore line is there once" 1 "$(grep -cxF .claude/settings.local.json "$TMP/.gitignore")"
 "${GIT[@]}" -C "$TMP" add -A; "${GIT[@]}" -C "$TMP" commit -q -m first 2>/dev/null; check "install: the installed pre-commit hook refuses a commit on main" 1 "$?"
 echo 'my own rules' > "$TMP/CLAUDE.md"
 out2="$( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --mode full 2>&1 )"; check "install: a second run succeeds" 0 "$?"
 ! printf '%s' "$out2" | grep -q 'you already have a'; check "install: a second run knows her own git hooks are hers" 0 "$?"
 grep -q 'my own rules' "$TMP/CLAUDE.md"; check "install: never overwrites an existing file" 0 "$?"
+check "install: a second run leaves the .gitignore line once" 1 "$(grep -cxF .claude/settings.local.json "$TMP/.gitignore")"
+printf '%s' "$out2" | grep -q 'pre-approves'; check "install: a second run, which keeps the pack, grants nothing new" 1 "$?"
+rm -rf "$TMP"
+# The .gitignore line goes on a line of its own, and only once; a settings.local.json that was already
+# here is the user's, so install grants nothing, claims nothing and leaves .gitignore alone.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; echo '[project]' > "$TMP/pyproject.toml"; printf 'build/' > "$TMP/.gitignore"
+( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" >/dev/null 2>&1 )
+check "install: a .gitignore with no final newline gets the line on a line of its own" "build/,.claude/settings.local.json" "$(paste -sd, "$TMP/.gitignore")"
+rm -rf "$TMP"
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; echo '[project]' > "$TMP/pyproject.toml"; printf '# mine\n.claude/settings.local.json\n' > "$TMP/.gitignore"
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"
+check "install: a .gitignore that has the line already keeps it once" 1 "$(grep -cxF .claude/settings.local.json "$TMP/.gitignore")"
+printf '%s' "$out" | grep -qF .gitignore; check "install: ...and says nothing of it" 1 "$?"
+rm -rf "$TMP"
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; echo '[project]' > "$TMP/pyproject.toml"; mkdir "$TMP/.claude"; echo '{"mine":true}' > "$TMP/.claude/settings.local.json"
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"
+rc=0; ! printf '%s' "$out" | grep -q 'pre-approves' && [ ! -e "$TMP/.gitignore" ] && grep -q mine "$TMP/.claude/settings.local.json" || rc=1
+check "install: a settings.local.json of yours is kept, with no grant claimed and no .gitignore written" 0 "$rc"
+rm -rf "$TMP"
+# Where the line cannot be added, the pack is on disk and could be committed: fail, and say which file.
+TMP="$(mktemp -d)"; OUT="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; echo '[project]' > "$TMP/pyproject.toml"; ln -s "$OUT/elsewhere" "$TMP/.gitignore"
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a .gitignore that is a symlink is a failure, not a success" 1 "$?"
+rc=0; [ ! -e "$OUT/elsewhere" ] || rc=1; check "install: ...and is not written through" 0 "$rc"
+contains "install: ...and says to add the line yourself" "add .claude/settings.local.json to it yourself" "$out"
+rm -rf "$TMP" "$OUT"
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; echo '[project]' > "$TMP/pyproject.toml"; mkdir "$TMP/.gitignore"
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a .gitignore it cannot write is a failure, not a success" 1 "$?"
+contains "install: ...and says so" ".gitignore: could not write it" "$out"
 rm -rf "$TMP"
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
 ( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --mode full --host cursor,agents >/dev/null 2>&1 ); check "install: --host cursor,agents succeeds" 0 "$?"
@@ -972,6 +1021,7 @@ TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
 out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: without --mode, a new install succeeds" 0 "$?"
 check "install: ...and is lite" lite "$(shape_of "$TMP")"
 check "install: ...and records the lite default" lite "$(git -C "$TMP" config --get nonna.defaultMode)"
+rc=0; [ ! -e "$TMP/.gitignore" ] || rc=1; check "install: ...and with no stack pack to keep out of git, writes no .gitignore" 0 "$rc"
 contains "install: ...and says how to get the whole harness" "--mode full brings the whole harness" "$out"
 LITE="$(mktemp -d)"; "${GIT[@]}" -C "$LITE" init -q
 ( cd "$LITE" && NONNA_SRC="$ROOT" bash "$IN" --mode lite >/dev/null 2>&1 )
@@ -1000,6 +1050,15 @@ TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
 ( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" >/dev/null 2>&1 )
 check "install: a recorded full is honoured, though the files are lite" full "$(shape_of "$TMP")"
 rm -rf "$TMP"
+# A recorded mode that is neither lite nor full (say Full) is read as full by her hooks, which fail
+# closed on a value nobody meant. Install reads it the same way; it must not turn it into a lite.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; "${GIT[@]}" -C "$TMP" config nonna.defaultMode Full
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"
+check "install: a recorded mode that is neither lite nor full is read as full, as her hooks read it" full "$(git -C "$TMP" config --get nonna.defaultMode)"
+check "install: ...and brings the whole harness that goes with full" full "$(shape_of "$TMP")"
+check "install: ...and her hooks run it as full" full "$(runs_as "$TMP")"
+contains "install: ...and says what it read" "'Full' is neither lite nor full, and her hooks read that as full" "$out"
+rm -rf "$TMP"
 # Rules with no hooks are not a full install (lib/core.sh asks for both): a plugin user who copied them in.
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; mkdir -p "$TMP/.claude/rules"; : > "$TMP/.claude/rules/00-core.md"
 ( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" >/dev/null 2>&1 )
@@ -1016,9 +1075,45 @@ cmp -s "$TMP/AGENTS.md" "$ROOT/hosts/lite/AGENTS.md" && cmp -s "$TMP/.cursor/rul
 check "install: without --mode, other hosts get the lite house rules" 0 "$?"
 rm -rf "$TMP"
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; printf '#!/bin/sh\necho mine\n' > "$TMP/.git/hooks/pre-commit"; chmod +x "$TMP/.git/hooks/pre-commit"
-out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a foreign git hook does not fail the install" 0 "$?"
+# A git hook she could not wire is a gate that is off, and on hosts other than Claude Code the git hooks
+# are the only enforcement: the install fails, says which gate and how to chain it, and never says she
+# is in the kitchen. Running it again once the gate is chained succeeds.
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a foreign git hook that does not run hers is a failure, since her gate is not wired" 1 "$?"
 grep -q 'echo mine' "$TMP/.git/hooks/pre-commit"; check "install: never overwrites a foreign git hook" 0 "$?"
-contains "install: warns that the foreign hook needs chaining" "pre-commit" "$out"
+contains "install: warns that the foreign hook needs chaining" "pre-commit: you already have a pre-commit hook" "$out"
+printf '%s' "$out" | grep -q 'in the kitchen'; check "install: ...and does not say she is in the kitchen" 1 "$?"
+printf '#!/bin/sh\necho mine\n.claude/hooks/pre-commit.sh "$@"\n' > "$TMP/.git/hooks/pre-commit"
+( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" >/dev/null 2>&1 ); check "install: once the foreign hook chains hers, running again succeeds" 0 "$?"
+rm -rf "$TMP"
+# A hook manager (core.hooksPath) owns the hooks: nothing is written there, and both gates are reported.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; git -C "$TMP" config core.hooksPath .husky
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a hook manager's directory is a failure, since her git gates are not wired" 1 "$?"
+contains "install: ...and says where to point its pre-commit" "point its pre-commit at .claude/hooks/pre-commit.sh" "$out"
+contains "install: ...and its pre-push" "point its pre-push at .claude/hooks/require-status-sync.sh" "$out"
+printf '%s' "$out" | grep -q 'in the kitchen'; check "install: ...and does not say she is in the kitchen, either" 1 "$?"
+rc=0; [ ! -e "$TMP/.husky" ] && [ ! -e "$TMP/.git/hooks/pre-commit" ] && [ ! -L "$TMP/.git/hooks/pre-commit" ] || rc=1; check "install: ...and writes no hook, in the manager's directory or in .git/hooks" 0 "$rc"
+mkdir "$TMP/.husky"; printf '#!/bin/sh\n.claude/hooks/pre-commit.sh "$@"\n' > "$TMP/.husky/pre-commit"; printf '#!/bin/sh\n.claude/hooks/require-status-sync.sh "$@"\n' > "$TMP/.husky/pre-push"
+( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" >/dev/null 2>&1 ); check "install: once the manager's hooks run hers, running again succeeds" 0 "$?"
+rm -rf "$TMP"
+# Her own relative link is hers only in .git/hooks, where ../../ leads back to this repository. In any
+# other hooks directory the same link leads somewhere else, so it is judged like a hook of the user's.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; git -C "$TMP" config core.hooksPath hk; mkdir "$TMP/hk"
+ln -s ../../.claude/hooks/pre-commit.sh "$TMP/hk/pre-commit"; ln -s ../../.claude/hooks/require-status-sync.sh "$TMP/hk/pre-push"
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a link that only looks like hers, outside .git/hooks, is not hers" 1 "$?"
+contains "install: ...and is reported like any hook of the user's" "pre-commit: you already have a pre-commit hook" "$out"
+rm -rf "$TMP"
+# A linked worktree shares the main checkout's hooks, which a relative link from here cannot reach.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; "${GIT[@]}" -C "$TMP" commit -q --allow-empty -m init --no-verify
+"${GIT[@]}" -C "$TMP" worktree add -q "$TMP/wt" -b feature/wt 2>/dev/null
+out="$(cd "$TMP/wt" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a linked worktree is a failure, since its shared git hooks are not wired" 1 "$?"
+contains "install: ...and says which gate is not wired" "pre-commit: git hooks live in" "$out"
+rc=0; [ ! -e "$TMP/.git/hooks/pre-commit" ] && [ ! -L "$TMP/.git/hooks/pre-commit" ] || rc=1; check "install: ...and links nothing into the shared hooks" 0 "$rc"
+rm -rf "$TMP"
+# A link that could not be made is not one that was: a file where the hooks directory should be.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; rm -rf "$TMP/.git/hooks"; : > "$TMP/.git/hooks"
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a git hook it could not link is a failure, not a success" 1 "$?"
+contains "install: ...and says which gate is not running" "pre-commit: could not link .git/hooks/pre-commit, so this gate is not running" "$out"
+printf '%s' "$out" | grep -qF '+ .git/hooks/pre-commit'; check "install: ...and does not claim the link" 1 "$?"
 rm -rf "$TMP"
 TMP="$(mktemp -d)"
 ( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" >/dev/null 2>&1 ); check "install: refuses outside a git repository" 1 "$?"

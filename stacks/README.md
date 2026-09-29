@@ -7,7 +7,7 @@ Nonna's `/test` skill and `format.sh` hook are deliberately language-agnostic. S
 A stack pack is a per-language directory containing:
 
 - **`README.md`** — exact commands for lint, type-check, test, and coverage; how to invoke the formatter from `format.sh`; a property-testing library recommendation; and a copy-pasteable gate command block.
-- **`settings.local.json`** — a Claude Code local-settings file that pre-approves the stack's safe gate commands so they run without permission prompts.
+- **`settings.local.json`** — a Claude Code local-settings file that pre-approves the stack's test, lint, format and type-check runners, and only those, so they run without permission prompts. It never lists an interpreter, a package manager or `awk`.
 
 ## The 3-step wire-up
 
@@ -32,6 +32,14 @@ cp /path/to/nonna/stacks/<lang>/settings.local.json .claude/settings.local.json
 ```
 
 If you already have a `.claude/settings.local.json`, merge the `permissions.allow` array entries into it.
+
+The file is yours alone: committed, its pre-approvals reach everyone who clones the repository.
+`install.sh` writes it, lists what it pre-approves and adds `.claude/settings.local.json` to your
+`.gitignore`; by hand, add that line yourself.
+
+A runner still runs your project's own code (tests, `conftest.py`, build scripts), so the pack narrows
+what runs without asking; it is not a sandbox. Each stack's README lists what it pre-approves and what
+still asks.
 
 ### Step 3 — Set your `/test` gate commands
 

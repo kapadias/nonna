@@ -5,12 +5,12 @@
       "Bash(eslint:*)",
       "Bash(prettier:*)",
       "Bash(tsc:*)",
-      "Bash(vitest:*)",
       "Bash(npx tsc:*)",
+      "Bash(vitest:*)",
       "Bash(npx vitest:*)",
-      "Bash(npm:*)",
-      "Bash(pnpm:*)",
-      "Bash(node:*)"
+      "Bash(npm test:*)",
+      "Bash(npm run test:*)",
+      "Bash(pnpm test:*)"
     ]
   }
 }
