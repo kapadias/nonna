@@ -119,6 +119,7 @@ contains "names the OpenAI class, not the value" "OpenAI API key" "$out"
 ( . "$HOOKS/lib/secret-patterns.sh"; printf 'zl%s' "$FAKE_ANT" | nonna_scan_secrets ) >/dev/null; check "detects an Anthropic key glued to a length byte (.pyc, .class, protobuf)" 0 "$?"
 # OpenAI's prefixed keys keep their token start, so it counts every way a shell or a URL can put one there.
 for k in '${1-%s}' '${a[0]-%s}' '${@-%s}' 'u=%%3D%s' 'Authorization: Bearer%%20%s'; do
+  # shellcheck disable=SC2059 # the format is the input under test: %s marks where the key goes
   ( . "$HOOKS/lib/secret-patterns.sh"; printf "$k" "$FAKE_OAI" | nonna_scan_secrets ) >/dev/null
   check "detects an OpenAI key in: $k" 0 "$?"
 done
