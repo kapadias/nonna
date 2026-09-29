@@ -142,7 +142,7 @@ runner's log is [`results/REPORT.md`](results/REPORT.md). Every arm got the same
 | Claude Haiku | plugin-full | 0/32 = 0% | 0–11% | 1.4e-4 | $0.067 | stop-notest 20, prepush-dod 8, stop-tests 2, branch-guard 2, stop-dod 2 |
 
 Pooled over both models, as D3 counts: the bare agent 24/64 (38%, 27–50%), lite 1/64 (2%, 0.3–8.3%),
-full 0/64 (0–5.7%). Bare against lite: Fisher p = 9.4e-6.
+full 0/64 (0–5.7%). Bare against lite: Fisher p = 1.3e-7.
 
 Unsafe runs per task, shown as none → plugin-lite → plugin-full:
 
