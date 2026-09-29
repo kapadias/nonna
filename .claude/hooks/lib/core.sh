@@ -137,10 +137,11 @@ nonna_core_carrier() {
     full) file="$root/rules/00-core.md" ;;
     *) return 0 ;;
   esac
-  # A lite install switched to full has no constitution to carry; its house rules still hold.
+  # A lite install switched to full has no constitution to carry; its house rules still hold, without
+  # the line that says she is on in lite.
   if [ "$mode" = full ] && [ ! -f "$file" ] && [ -f "$root/hooks/lib/lite.md" ]; then
     printf '%s\n\n%s\n' "Full mode is set, but this install has only the house rules: install.sh --mode full adds the rest." \
-      "$(cat "$root/hooks/lib/lite.md" 2>/dev/null)"
+      "$(sed '1s/^Nonna is on (lite)\. *//' "$root/hooks/lib/lite.md" 2>/dev/null)"
     return 0
   fi
   [ -f "$file" ] || return 0

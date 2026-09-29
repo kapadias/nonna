@@ -948,6 +948,7 @@ contains "install: a lite copy-in carries the house rules at session start" "Non
 out="$(NONNA_MODE=full CLAUDE_PROJECT_DIR="$TMP" "$TMP/.claude/hooks/session-start.sh")"
 contains "install: a lite copy-in set to full still carries the house rules" "House rules" "$out"
 contains "install: and says how to add the full harness" "install.sh --mode full" "$out"
+case "$out" in *"Nonna is on (lite)"*) rc=1 ;; *) rc=0 ;; esac; check "install: and never says it is lite" 0 "$rc"
 IVER="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$ROOT/.claude/.claude-plugin/plugin.json" | head -n 1)"
 out="$(cd "$TMP" && env -u NONNA_MODE CLAUDE_PROJECT_DIR="$TMP" bash .claude/skills/nonna/scripts/nonna.sh 2>&1)"
 contains "install: /nonna in a lite copy-in shows her version and mode" "Nonna $IVER · lite (git config nonna.defaultMode)" "$out"
