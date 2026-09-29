@@ -1122,7 +1122,7 @@ rc=0; [ -x "$TMP/.git/hooks/pre-commit" ] && [ -x "$TMP/.git/hooks/pre-push" ] |
 # code or install anything, and a prompt-injected agent would use them to read .env without a prompt.
 check "install: the python pack pre-approves the gate's exact commands and nothing else" "mypy .,mypy src/,pyright,pytest,pytest --cov=src --cov-branch --cov-report=term-missing --cov-fail-under=80,pytest -q,python -m pytest,python -m pytest -q,python3 -m pytest,python3 -m pytest -q,ruff check .,ruff format --check .,ruff format ." "$(grants_of "$TMP/.claude/settings.local.json")"
 grep -qE 'Bash\((python|pip|uv):' "$TMP/.claude/settings.local.json"; check "install: ...and not python, pip or uv" 1 "$?"
-check "install: the typescript pack pre-approves the gate's exact commands and nothing else" "eslint .,eslint . --max-warnings 0,npm run test,npm test,npm test --silent,npx tsc --noEmit,npx vitest run,npx vitest run --coverage,pnpm test,prettier --check .,prettier --write .,tsc --noEmit,vitest run" "$(stack_grants package.json)"
+check "install: the typescript pack pre-approves the gate's exact commands and nothing else" "eslint .,eslint . --max-warnings 0,npm run test,npm test,npm test --silent,pnpm test,prettier --check .,prettier --write .,tsc --noEmit,vitest run" "$(stack_grants package.json)"
 # A runner's flags can run any program or write any file (go test -exec, cargo --config, npm test
 # --node-options, golangci-lint --output.text.path, pytest --basetemp): a pack pre-approves only the
 # exact commands its gate runs, never a prefix.
@@ -1136,6 +1136,10 @@ open=0; for pack in "$ROOT"/stacks/*/settings.local.json; do
   open=$((open + $(grep -c ':\*)"' "$pack")))
 done
 check "install: no pack, present or future, pre-approves a prefix: exact commands only" 0 "$open"
+npx=0; for pack in "$ROOT"/stacks/*/settings.local.json; do
+  npx=$((npx + $(grep -c '"Bash(npx ' "$pack")))
+done
+check "install: no pack pre-approves an npx command (npx fetches a package it lacks, without asking)" 0 "$npx"
 rc=0; [ ! -e "$TMP/.claude/reviews" ] && [ ! -e "$TMP/AGENTS.md" ] || rc=1; check "install: copies no review verdicts and no other host's files" 0 "$rc"
 contains "install: says what it did, in Nonna's voice" "Nonna" "$out"
 contains "install: says what the pack pre-approves" ".claude/settings.local.json (python): pre-approves pytest, pytest -q, python -m pytest, python -m pytest -q, python3 -m pytest, python3 -m pytest -q, pytest --cov=src --cov-branch --cov-report=term-missing --cov-fail-under=80, ruff check ., ruff format ., ruff format --check ., mypy src/, mypy ., pyright" "$out"
