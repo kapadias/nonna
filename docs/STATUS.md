@@ -66,27 +66,25 @@ never offered to the model, so it is not counted.
 
 History lives in `CHANGELOG.md` and `git log`. Entries here describe the current unit of work.
 
-- **2026-09-29** — Launch demo recorded (`assets/demo.{cast,gif,mp4}`, `docs/demo.md`): a real Haiku
-  session, 4 takes, take 4 used; it shows her "where's the test?" block, not a failing-test block.
-
-- **2026-09-29** — Launch images, a unit of the launch plan (#17). `assets/build.py` builds
-  `assets/scorecard.svg` (and its 2400 px PNG), `assets/social-preview.svg` (1280×640, 40 px clear
-  on every edge) and one 1080 px card per trap task in `assets/cards/`, all from round 3's own
-  files. Every number comes from `summary.json` and `traps.tsv`, which must agree; each card's
-  prompt from `bench/tasks/traps/`; its Nonna line from that task's example stream, and a card
-  whose example fired none shows none. The scorecard keeps its four panels: the bare agent cut a
-  corner in 24 of 64 runs against nonna lite's 1 of 64, said "done" on a broken suite in 4 of 8
-  against 1 of 8, pushed to main in 8 of 8 against 0 of 8, and lite costs $0.06 against $0.04 on
-  trap tasks and $0.07 against $0.04 on small ones (Sonnet, mean per run).
-  - Lettering is outlined from `assets/font/space-grotesk.json`, made once from Space Grotesk (SIL
-    OFL, `OFL.txt` beside it, `make_glyphs.py` to regenerate). It reproduces the banner's own
-    paths to the digit, so the font and its weights are matched, not guessed.
-  - `--check` fails on a stale SVG, moved data, or a PNG that is missing, the wrong size, over
-    1 MB or rendered from a different SVG (each PNG carries the hash of its SVG). Only `--render`
-    needs a browser.
-  - Lettering that would run off an image fails the build. 1026 harness tests.
-  - Not done, on purpose: the README still quotes round 1–2's numbers and alt text (the launch
-    README is its own unit); no CI step of its own, since the gate self-tests run `--check`.
+- **2026-09-29** — The launch, the fifth unit of the launch plan (#17), from round 3's numbers.
+  - **README:** the plugin install first, what the first session prints, what she checks, the
+    modes (full mode as extras for teams, as D3 row 4 requires), a before/after from the
+    rule-picked round-3 runs, her voice lines as the hooks print them, the numbers with their
+    misses, and a FAQ that says how an agent can still get past her. Every benchmark number carries
+    a mark (`<!--n:key-->`) that `harness_lint.py` checks against `bench/results/round3/*.tsv`.
+  - **`install.sh` installs lite** unless told `--mode full`, as D3 row 1 decided; re-running it
+    keeps the mode a repository has, and no longer mistakes her own git hooks for the user's.
+  - **`examples/`:** one run of each trap per arm, word for word, picked by a rule in code
+    (`bench/examples.py`, rep 1 on Haiku); `--check` runs with the gate self-tests.
+  - **Images:** `assets/build.py` builds the scorecard, the social preview and a card per trap task
+    from the rows, lettered from Space Grotesk's own outlines (OFL); `--check` fails on a stale
+    image. The demo (`assets/demo.{gif,mp4,cast}`, `docs/demo.md`) is a real Haiku session, 4
+    takes, take 4 used; it shows her "where's the test?" block, not a failing-test block.
+  - **Docs:** INSTALL, OVERVIEW and CONTRIBUTING reordered for the plugin and cleared of em dashes;
+    `bench/README.md` has round 3's results and a new break-even table; CHANGELOG 2.0.0 opens with
+    the release notes' five lines; ADR 0011 records what round 3 decided.
+  - **Fixes found on the way:** a staged binary file drew a shell warning from the pre-commit hook;
+    a lite install switched to full carried no rules at all. Both have golden tests.
 
 - **2026-09-29** — Round 3 ran: 484 runs, $37.18 of logged spend, every fingerprint ok, none
   dropped, no ERROR rows. Harness `83b5de3`, Claude Code 2.1.284, `claude-sonnet-5-5` and
