@@ -57,12 +57,26 @@ never offered to the model, so it is not counted.
   `run_tests`, `mode`) + `.claude-plugin/marketplace.json`. Both validate with `--strict`.
 - **Docs** — this `STATUS.md`, `INSTALL.md`, `OVERVIEW.md`, `docs/benchmarks/`, `CHANGELOG.md`, the
   `docs/adr/` index, and ADRs 0001–0011.
-- **CI** — `.github/workflows/ci.yml`: shellcheck (all scripts) + harness-lint + gate self-tests +
-  plugin manifest (`claude plugin validate --strict`, pinned CLI).
+- **CI** — `.github/workflows/ci.yml`: shellcheck (all scripts) + harness-lint + gate self-tests
+  (on Linux, and again on a stock Mac) + plugin manifest (`claude plugin validate --strict`, pinned
+  CLI). Every action is pinned to a commit SHA, the token is read-only by default, and only the
+  release job can write.
 
 ## Recently changed
 
 History lives in `CHANGELOG.md` and `git log`. Entries here describe the current unit of work.
+
+- **2026-09-29** — CI hardening, the follow-ups on the launch plan's tracking issue (#17):
+  - every third-party action is pinned to a full commit SHA with its tag beside it (checkout 4.4.0,
+    setup-python 5.6.0, setup-node 4.4.0, shellcheck 2.0.0). The shellcheck action had been
+    `@master`, two commits past 2.0.0 that change only its own tests and README, so it is the same
+    action;
+  - the token is read-only by default in both workflows, and only the release job, which creates
+    the release, has `contents: write`;
+  - a macOS job runs the gate self-tests under `/bin/bash` 3.2 with only Apple's tools on the PATH
+    (no Homebrew), and fails if the runner is not that toolchain. It is the follow-up the branch
+    guard's second review round left open. Its first run is the proof; nothing about macOS is
+    claimed until it has been read.
 
 - **2026-09-28** — Benchmark round 3, the fourth unit of the launch plan (#17), built and proven,
   not yet run (paid runs are the maintainer's). `bench/` gains:
