@@ -46,7 +46,7 @@ discipline is **enforced by code, not prose**. Start with [`../CLAUDE.md`](../CL
   or runs of her `/nonna` scripts;
   it reads a command the way the shell will run it), `secret-scan.sh` (blocks writes that introduce
   a secret, and reads of secret files by Read, Grep or Bash, by any name that leads to one — parity
-  with the Read deny list, linted), `format.sh` (post-edit auto-format),
+  with the Read deny list, linted), `format.sh` (post-edit auto-format, copy-in installs only),
   `require-status-sync.sh` (pre-push: the test suite, a strict secret scan — no fixture exemption at
   push time; use placeholder-classed values — and in full mode the Definition-of-Done),
   `pre-commit.sh` (git pre-commit: no commit on a protected branch, no staged secret),
@@ -104,7 +104,7 @@ that load only when needed, and delegate fan-out so the main thread keeps conclu
 - **Definition of Done (full mode):** `require-status-sync.sh` blocks a code push that skips
   `docs/STATUS.md`, in a repo that keeps one. It is **auto-installed** as the git `pre-push` hook at
   `SessionStart` — no manual symlink. Run `/sync` to reconcile drift across the five mirrors.
-- **Formatting** is automatic on edit (`format.sh`).
+- **Formatting** is automatic on edit in a copy-in install (`format.sh`); the plugin never formats.
 - **The harness tests its own gates:** `bash tests/run.sh` (golden tests proving each gate blocks vs.
   allows) and `python3 tests/harness_lint.py` (structural self-validation) run in CI.
 

@@ -300,6 +300,10 @@ the repository gets them, plugin or not.
   what the repository carries: the hooks and the rules run full, the hooks alone run lite.
   `--mode lite` over a full install changes only the clone where you run it.
 - **The test command is detected each time** instead of recorded, unless you set `nonna.testCmd`.
+- **Only a copy-in formats on edit.** After each edit, it runs the formatter it finds (ruff,
+  prettier, gofmt, rustfmt, shfmt) on that file. The plugin never formats your files: it would
+  rewrite whole files your project never formatted, and a formatter's config can run the
+  repository's own code.
 - **`/nonna` comes with both modes**; the agents and the other workflows come with `--mode full`.
 
 ## Optional: Claude Code's own deny-list

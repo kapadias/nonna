@@ -1317,6 +1317,19 @@ echo "== format.sh (PostToolUse, best-effort) =="
 TF="$(mktemp).py"; echo 'x=1' > "$TF"
 printf '{"tool_name":"Write","tool_input":{"file_path":"%s"}}' "$TF" | "$HOOKS/format.sh"; check "exits 0 even if no formatter present" 0 "$?"
 rm -f "$TF"
+# A formatter runs only in a copy-in, which the project installed. Under the plugin it would rewrite
+# whole files the project never formatted, and a formatter's config can run the repository's code.
+FMT="$(mktemp -d)"; TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; echo '# x' > "$TMP/notes.md"
+printf '#!/bin/sh\necho "$*" >> "%s/ran"\n' "$FMT" > "$FMT/prettier"; chmod +x "$FMT/prettier"
+fmt() { # <format.sh> [VAR=value ...]: that hook on $TMP/notes.md, with a prettier that logs its runs
+  local hook="$1"; shift
+  printf '{"tool_name":"Edit","tool_input":{"file_path":"%s/notes.md"}}' "$TMP" \
+    | ( cd "$TMP" && env PATH="$FMT:$PATH" CLAUDE_PROJECT_DIR="$TMP" "$@" "$hook" )
+}
+fmt "$HOOKS/format.sh" CLAUDE_PLUGIN_ROOT="$ROOT/.claude"; check "format: exits 0 under the plugin" 0 "$?"
+[ -e "$FMT/ran" ]; check "format: the plugin never runs a formatter on the project's files" 1 "$?"
+copy_in "$TMP"; fmt "$TMP/.claude/hooks/format.sh"; [ -e "$FMT/ran" ]; check "format: a copy-in formats the file just edited" 0 "$?"
+rm -rf "$FMT" "$TMP"
 
 echo "== modes (nonna_mode: off | lite | full) =="
 # One switch per repo, read the same way by Claude Code hooks and by git hooks. Precedence:

@@ -36,6 +36,7 @@ Your AI agent says "done"; Nonna makes it prove it.
   option off before Nonna meets your repositories.
 - The git hooks now read git config alone. `NONNA_TEST_CMD` and `NONNA_MODE` still steer Claude
   Code's hooks, but no longer the git hooks: for your own pushes, set `git config nonna.testCmd`.
+- The plugin no longer formats the files the agent edits. A copy-in install still does.
 
 ### Added
 
@@ -120,6 +121,10 @@ Your AI agent says "done"; Nonna makes it prove it.
 
 ### Changed
 
+- **The plugin no longer formats the files the agent edits.** It ran whatever formatter it found on
+  each edited file, which rewrote whole files a project never formatted, and a formatter's config
+  can run the repository's own code (a prettier config can be JavaScript). A copy-in install still
+  formats: the project installed it.
 - **The STATUS gate is full mode's**, and only where `docs/STATUS.md` exists, at Stop and at
   pre-push. A repository that never kept the file is no longer blocked for not updating it; one that
   keeps it cannot throw it out.
