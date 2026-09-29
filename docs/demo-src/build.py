@@ -13,7 +13,6 @@ from PIL import Image, ImageDraw
 
 import film as F  # noqa: F401
 from film import (
-    AMBER,
     BASIL,
     CREAM,
     H,
@@ -40,8 +39,8 @@ from film import (
 
 FPS = 24
 SPEED = 3.0
-IDLE_CAP = 2.5  # real seconds of silence kept at most (in both panes at once)
-IDLE_TO = 0.8  # ... shown as this many real seconds (÷ SPEED on output)
+IDLE_CAP = 2.0  # real seconds of silence kept at most (in both panes at once)
+IDLE_TO = 2.0  # ... shown as this many real seconds (÷ SPEED on output)
 XFADE = 12  # frames
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -49,6 +48,9 @@ COPY = json.load(open(sys.argv[1]))
 OUT = sys.argv[2]
 FLAGS = set(sys.argv[3:])
 KEY = {}  # named key frames for QA
+# claims-done pairs 1-4 shared one config dir across concurrent tasks, so their captured final message can be
+# another task's; claims-done.sh reads that message, so those four stay in the tables but out of every tally.
+EXCLUDE = {"claims-done": {1, 2, 3, 4}}
 
 
 def keyframe(name, im):
@@ -223,7 +225,12 @@ class Chapter(Scene):
         self.stats = dict(n_pairs=0, n_a_unsafe=0, n_b_unsafe=0, n_blocked=0, n_rules=0)
         tp = os.path.join(HERE, "pairs_table.json")
         if os.path.exists(tp):
-            rows = [r for r in json.load(open(tp)) if r["task"] == spec["task"]]
+            rows = [
+                r
+                for r in json.load(open(tp))
+                if r["task"] == spec["task"]
+                and r["n"] not in EXCLUDE.get(spec["task"], ())
+            ]
             self.stats = dict(
                 n_pairs=len(rows),
                 n_a_unsafe=sum(r["a"]["verdict"] == "UNSAFE" for r in rows),
@@ -302,9 +309,9 @@ class Chapter(Scene):
         )
         ImageDraw.Draw(im).rectangle(
             [
-                x - 10,
+                x - 4,
                 self.yp + y0 * PANE_LH - 2,
-                x - 7,
+                x - 1,
                 self.yp + (y1 + 1) * PANE_LH + 1,
             ],
             fill=col,
@@ -329,7 +336,7 @@ class Chapter(Scene):
             label(d, x, 146, name, col)
             done = tau >= A.seconds
             el = min(max(tau, 0), A.seconds)
-            s = f"{int(round(A.seconds)) if done else int(el)} s   {A.cost_str if done else f'${A.cost_at(tau):.4f}'}"
+            s = f"{int(el)} s   {A.cost_str if done else f'${A.cost_at(tau):.4f}'}"
             right(d, x + self.pw, 143, s, font("mono", 18), INK if done else INK2)
             if done:
                 label_right(
@@ -337,8 +344,8 @@ class Chapter(Scene):
                     x + self.pw - d.textlength(s, font=font("mono", 18)) - 22,
                     147,
                     "STOPPED",
-                    INK3,
-                    12,
+                    INK2,
+                    13,
                 )
         # panes
         im.paste(self.P.paint(ca, ia), (self.xa, self.yp))
@@ -362,14 +369,14 @@ class Chapter(Scene):
         if self.t_taste is not None and self.t_taste - 0.01 <= tau < (
             self.t_block or self.t_done_b or 1e9
         ):
-            im = self.highlight(im, "b", cb, ib, "tasting", AMBER)
+            im = self.highlight(im, "b", cb, ib, "tasting", BASIL)
         if (
             self.t_block is not None
             and tau >= self.t_block - 0.01
             and tau < (self.t_cost or 1e9)
         ):
             im = self.highlight(
-                im, "b", cb, ib, "✗", TOMATO, rows_after=3, rows_before=1
+                im, "b", cb, ib, "✗", BASIL, rows_after=3, rows_before=1
             )
         if (
             self.t_cost
@@ -377,18 +384,22 @@ class Chapter(Scene):
             and tau < min([v for v in self.t_echo.values() if v is not None] or [1e9])
         ):
             for arm, c, i in (("a", ca, ia), ("b", cb, ib)):
-                im = self.highlight(im, arm, c, i, "Total cost:", BASIL, rows_after=0)
+                im = self.highlight(im, arm, c, i, "Total cost:", INK3, rows_after=0)
         for arm, c, i in (("a", ca, ia), ("b", cb, ib)):
             te = self.t_echo.get(arm)
             if te is not None and tau >= te:
-                for needle, col in self.spec.get("reveal_marks", []):
+                for mark in self.spec.get("reveal_marks", []):
+                    needle, kind = mark[0], mark[1]
+                    side = mark[2] if len(mark) > 2 else None
+                    if side and side != arm:
+                        continue
                     im = self.highlight(
                         im,
                         arm,
                         c,
                         i,
                         needle,
-                        TOMATO if col == "bad" else BASIL,
+                        TOMATO if kind == "bad" else BASIL,
                         rows_after=0,
                     )
         d = ImageDraw.Draw(im)
@@ -411,6 +422,15 @@ class Chapter(Scene):
 
 
 # ---------------------------------------------------------------- cards
+def disclosure():
+    """The honesty line, generated from the renderer's own constants so it cannot drift."""
+    return (
+        f"Plays at {SPEED:g}×; a silence longer than {IDLE_CAP:g} s of real time is cut to {IDLE_TO:g} s "
+        f"({IDLE_TO / SPEED:.1f} s on screen). No frame is edited and no step is cut; the clocks show real time. "
+        f"The running cost is Claude Code’s own usage log at list prices; the final figure is its /cost."
+    )
+
+
 def card_cold_open(ch):
     """Real frames from the bare arm, large: its last message; then the full suite in the same shell."""
     ca = ch.a.cast
@@ -443,7 +463,7 @@ def card_cold_open(ch):
             30,
         )
         ImageDraw.Draw(im2).rectangle(
-            [x0 - 12, y0 + rows[0] * 28 - 3, x0 - 8, y0 + (rows[0] + 3) * 28 + 2],
+            [x0 - 4, y0 + rows[0] * 28 - 3, x0 - 1, y0 + (rows[0] + 3) * 28 + 2],
             fill=TOMATO,
         )
     d = ImageDraw.Draw(im2)
@@ -457,7 +477,10 @@ def card_cold_open(ch):
         d = ImageDraw.Draw(im3)
         d.rectangle([x0 - 1, y0 - 1, x0 + P.w, y0 + P.h], outline=mix(CREAM, INK3, 0.6))
         label(d, x0, 56, COPY["cold"]["label_suite"], INK2)
-        for needle, col in ch.spec.get("reveal_marks", []):
+        for mark in ch.spec.get("reveal_marks", []):
+            needle, col = mark[0], mark[1]
+            if len(mark) > 2 and mark[2] != "a":
+                continue
             rows = ca.rows_with(i_rev, needle)
             if rows:
                 im3 = tint(
@@ -473,9 +496,9 @@ def card_cold_open(ch):
                 )
                 ImageDraw.Draw(im3).rectangle(
                     [
-                        x0 - 12,
+                        x0 - 4,
                         y0 + rows[-1] * 28 - 3,
-                        x0 - 8,
+                        x0 - 1,
                         y0 + (rows[-1] + 1) * 28 + 2,
                     ],
                     fill=TOMATO if col == "bad" else BASIL,
@@ -484,7 +507,14 @@ def card_cold_open(ch):
         text(
             d, (x0, y0 + P.h + 18), COPY["cold"]["under_suite"], font("sans", 24), INK2
         )
-        label(d, x0, y0 + P.h + 56, COPY["cold"]["verdict"], TOMATO, 13)
+        xe = label(d, x0, y0 + P.h + 58, COPY["cold"]["verdict_label"], TOMATO, 14)
+        text(
+            d,
+            (xe + 18, y0 + P.h + 55),
+            COPY["cold"]["verdict_text"],
+            font("mono", 16),
+            INK2,
+        )
         frames.append((im3, 3.6))
     return frames
 
@@ -498,8 +528,7 @@ def card_title():
     text(d, (x + 6, 500), COPY["title"]["tag"], font("serif", 74), INK)
     y = 620
     for l in COPY["title"]["sub"]:
-        text(d, (x + 8, y), l, font("sans", 29), INK2)
-        y += 42
+        y = para(d, x + 8, y, l, font("sans", 29), INK2, W - M - (x + 8), lh=42)
     return im
 
 
@@ -513,7 +542,7 @@ def card_method():
         text(d, (M - 4, y), l, font("serif", 96), INK)
         y += 108
     if c.get("sub"):
-        text(d, (M, y + 6), c["sub"], font("sans", 28), INK2)
+        text(d, (M, y + 10), c["sub"], font("sans", 27), INK2)
         y += 52
     y += 24
     hairline(d, M, y, W - M)
@@ -522,7 +551,7 @@ def card_method():
     for i, (k, v) in enumerate(c["facts"]):
         x = M + i * (colw + 60)
         label(d, x, y, k, BASIL)
-        para(d, x, y + 34, v, font("sans", 26), INK, colw)
+        para(d, x, y + 34, v, font("sans", 24), INK, colw, lh=32)
     if c.get("prompts"):
         y2 = y + 176
         hairline(d, M, y2, W - M)
@@ -530,8 +559,8 @@ def card_method():
         for i, (k, v) in enumerate(c["prompts"]):
             x = M + i * (colw + 60)
             label(d, x, y2 + 60, k, BASIL, 13)
-            para(d, x, y2 + 88, v, font("mono", 17), INK, colw, lh=24)
-    text(d, (M, H - 130), c["foot"], font("sans-i", 23), INK2)
+            para(d, x, y2 + 84, v, font("mono", 16), INK, colw, lh=22)
+    para(d, M, H - 132, disclosure(), font("sans-i", 20), INK2, W - 2 * M, lh=27)
     return im
 
 
@@ -561,7 +590,7 @@ def card_result(ch, spec):
         text(
             d,
             (x, yy),
-            f"{int(round(A.seconds))} s  ·  {A.cost_str}",
+            f"{int(A.seconds)} s  ·  {A.cost_str}",
             font("mono", 26),
             INK,
         )
@@ -636,12 +665,12 @@ def card_cost(ch):
         label(d, M, y + 8, k, BASIL, 16)
         yy = para(
             d,
-            M + 560,
+            M + 430,
             y,
             v.format(**vals),
             font("sans", 27),
             INK,
-            W - M - (M + 560),
+            W - M - (M + 430),
             lh=36,
         )
         y = yy + 22
@@ -663,7 +692,7 @@ def card_numbers():
     # the two figures
     for i, (lab, big, col) in enumerate(c["figures"]):
         x = M + i * 440
-        label(d, x, y, lab, INK2)
+        label(d, x, y + 4, lab, INK2)
         text(
             d,
             (x - 6, y + 22),
@@ -672,7 +701,7 @@ def card_numbers():
             {"#tomato": TOMATO, "#basil": BASIL, "#ink": INK}.get(col, INK),
         )
     para(d, M, y + 262, c["big_sub"], font("sans", 27), INK, 860, lh=36)
-    xr = M + 1000
+    xr = M + 1008
     yy = y + 4
     for k, v in c["rows"]:
         label(d, xr, yy, k, INK2)
@@ -696,7 +725,7 @@ def card_close():
         text(d, (x, y + 22), cmd, font("mono-m", 38), INK)
         y += 104
     hairline(d, x, y, W - M)
-    text(d, (x, y + 30), c["url"], font("serif", 72), TOMATO)
+    text(d, (x, y + 30), c["url"], font("serif", 72), BASIL)
     para(d, x + 2, y + 130, c["line"], font("sans", 22), INK2, W - M - x, lh=30)
     return im
 
@@ -765,7 +794,7 @@ def frames(scenes):
                 ("start", 4.0),
                 ("done_a", (s.t_done_a or 0) + 0.3),
                 ("taste", s.t_taste),
-                ("block", (s.t_block or 0) + 0.4),
+                ("block", (s.t_block + 0.4) if s.t_block is not None else None),
                 ("done_b", (s.t_done_b or 0) + 0.3),
                 ("cost", (s.t_cost or 0) + 0.5),
                 ("reveal", s.t_end - 0.2),
@@ -813,7 +842,7 @@ def main():
                     ("start", 4.0),
                     ("done_a", (s.t_done_a or 0) + 0.3),
                     ("taste", s.t_taste),
-                    ("block", (s.t_block or 0) + 0.4),
+                    ("block", (s.t_block + 0.4) if s.t_block is not None else None),
                     ("done_b", (s.t_done_b or 0) + 0.3),
                     ("cost", (s.t_cost or 0) + 0.5),
                     ("reveal", s.t_end - 0.2),

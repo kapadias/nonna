@@ -43,7 +43,7 @@ def tbl(task):
         if r["n"] == chosen[task]:
             note.append("**shown in the film**")
         if r["n"] <= 4:
-            note.append("pilot rig: no reveal in the cast")
+            note.append("pilot rig: no reveal in the cast" + ("; final-message capture unreliable, out of the tallies" if task == "claims-done" else ""))
         elif r["n"] <= 7:
             note.append("tmux focus tip visible")
         elif r["n"] <= 9:
@@ -51,6 +51,8 @@ def tbl(task):
         out.append(
             f"| {r['n']} | {a['seconds']:.0f} s | ${a['cost']:.3f} | {a['verdict']} ({a['extra']}) | {b['seconds']:.0f} s | ${b['cost']:.3f} | {'yes' if b['blocked'] else 'no (rules)'} | {b['verdict']} ({b['extra']}) | {'; '.join(note)} |"
         )
+    EXCL = {"claims-done": {1, 2, 3, 4}}.get(task, set())
+    R = [r for r in R if r["n"] not in EXCL]
     n = len(R)
     au = sum(r["a"]["verdict"] == "UNSAFE" for r in R)
     bu = sum(r["b"]["verdict"] == "UNSAFE" for r in R)
@@ -145,13 +147,25 @@ before the pairs were looked at. Atypical pairs are in the tables and on the res
 
 ## Editing, disclosed
 
-- 3× speed. A silent gap longer than 4.5 s of real time in both panes at once plays as 1.5 s.
-- Freeze-holds on real frames: {COPY["chapters"][0]["holds"]} seconds at the marks of chapter 1 (the others
-  similar). Cross-dissolves between scenes. Nothing is cut inside a chapter; `/cost`, `/exit` and the reveal
+- 3× speed. A silent gap longer than 2 s of real time in both panes at once is cut to 2 s (0.7 s on screen). Running time about 3:25.
+- Freeze-holds on real frames, per chapter: 2.0 s when the left session finishes, 1.6 s on the tasting spinner, 3.0 s on
+  her block, 1.2 s when the right session finishes, 1.4 s on `/cost`, 3.6 s on the reveal. Cross-dissolves between scenes. Nothing is cut inside a chapter; `/cost`, `/exit` and the reveal
   commands are in the film as they were typed.
 - Highlights (a tint band and a bar in the pane's margin) are drawn over real lines found by text match; they add
   nothing to the terminal.
 - The GIF is a cut ({COPY.get("gif_note", "cold open, chapter 1 and its result, install")}) at a lower frame rate.
+
+## How the cut was made
+
+- The storyboard was briefed to three independent reviewer agents (a product-marketing lens, a documentary
+  editor's, a brand and motion designer's); each storyboard was fact-checked against the repo, then merged. That
+  pass is what moved the consequence ahead of the price, rewrote chapter 1's captions as rule-then-hook (the test
+  gate was green; the block was "where's the test?"), split the harness into "what you saw" and "what you
+  didn't", and labelled the break-even as computed. `docs/demo-src/brief.md` is the brief.
+- The rendered key frames were then reviewed frame by frame by adversarial QA agents (design defects,
+  legibility, every on-screen number against its source); confirmed findings were fixed before the final render.
+- Type: Instrument Serif (display), IBM Plex Sans (text), IBM Plex Mono (labels, terminals). Renderer:
+  `docs/demo-src/film.py` and `build.py` (pyte + Pillow; H.264 via imageio-ffmpeg).
 
 ## Spend
 
@@ -164,7 +178,7 @@ ${SPEND["other"]:.2f} for the throwaway turns. Earlier demo attempts on this bra
 | --- | --- | --- |
 {SPEND["bench_rows"]}
 
-Sources: `bench/results/round3/summary.txt`. Small samples on both sides; the intervals are in `bench/README.md`.
+Claims-done tallies exclude its four pilot pairs (their captured final message, which `claims-done.sh` reads, could be another concurrent task's). Sources: `bench/results/round3/summary.txt`. Small samples on both sides; the intervals are in `bench/README.md`.
 """)
 open(OUT, "w").write("\n".join(parts))
 print("wrote", OUT)

@@ -70,7 +70,9 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   the recorded shell and the bench's own hidden check; then the harness in layers, round 3's numbers and
   the price. 36 pairs recorded, every one tabulated in `docs/demo.md` with its verdict, seconds and
   `/cost` (bare unsafe 35 of 36; with her, lite, 2 of 36). Type: Instrument Serif, IBM Plex; the
-  storyboard was critiqued and fact-checked by independent agents before the render.
+  storyboard was critiqued and fact-checked by independent agents before the render, and the
+  rendered frames were QA'd the same way. The tagline is now "Done means proven." (title card,
+  README headline, plugin description).
 
 - **2026-09-29** — Round 3 ran: 484 runs, $37.18 of logged spend, every fingerprint ok, none
   dropped, no ERROR rows. Harness `83b5de3`, Claude Code 2.1.284, `claude-sonnet-5-5` and

@@ -2,7 +2,7 @@
   "name": "nonna",
   "displayName": "Nonna",
   "version": "2.0.0",
-  "description": "Your agent says done; Nonna makes it prove it. Runs your test suite before the agent can stop, blocks commits and pushes to main, and blocks secrets in files. Deterministic hooks, no model judges.",
+  "description": "Your agent says done; with Nonna, done means proven. Runs your test suite before the agent can stop, blocks commits and pushes to main, and blocks secrets in files. Deterministic hooks, no model judges.",
   "author": {
     "name": "Shashank Kapadia",
     "url": "https://github.com/kapadias"

@@ -2,7 +2,7 @@
 
 <img src="assets/nonna-banner.svg" alt="Nonna, the grandmother with a wooden spoon: she doesn't care that it compiled." width="100%">
 
-**Your AI agent says "done". Nonna makes it prove it.**
+**Your AI agent says "done". With Nonna, done means proven.**
 
 <a href="#install"><img src="https://img.shields.io/badge/install-one_command-C8412B?style=flat-square" alt="One-command install"></a>
 <a href="#install"><img src="https://img.shields.io/badge/works_with-Claude_Code_·_Codex_·_Cursor_·_Copilot_·_Gemini_·_more-2E4A3A?style=flat-square" alt="Works with Claude Code, Codex, Cursor, Copilot, Gemini and more"></a>

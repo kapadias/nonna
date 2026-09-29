@@ -205,13 +205,44 @@ def color(c, bg):
         return PAPER if bg else INK
 
 
+class DimScreen(pyte.Screen):
+    """pyte drops SGR 2 (faint); Claude Code uses it for ghost text such as its next-prompt suggestion.
+    Track it in the otherwise unused blink attribute so the painter can draw it dim."""
+
+    def select_graphic_rendition(self, *attrs, **kw):
+        rest, k = [], 0
+        while k < len(attrs):
+            a = attrs[k]
+            if (
+                a in (38, 48) and k + 1 < len(attrs) and attrs[k + 1] == 2
+            ):  # truecolour: 38;2;r;g;b
+                rest.extend(attrs[k : k + 5])
+                k += 5
+            elif (
+                a in (38, 48) and k + 1 < len(attrs) and attrs[k + 1] == 5
+            ):  # 256-colour: 38;5;n
+                rest.extend(attrs[k : k + 3])
+                k += 3
+            elif a == 2:
+                self.cursor.attrs = self.cursor.attrs._replace(blink=True)
+                k += 1
+            elif a == 22:
+                self.cursor.attrs = self.cursor.attrs._replace(blink=False)
+                k += 1
+            else:
+                rest.append(a)
+                k += 1
+        if rest or not attrs:
+            super().select_graphic_rendition(*rest, **kw)
+
+
 class Cast:
     """An asciinema v2 cast replayed through pyte into a list of screen states."""
 
     def __init__(self, path):
         L = [json.loads(line) for line in open(path)]
         self.cols, self.rows = L[0]["width"], L[0]["height"]
-        scr = pyte.Screen(self.cols, self.rows)
+        scr = DimScreen(self.cols, self.rows)
         st = pyte.Stream(scr)
         self.states = []  # (t, lines, buffer)
         for e in L[1:]:
@@ -296,7 +327,8 @@ class Painter:
         self.fb = font("mono-sb", size)
         self.fi = font("mono-i", size)
         self.cw = self.f.getlength("M")
-        self.w = int(round(cols * self.cw))
+        self.pad = 12
+        self.w = int(round(cols * self.cw)) + 2 * self.pad
         self.h = rows * lh
         self.fallbacks = [
             font("dvmono", size),
@@ -307,6 +339,8 @@ class Painter:
         self.cache = OrderedDict()
 
     def glyph_font(self, f, ch):
+        if ch in "✓✔":  # Plex Mono draws these like a radical sign
+            return self.fallbacks[2]
         if has_glyph(f, ch):
             return f
         for ff in self.fallbacks:
@@ -322,7 +356,7 @@ class Painter:
         buf = cast.states[i][2]
         im = Image.new("RGB", (self.w, self.h), PAPER)
         d = ImageDraw.Draw(im)
-        cw, lh = self.cw, self.lh
+        cw, lh, pad = self.cw, self.lh, self.pad
         for y in range(self.rows):
             row = buf.get(y, {})
             for x in range(self.cols):
@@ -334,9 +368,16 @@ class Painter:
                     fg, bg = bg, fg
                 if bg == PAPER and lum(fg) > 120:
                     fg = mix(fg, INK, 0.45)
+                if c.blink:  # SGR 2, faint: Claude Code's ghost text
+                    fg = INK3
                 if bg != PAPER:
                     d.rectangle(
-                        [round(x * cw), y * lh, round((x + 1) * cw), (y + 1) * lh],
+                        [
+                            pad + round(x * cw),
+                            y * lh,
+                            pad + round((x + 1) * cw),
+                            (y + 1) * lh,
+                        ],
                         fill=bg,
                     )
                 ch = c.data
@@ -344,11 +385,14 @@ class Painter:
                     continue
                 if ch == "─":
                     yy = y * lh + lh // 2
-                    d.rectangle([round(x * cw), yy, round((x + 1) * cw), yy], fill=INK3)
+                    d.rectangle(
+                        [pad + round(x * cw), yy, pad + round((x + 1) * cw), yy],
+                        fill=INK3,
+                    )
                     continue
                 f = self.fb if c.bold else (self.fi if c.italics else self.f)
                 f = self.glyph_font(f, ch)
-                d.text((x * cw, y * lh + 2), ch, font=f, fill=fg)
+                d.text((pad + x * cw, y * lh + 2), ch, font=f, fill=fg)
         self.cache[key] = im
         if len(self.cache) > 160:
             self.cache.popitem(last=False)
@@ -419,7 +463,10 @@ class Arm:
     def __init__(self, pair_dir, arm, prompt_marker):
         self.cast = Cast(os.path.join(pair_dir, f"{arm}.cast"))
         self.cost = cli_cost(os.path.join(pair_dir, f"{arm}.cost.txt"))
-        m = re.search(r"Total cost:\s*(\$[0-9.]+)", open(os.path.join(pair_dir, f"{arm}.cost.txt")).read())
+        m = re.search(
+            r"Total cost:\s*(\$[0-9.]+)",
+            open(os.path.join(pair_dir, f"{arm}.cost.txt")).read(),
+        )
         self.cost_str = m.group(1) if m else f"${self.cost:.4f}"
         series, self.final = cost_series(
             os.path.join(pair_dir, f"{arm}.transcripts"), prompt_marker
