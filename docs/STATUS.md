@@ -142,8 +142,11 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
     test that failed first):
     - without jq, the write guard reads a `\u0000` escape as the NUL byte it stands for, so a key
       one cuts in two, or UTF-16 text read as JSON, is found there too;
-    - an OpenAI key as long as a real one (a tail of 80 or more; real ones have about 156) is a key
-      wherever it starts, so one right after a kana or a CJK character in UTF-16 text is found;
+    - in text whose NUL bytes are removed, an OpenAI key as long as a real one (a tail of 80 or
+      more; real ones have about 156) is a key wherever it starts, so one right after a kana or a
+      CJK character in UTF-16 text is found. Read everywhere at first, that rule made a long
+      kebab-case name after a word ending in "sk" (a URL slug) a key, which the code re-review
+      found;
     - the scan reads its text in lower case once, reads each key where its prefix starts, in the
       shell, and skips text that holds nothing a pattern needs. On the review's slowest inputs it is
       faster than before either round: 20 KB of Slack sample keys took 3.1 s before the fourth
@@ -152,7 +155,9 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
       its other MEDIUM, a key after a U+0000 in UTF-16 text (a string list), is found by the
       real-length rule above;
     - the TypeScript pack's README says its gate's two `npx` steps ask first, and how to approve
-      them.
+      them;
+    - a key pattern with no literal prefix counts as a key at once: the walk from each prefix had
+      nothing to walk from and would have looped (no pattern has one yet).
   - **Secret scan:** it missed Anthropic keys and OpenAI's `sk-proj-`, `sk-svcacct-` and `sk-admin-`
     keys, which the docs said it caught. The write guard, pre-commit and pre-push now refuse them;
     golden tests hold each key type and a key given as a shell default, a property test holds the

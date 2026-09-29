@@ -165,6 +165,12 @@ printf 'API\343\202\255\343\203\274\343\201\257%s\r\n' "$FAKE_OAI" | utf16le | s
 printf '\345\257\206\351\222\245\346\230\257%s\r\n' "$FAKE_OAI" | utf16le | scan; check "detects an OpenAI key right after a CJK character in UTF-16 text" 0 "$?"
 printf 'word\000%s\000%s' "${FAKE_OAI:0:30}" "${FAKE_OAI:30}" | scan; check "detects an OpenAI key glued to a word by one NUL and cut by another" 0 "$?"
 printf 'ApiKey\000%s\000' "$FAKE_OAI" | utf16le | scan; check "detects an OpenAI key after a U+0000 in UTF-16 text (a string list)" 0 "$?"
+# That rule reads only text whose NUL bytes are gone: in any other text a long kebab-case name after a
+# word ending in "sk" (a URL slug, a resource name) is a name, not a key.
+printf 'see https://docs.acme.io/guides/how-to-mask-admin-credentials-in-logs-when-using-the-new-kubernetes-operator-for-postgres-clusters' | scan; check "a long kebab-case slug after a word ending in sk is not a key" 1 "$?"
+printf 'resource "aws_iam_role" "task-admin-role-for-the-billing-reconciliation-pipeline-in-the-eu-west-1-production-account-v2"' | scan; check "a long kebab-case resource name after a word ending in sk is not a key" 1 "$?"
+# A key pattern with no literal prefix cannot be walked: it counts as a key at once, never loops.
+timeout 10 bash -c '. "$1"; _nonna_real_key ab "[0-9]{2}"' _ "$HOOKS/lib/secret-patterns.sh"; check "a key pattern with no literal prefix counts as a key, and ends" 0 "$?"
 # Every place a key's prefix starts is read, overlapping ones too: a sample in front of a real key does
 # not cover it when their prefixes share letters (xoxoxb-).
 printf 'k = "xoxb-XXXXXXXXXXXXxo%s%s"' 'xox' 'b-1234567890-abcdefghij' | scan; check "a sample whose prefix overlaps a real key's does not cover it" 0 "$?"

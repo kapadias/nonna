@@ -38,10 +38,11 @@ _nonna_is_placeholder() {
 # for the key ERE: a key's prefix and its shortest tail, in lower case, as the scan's text is. Only
 # that is read, in the shell (no process per key): a sample word before a key, or glued after it,
 # leaves a real key real, and a sample glued in front of one does not cover it. A match too long to
-# walk, or with no key in it to read, counts as a key: the scan fails closed.
+# walk, a key ERE with no literal prefix to walk from, or a match with no key in it to read, counts
+# as a key: the scan fails closed.
 _nonna_real_key() {
   local rest="$1" re="^($2)" lead="${2%%[[(]*}" at seen=""
-  [ "${#1}" -le 512 ] || return 0
+  [ "${#1}" -le 512 ] && [ -n "$lead" ] || return 0
   while :; do
     case "$rest" in *"$lead"*) ;; *) break ;; esac
     at="$lead${rest#*"$lead"}"
@@ -89,15 +90,16 @@ nonna_scan_secrets() {
   case "$raw" in
     *$'\001'*)
       _nonna_scan_text "$(printf '%s' "$raw" | LC_ALL=C tr '\001' ' ')" \
-        || _nonna_scan_text "$(printf '%s' "$raw" | LC_ALL=C tr -d '\001')"
+        || _nonna_scan_text "$(printf '%s' "$raw" | LC_ALL=C tr -d '\001')" glued
       ;;
     *) _nonna_scan_text "$raw" ;;
   esac
 }
 
-# _nonna_scan_text <text>  -> the patterns, in order: the first class that matches, and 0.
+# _nonna_scan_text <text> [glued]  -> the patterns, in order: the first class that matches, and 0.
+#   "glued": the text is a reading with its NUL bytes deleted.
 _nonna_scan_text() {
-  local text="$1" rc=0
+  local text="$1" glued="${2:-}" rc=0
   [ -n "$text" ] || return 1
   # One pass first for what some pattern below must contain: text with none of it (most binary files)
   # holds no key. Only grep's own "none" (1) skips the patterns; a failed grep reads them all.
@@ -119,9 +121,11 @@ _nonna_scan_text() {
   # after a shell or compose default (${VAR:-key}, ${1-key}, ${a[0]-key}, ${?-key}, ${!ref-key}).
   local tok='(^|[^A-Za-z0-9-]|:-|%[0-9A-Fa-f]{2}|\{!?([A-Za-z_][A-Za-z0-9_]*|[0-9]+|[@*#?$!-])(\[[^]]*\])?-|\\[bfnrt]|\\u[0-9A-Fa-f]{4})'
   if _nonna_match 'OpenAI API key' "${tok}sk-(proj|svcacct|admin)-[A-Za-z0-9_-]{40,}" "$text" 'sk-(proj|svcacct|admin)-[a-z0-9_-]{40}'; then return 0; fi
-  # One as long as a real key (a tail of 80 or more; real ones have about 156) is a key wherever it
-  # starts: no name runs that long, and in UTF-16 text a kana's high byte ("0") is glued to the key.
-  if _nonna_match 'OpenAI API key' 'sk-(proj|svcacct|admin)-[A-Za-z0-9_-]{80,}' "$text" 'sk-(proj|svcacct|admin)-[a-z0-9_-]{40}'; then return 0; fi
+  # Where the NUL bytes are gone, one as long as a real key (a tail of 80 or more; real ones have
+  # about 156) is a key wherever it starts: in UTF-16 text a kana's high byte ("0") is glued to the
+  # key, and so is a string list's last name. Elsewhere a name can run that long (a URL slug after
+  # "mask-admin-"), so only there.
+  if [ -n "$glued" ] && _nonna_match 'OpenAI API key' 'sk-(proj|svcacct|admin)-[A-Za-z0-9_-]{80,}' "$text" 'sk-(proj|svcacct|admin)-[a-z0-9_-]{40}'; then return 0; fi
   if _nonna_match 'Anthropic API key' 'sk-ant-[a-z]+[0-9]{2}-[A-Za-z0-9_-]{40,}' "$text" 'sk-ant-[a-z]+[0-9]{2}-[a-z0-9_-]{40}'; then return 0; fi
   if _nonna_match 'private key block' '-----BEGIN [A-Z ]*PRIVATE KEY-----' "$text"; then return 0; fi
   if _nonna_match 'hardcoded secret assignment' '(api[_-]?key|secret|token|password|passwd)[[:space:]]*[:=][[:space:]]*"[^"]{16,}"' "$text"; then return 0; fi
