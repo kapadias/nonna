@@ -308,7 +308,9 @@ the repository gets them, plugin or not.
   nothing that is already there, links the hooks and records the mode.
 - **The mode travels with the files.** A clone has no `.git/config` record of its own, so it goes by
   what the repository carries: the hooks and the rules run full, the hooks alone run lite.
-  `--mode lite` over a full install changes only the clone where you run it.
+  `--mode lite` over a full install changes only the clone where you run it. A teammate who also has
+  the plugin gets the plugin's mode in their clone, because its first session records it as the
+  clone's default; `git config nonna.mode full` in their clone keeps full.
 - **The test command is detected each time** instead of recorded, unless you set `nonna.testCmd`.
 - **Only a copy-in formats on edit.** After each edit, it runs the formatter it finds (ruff,
   prettier, gofmt, rustfmt, shfmt) on that file. The plugin never formats your files: it would

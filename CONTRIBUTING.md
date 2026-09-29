@@ -142,8 +142,10 @@ A unit of work is **done** only when the **five mirrors** agree
 `/sync` reconciles drift across the five mirrors. This repository carries the hooks and the rules,
 so unless you set another mode, Nonna runs in full mode here: her pre-push hook refuses a push that
 changes code but not `docs/STATUS.md`. Keep it current. If you also have the Nonna plugin installed,
-its hooks run here too, in the plugin's mode (lite unless you changed it); `git config nonna.mode
-full` in your clone puts both in full mode.
+its first session in your clone records the plugin's mode (lite unless you changed it) as the
+clone's default, and that outranks what the repository carries. So Nonna runs lite here, and her
+pre-push hook stops refusing a push that leaves `docs/STATUS.md` alone. `git config nonna.mode full`
+in your clone puts her back in full mode.
 
 ## How to propose a change
 
