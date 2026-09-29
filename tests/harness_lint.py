@@ -909,28 +909,48 @@ if FACTS:
     for key in sorted(HEADLINE_FACTS - seen_facts):
         bad(f"README.md: the headline number '{key}' is no longer marked")
 # An alt text cannot carry marks, so the scorecard's says what the image says: its <title> and
-# <desc>, which build.py writes from the same rows (and --check holds the image to them).
-for n, line in enumerate(README_TEXT.splitlines(), 1):
-    alt = re.search(r'<img src="assets/scorecard\.svg"[^>]*\balt="([^"]*)"', line)
-    if not alt:
-        continue
+# <desc>, which build.py writes from the same rows (and --check holds the image to them). The
+# README shows the image as an <img> (its attributes in any order, the tag over any lines) or as
+# a markdown image, and every alt text it gives it is compared. The check cannot end silently: a
+# README that names the file and gets no alt text compared fails.
+SCORECARD = "assets/scorecard.svg"
+# Each place the README shows the scorecard: its offset in the README and its alt text (None: none).
+shown: list[tuple[int, str | None]] = []
+for tag in re.finditer(
+    r'<img\b[^>]*\bsrc="assets/scorecard\.svg"[^>]*>', README_TEXT, re.I
+):
+    alt = re.search(r'\balt="([^"]*)"', tag.group(0), re.I)
+    shown.append((tag.start(), alt.group(1) if alt else None))
+for md in re.finditer(r"!\[([^\]]*)\]\(assets/scorecard\.svg[^)]*\)", README_TEXT):
+    shown.append((md.start(), md.group(1)))
+if SCORECARD in README_TEXT:
     try:
-        with open(f"{ROOT}/assets/scorecard.svg", encoding="utf-8") as fh:
+        with open(f"{ROOT}/{SCORECARD}", encoding="utf-8") as fh:
             svg = fh.read()
     except FileNotFoundError:
-        bad(f"README.md:{n}: shows assets/scorecard.svg, which is missing")
-        continue
-    title = re.search(r"<title[^>]*>(.*?)</title>", svg, re.S)
-    desc = re.search(r"<desc[^>]*>(.*?)</desc>", svg, re.S)
-    says = (
-        f"{html.unescape(title.group(1))}. {html.unescape(desc.group(1))}"
-        if title and desc
-        else None
-    )
-    if html.unescape(alt.group(1)) != says:
-        bad(
-            f"README.md:{n}: the scorecard's alt text is not the image's own <title>. <desc>: {says!r}"
+        bad(f"README.md: shows {SCORECARD}, which is missing")
+    else:
+        title = re.search(r"<title[^>]*>(.*?)</title>", svg, re.S)
+        desc = re.search(r"<desc[^>]*>(.*?)</desc>", svg, re.S)
+        says = (
+            f"{html.unescape(title.group(1))}. {html.unescape(desc.group(1))}"
+            if title and desc
+            else None
         )
+        for at, alt in sorted(shown, key=lambda s: s[0]):
+            n = README_TEXT.count("\n", 0, at) + 1
+            if alt is None:
+                bad(
+                    f"README.md:{n}: the scorecard <img> has no alt text, which must be the image's own <title>. <desc>: {says!r}"
+                )
+            elif html.unescape(alt) != says:
+                bad(
+                    f"README.md:{n}: the scorecard's alt text is not the image's own <title>. <desc>: {says!r}"
+                )
+        if not shown:
+            bad(
+                f"README.md: names {SCORECARD}, but not in an <img> or a markdown image the lint can read, so it compared no alt text"
+            )
 
 if offenders:
     print("Harness lint FAILED:")
