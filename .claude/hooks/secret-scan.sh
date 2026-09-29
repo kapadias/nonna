@@ -174,9 +174,11 @@ if command -v jq >/dev/null 2>&1; then
   file="$(printf '%s' "$payload" | jq -r '.tool_input.file_path // empty' 2>/dev/null || true)"
   # Fixtures/tests/examples may legitimately contain sample secrets (anchored).
   if nonna_is_test_path "$file"; then exit 0; fi
+  # jq writes \u0000 as a NUL byte, which the shell would drop, gluing a key to the text before it:
+  # it reaches the scan as \001, which the scan reads both ways (lib/secret-patterns.sh).
   content="$(printf '%s' "$payload" \
-    | jq -r '[.tool_input.content // empty, .tool_input.new_string // empty, (.tool_input.edits[]?.new_string // empty)] | join("\n")' \
-      2>/dev/null || true)"
+    | jq -r '[.tool_input.content // empty, .tool_input.new_string // empty, (.tool_input.edits[]?.new_string // empty)] | join("\n")' 2>/dev/null \
+    | LC_ALL=C tr '\000' '\001' || true)"
 else
   # No jq: the sed fallback truncates escaped JSON strings, which would FAIL OPEN
   # on a secret. Scan the RAW payload instead — a secret's characters survive

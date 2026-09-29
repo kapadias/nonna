@@ -142,7 +142,9 @@ fi
 # lib/secret-patterns.sh.
 # Added lines, with file headers dropped by position (between "diff " and the first "@@"), never by
 # text: an octopus merge prints a line added over all parents as "+++", and content can start "++ ".
-added_lines() { LC_ALL=C awk '/^diff /{h=1} h && /^@@/{h=0; next} !h && /^\+/' "$1"; }
+# NUL bytes (UTF-16 text, a binary file) reach the scan as \001, which it reads both ways, and never
+# reach awk, which may end a line at one.
+added_lines() { LC_ALL=C tr '\000' '\001' < "$1" | LC_ALL=C awk '/^diff /{h=1} h && /^@@/{h=0; next} !h && /^\+/'; }
 "${LOG[@]}" -p -U0 "${revs[@]}" > "$tmp/patch" || unreadable
 if class="$(added_lines "$tmp/patch" | nonna_scan_secrets)"; then
   fail=1

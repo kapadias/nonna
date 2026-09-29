@@ -58,16 +58,16 @@ while IFS= read -r -d '' f; do
       ;;
   esac
   # A file name is never pathspec magic, a NUL byte never makes a file "binary", and a diff that
-  # cannot be read is a stop, not a clean bill. The NUL bytes become spaces here: a gap, so a key
-  # after one is not glued to the text before it, and a staged image draws no shell warning;
-  # pipefail keeps git's failure. tr reads bytes (LC_ALL=C): macOS's tr refuses bytes that are not
-  # text in the user's locale.
-  if ! diff="$(git --literal-pathspecs -c core.quotePath=false diff --cached --text --no-color --no-ext-diff --no-textconv -U0 -- "$f" | LC_ALL=C tr '\000' ' ')"; then
+  # cannot be read is a stop, not a clean bill. The NUL bytes become \001 here, which the scan reads
+  # both as a gap and as nothing (lib/secret-patterns.sh), and a staged image draws no shell warning;
+  # pipefail keeps git's failure. tr and grep read bytes (LC_ALL=C): macOS's refuse bytes that are
+  # not text in the user's locale.
+  if ! diff="$(git --literal-pathspecs -c core.quotePath=false diff --cached --text --no-color --no-ext-diff --no-textconv -U0 -- "$f" | LC_ALL=C tr '\000' '\001')"; then
     echo "✗ Nonna: I could not read what you staged in '$f', so I cannot vouch for it. (pre-commit: git diff failed.)" >&2
     fail=1
     continue
   fi
-  added="$(printf '%s\n' "$diff" | grep -aE '^\+' | grep -avE '^\+\+\+ ' || true)"
+  added="$(printf '%s\n' "$diff" | LC_ALL=C grep -aE '^\+' | LC_ALL=C grep -avE '^\+\+\+ ' || true)"
   [ -n "$added" ] || continue
   if class="$(printf '%s' "$added" | nonna_scan_secrets)"; then
     echo "✗ Nonna: you don't leave the house key under the mat. (pre-commit: '$f' stages what looks like $(nonna_a "$class") — remove it and rotate it.)" >&2

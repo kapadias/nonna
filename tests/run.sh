@@ -117,14 +117,45 @@ contains "names the OpenAI class, not the value" "OpenAI API key" "$out"
 # A key inside a compiled or length-prefixed file sits right after its length byte, and a 108-character
 # key's is "l": an Anthropic key needs no token start (its shape is specific enough alone).
 ( . "$HOOKS/lib/secret-patterns.sh"; printf 'zl%s' "$FAKE_ANT" | nonna_scan_secrets ) >/dev/null; check "detects an Anthropic key glued to a length byte (.pyc, .class, protobuf)" 0 "$?"
-# OpenAI's prefixed keys keep their token start, so it counts every way a shell or a URL can put one there.
-for k in '${1-%s}' '${a[0]-%s}' '${@-%s}' 'u=%%3D%s' 'Authorization: Bearer%%20%s'; do
-  # shellcheck disable=SC2059 # the format is the input under test: %s marks where the key goes
-  ( . "$HOOKS/lib/secret-patterns.sh"; printf "$k" "$FAKE_OAI" | nonna_scan_secrets ) >/dev/null
-  check "detects an OpenAI key in: $k" 0 "$?"
-done
-# A NUL is a gap, not nothing: dropping it would glue the key to what came before.
-( . "$HOOKS/lib/secret-patterns.sh"; printf 'abc\000%s' "$FAKE_OAI" | nonna_scan_secrets ) >/dev/null; check "detects a key right after a NUL byte" 0 "$?"
+# scan: the scanner's verdict on what it reads (0: a key), in a subshell so what it defines stays there.
+scan() { ( . "$HOOKS/lib/secret-patterns.sh"; nonna_scan_secrets ) >/dev/null; }
+# OpenAI's prefixed keys keep their token start, so it counts every way a shell or a URL can put one
+# there, a shell's special parameters included.
+printf '${1-%s}' "$FAKE_OAI" | scan; check "detects an OpenAI key in: \${1-key}" 0 "$?"
+printf '${a[0]-%s}' "$FAKE_OAI" | scan; check "detects an OpenAI key in: \${a[0]-key}" 0 "$?"
+printf '${@-%s}' "$FAKE_OAI" | scan; check "detects an OpenAI key in: \${@-key}" 0 "$?"
+printf '${?-%s}' "$FAKE_OAI" | scan; check "detects an OpenAI key in: \${?-key}" 0 "$?"
+printf '${!-%s}' "$FAKE_OAI" | scan; check "detects an OpenAI key in: \${!-key}" 0 "$?"
+printf '${$-%s}' "$FAKE_OAI" | scan; check "detects an OpenAI key in: \${\$-key}" 0 "$?"
+printf '${#-%s}' "$FAKE_OAI" | scan; check "detects an OpenAI key in: \${#-key}" 0 "$?"
+printf 'u=%%3D%s' "$FAKE_OAI" | scan; check "detects an OpenAI key in: u=%3Dkey" 0 "$?"
+printf 'Authorization: Bearer%%20%s' "$FAKE_OAI" | scan; check "detects an OpenAI key in: Bearer%20key" 0 "$?"
+# The placeholder rule reads the key alone, never the text around it: a sample word in the name before
+# it, or glued after it, does not make a real key a sample.
+printf '${SAMPLE-%s}' "$FAKE_OAI" | scan; check "a sample word in a default's name does not exempt a key: \${SAMPLE-key}" 0 "$?"
+printf '${OPENAI_KEY_DUMMY-%s}' "$FAKE_OAI" | scan; check "a sample word in a default's name does not exempt a key: \${OPENAI_KEY_DUMMY-key}" 0 "$?"
+printf '${k[FAKE]-%s}' "$FAKE_OAI" | scan; check "a sample word in a subscript does not exempt a key: \${k[FAKE]-key}" 0 "$?"
+printf '${k[${x}]-%s}' "$FAKE_OAI" | scan; check "a reference in a subscript does not exempt a key: \${k[\${x}]-key}" 0 "$?"
+printf 'k = "%sEXAMPLE"' "$FAKE_OAI" | scan; check "a sample word glued after an OpenAI key does not exempt it" 0 "$?"
+printf 'k = "%s_EXAMPLE"' "$FAKE_OAI" | scan; check "a sample word glued after an OpenAI key does not exempt it (_EXAMPLE)" 0 "$?"
+printf 'k = "%sEXAMPLE"' "$FAKE_ANT" | scan; check "a sample word glued after an Anthropic key does not exempt it" 0 "$?"
+printf 'k = "ghp_%sEXAMPLE"' 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' | scan; check "a sample word glued after a GitHub token does not exempt it" 0 "$?"
+# Every key in a match is read: a sample glued in front of a real key does not cover it.
+printf 'k = "sk-proj-%s%s"' 'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX' "$FAKE_OAI" | scan; check "a sample glued in front of a real key does not exempt it" 0 "$?"
+# A sample word at the start of the key's own body still makes it a sample.
+printf 'ANTHROPIC_API_KEY=sk-ant-api03-%s' 'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX' | scan; check "a 48-character placeholder Anthropic key (XXXX) is exempt" 1 "$?"
+printf 'OPENAI_API_KEY=sk-proj-%s' 'your-project-key-goes-here-and-it-is-this-long' | scan; check "a long placeholder OpenAI key (your-...) is exempt" 1 "$?"
+printf 'OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-proj-%s}' 'your-project-key-goes-here-and-it-is-this-long' | scan; check "a placeholder key given as a default is exempt" 1 "$?"
+# A NUL is a gap to one reading and nothing to the other, and the scan reads both: a key right after a
+# NUL is not glued to what came before it, and UTF-16 text, or a key a NUL cuts in two, is read whole.
+printf 'abc\000%s' "$FAKE_OAI" | scan; check "detects a key right after a NUL byte" 0 "$?"
+printf 'k = "%s\000%s"' "${FAKE_OAI:0:30}" "${FAKE_OAI:30}" | scan; check "detects an OpenAI key a NUL byte cuts in two" 0 "$?"
+printf 'k = "%s\000%s"' "${FAKE_ANT:0:30}" "${FAKE_ANT:30}" | scan; check "detects an Anthropic key a NUL byte cuts in two" 0 "$?"
+utf16le() { printf '\377\376'; iconv -f UTF-8 -t UTF-16LE; }  # what Windows PowerShell 5.1's > writes
+printf 'OPENAI=%s\r\n' "$FAKE_OAI" | utf16le | scan; check "detects an OpenAI key in UTF-16 text" 0 "$?"
+printf 'ANTHROPIC=%s\r\n' "$FAKE_ANT" | utf16le | scan; check "detects an Anthropic key in UTF-16 text" 0 "$?"
+printf 'AWS=%s\r\n' "$FAKE_AWS" | utf16le | scan; check "detects an AWS access key id in UTF-16 text" 0 "$?"
+printf -- '-----BEGIN RSA PRIVATE %s-----\r\n' KEY | utf16le | scan; check "detects a private key block in UTF-16 text" 0 "$?"
 # macOS's grep reads its input in the user's locale and gives up on bytes that are not text there; a scan
 # that gave up would pass the key. The patterns are ASCII, so the scan reads bytes (LC_ALL=C).
 BSDGREP="$(mktemp -d)"; REALGREP="$(command -v grep)"
@@ -158,6 +189,33 @@ res="$( . "$HOOKS/lib/secret-patterns.sh"
   done
   echo "$n cases, $bad wrong" )"
 check "property: a vendor-prefixed key is found iff its tail has 40+ characters" "77 cases, 0 wrong" "$res"
+# Property: for a key over any tail, a NUL anywhere in it, UTF-16, and a sample word before it or glued
+# after it never hide it, and a sample word at the start of its tail always makes it a sample. The keys,
+# words and cut points come from a seeded generator, so a failure replays. (Bash 3.2 reads no comment
+# inside a command substitution and ends one at the bracket closing a case pattern, so each pattern
+# below opens with a bracket too, and no comment goes inside.)
+res="$( . "$HOOKS/lib/secret-patterns.sh"
+  alpha='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-'; seed=20260930; n=0; bad=0
+  words=(XXXX EXAMPLE YOUR_ CHANGEME DUMMY REDACTED PLACEHOLDER FAKE SAMPLE)
+  draw() { seed=$(( (seed * 1103515245 + 12345) & 0x7fffffff )); r=$(( seed >> 16 )); }
+  for p in sk-ant-api03- sk-ant-admin01- sk-ant-oat01- sk-ant-ort01- sk-proj- sk-svcacct- sk-admin-; do
+    for round in 1 2; do
+      t=''; for ((i = 0; i < 95; i++)); do draw; t="$t${alpha:$(( r % 64 )):1}"; done
+      k="$p$t"; draw; w="${words[$(( r % 9 ))]}"; draw; c=$(( 1 + r % (${#k} - 1) ))
+      for form in nul utf16 before after start; do
+        case "$form" in
+          (nul) printf 'k = "%s\000%s"' "${k:0:$c}" "${k:$c}" | nonna_scan_secrets >/dev/null; got=$?; want=0 ;;
+          (utf16) printf 'k = "%s"\r\n' "$k" | utf16le | nonna_scan_secrets >/dev/null; got=$?; want=0 ;;
+          (before) printf 'K="${%s-%s}"' "$w" "$k" | nonna_scan_secrets >/dev/null; got=$?; want=0 ;;
+          (after) printf 'k = "%s%s"' "$k" "$w" | nonna_scan_secrets >/dev/null; got=$?; want=0 ;;
+          (start) printf 'k = "%s%s%s"' "$p" "$w" "${t:${#w}}" | nonna_scan_secrets >/dev/null; got=$?; want=1 ;;
+        esac
+        n=$((n + 1)); [ "$got" = "$want" ] || { bad=$((bad + 1)); echo "wrong: $form $p $w round $round" >&2; }
+      done
+    done
+  done
+  echo "$n cases, $bad wrong" )"
+check "property: a NUL, UTF-16 or a sample word around a key never hides it; one at its start makes it a sample" "70 cases, 0 wrong" "$res"
 
 echo "== secret-scan.sh (PreToolUse write gate) =="
 SS="$HOOKS/secret-scan.sh"
@@ -168,6 +226,9 @@ printf '%s' '{"tool_name":"Edit","tool_input":{"file_path":"app.js","old_string"
 out="$(printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"config.py","content":"KEY = \"'"$FAKE_ANT"'\""}}' | "$SS" 2>&1)"; check "blocks an Anthropic key in Write content" 2 "$?"
 contains "the block names the Anthropic class, with its article" "looks like an Anthropic API key" "$out"
 printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"config.py","content":"KEY = \"'"$FAKE_OAI"'\""}}' | "$SS" 2>/dev/null; check "blocks an OpenAI sk-proj- key in Write content" 2 "$?"
+# jq writes \u0000 as a NUL byte, which the shell would drop, gluing the key to the text before it.
+printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"config.py","content":"x\u0000'"$FAKE_OAI"'"}}' | "$SS" 2>/dev/null; check "blocks a key right after a NUL byte in Write content" 2 "$?"
+printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"config.py","content":"k = \"'"${FAKE_ANT:0:30}"'\u0000'"${FAKE_ANT:30}"'\""}}' | "$SS" 2>/dev/null; check "blocks a key a NUL byte cuts in two in Write content" 2 "$?"
 printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"tests/fixtures/keys.py","content":"KEY = \"'"$FAKE_ANT"'\""}}' | "$SS"; check "allows an Anthropic key under a test/fixture path" 0 "$?"
 printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"docs/keys.md","content":"Anthropic keys start with sk-ant- and OpenAI project keys with sk-proj-."}}' | "$SS"; check "allows a short sk-ant- mention in prose" 0 "$?"
 printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"a.py"}}' | "$SS"; check "no content -> allow (fail safe)" 0 "$?"
@@ -732,6 +793,12 @@ echo 'KEY = "'"$FAKE_AWS"'"' > "$T2/café.py"; echo t >> "$T2/docs/STATUS.md"
 ( cd "$T2" && "$RS" ) 2>/dev/null; check "pre-push: a non-ASCII file name does not hide a secret" 1 "$?"
 ( cd "$T2" && GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=color.ui GIT_CONFIG_VALUE_0=always GIT_CONFIG_KEY_1=diff.external GIT_CONFIG_VALUE_1=true "$RS" ) 2>/dev/null
 check "pre-push: color.ui=always and diff.external do not hide a secret" 1 "$?"
+# UTF-16 text holds a NUL after every ASCII character: its lines are scanned too.
+"${GIT[@]}" -C "$T2" reset -q --hard HEAD~1
+printf 'OPENAI_API_KEY = "%s"\r\n' "$FAKE_OAI" | utf16le > "$T2/deploy.ps1"; echo u >> "$T2/docs/STATUS.md"
+"${GIT[@]}" -C "$T2" add -A; "${GIT[@]}" -C "$T2" commit -q -m utf16
+out="$(cd "$T2" && "$RS" 2>&1)"; check "pre-push: a key in a UTF-16 file is blocked" 1 "$?"
+contains "pre-push: names the UTF-16 file and its key" "deploy.ps1 introduces what looks like an OpenAI API key" "$out"
 rm -rf "$T2" "$B2"
 # A fresh repo with a pushed base, for the cases below: $1 = the dir, $2 = its bare remote.
 push_fixture() {
@@ -940,6 +1007,15 @@ out="$("${GIT[@]}" -C "$TMP" commit -q -m logo 2>&1)"; check "pre-commit: allows
 printf 'PNG\000%s\000data\n' "$FAKE_OAI" > "$TMP/src/glued.bin"; "${GIT[@]}" -C "$TMP" add -A
 "${GIT[@]}" -C "$TMP" commit -q -m glued 2>/dev/null; check "pre-commit: a key between NUL bytes in a binary file is blocked" 1 "$?"
 "${GIT[@]}" -C "$TMP" reset -q; rm -f "$TMP/src/glued.bin"
+# UTF-16 text (what Windows PowerShell 5.1's > writes) holds a NUL after every ASCII character, and a
+# key a NUL cuts in two is still a key: the scan reads each NUL as a gap and as nothing.
+printf 'OPENAI_API_KEY = "%s"\r\n' "$FAKE_OAI" | utf16le > "$TMP/src/deploy.ps1"; "${GIT[@]}" -C "$TMP" add -A
+out="$("${GIT[@]}" -C "$TMP" commit -q -m utf16 2>&1)"; check "pre-commit: a key in a UTF-16 file is blocked" 1 "$?"
+contains "pre-commit: names the UTF-16 file and its key" "'src/deploy.ps1' stages what looks like an OpenAI API key" "$out"
+"${GIT[@]}" -C "$TMP" reset -q; rm -f "$TMP/src/deploy.ps1"
+printf 'k = "%s\000%s"\n' "${FAKE_ANT:0:30}" "${FAKE_ANT:30}" > "$TMP/src/cut.py"; "${GIT[@]}" -C "$TMP" add -A
+"${GIT[@]}" -C "$TMP" commit -q -m cut 2>/dev/null; check "pre-commit: a key a NUL byte cuts in two is blocked" 1 "$?"
+"${GIT[@]}" -C "$TMP" reset -q; rm -f "$TMP/src/cut.py"
 # macOS's tr reads its input in the locale: bytes that are not UTF-8 are an error, unless LC_ALL=C.
 BSDTR="$(mktemp -d)"; REALTR="$(command -v tr)"
 cat > "$BSDTR/tr" <<EOF
@@ -2152,6 +2228,10 @@ done
 printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"c.py","content":"K = \"'"$FAKE_AWS"'\""}}' | PATH="$NOJQ" "$SS"; check "secret-scan: blocks a secret when jq is absent" 2 "$?"
 # The raw payload writes a newline as backslash-n, so a key that starts a line follows a letter there.
 printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"c.py","content":"x = 1\n'"$FAKE_ANT"'\n"}}' | PATH="$NOJQ" "$SS" 2>/dev/null; check "secret-scan: blocks a key that starts a line when jq is absent" 2 "$?"
+# JSON writes a control character as an escape: in the raw payload \f, \b or \u0000 before a key is a gap.
+printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"c.py","content":"x\f'"$FAKE_OAI"'"}}' | PATH="$NOJQ" "$SS" 2>/dev/null; check "secret-scan: blocks a key after a \\f escape when jq is absent" 2 "$?"
+printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"c.py","content":"x\b'"$FAKE_OAI"'"}}' | PATH="$NOJQ" "$SS" 2>/dev/null; check "secret-scan: blocks a key after a \\b escape when jq is absent" 2 "$?"
+printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"c.py","content":"x\u0000'"$FAKE_OAI"'"}}' | PATH="$NOJQ" "$SS" 2>/dev/null; check "secret-scan: blocks a key after a \\u0000 escape when jq is absent" 2 "$?"
 rm -rf "$NOJQ"
 # Branch guard tolerates global options and blocks wide pushes.
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; "${GIT[@]}" -C "$TMP" commit -q --allow-empty -m init; "${GIT[@]}" -C "$TMP" branch -M main

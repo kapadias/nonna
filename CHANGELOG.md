@@ -254,10 +254,14 @@ Your AI agent says "done"; Nonna makes it prove it.
   `sk-ant-admin01-`, the OAuth tokens (`sk-ant-oat01-`, `sk-ant-ort01-`) and OpenAI's `sk-proj-`,
   `sk-svcacct-` and `sk-admin-` keys passed the write guard, the pre-commit hook and the pre-push
   scan. All are refused now: on a Mac too (a byte that is not text in the user's locale no longer
-  ends the scan), given as a shell or compose default (`${VAR:-key}`), after a NUL byte, and an
-  Anthropic key even inside a compiled file. The tail must be 40 or more characters, and an OpenAI
-  key must start a word, so `sk-ant-` in prose, a short sample, a word like
-  `task-admin-permissions-console` and a name like `sk-admin-panel-header` are not keys.
+  ends the scan), given as a shell or compose default (`${VAR:-key}`, `${?-key}`), after a NUL byte
+  or cut by one, in UTF-16 text (what Windows PowerShell writes), and an Anthropic key even inside a
+  compiled file. The tail must be 40 or more characters, and an OpenAI key must start a word, so
+  `sk-ant-` in prose, a short sample, a word like `task-admin-permissions-console` and a name like
+  `sk-admin-panel-header` are not keys.
+- **A sample word next to a real key no longer made it a sample.** The placeholder rule (`XXXX`,
+  `EXAMPLE`, `your-` and the like) read the whole match, so a key given as `${SAMPLE-key}`, or with
+  `EXAMPLE` glued after it, passed. It reads only the key's own start now.
 
 ## [1.0.0] — 2026-08-01 — "The Model Cannot Ship Itself"
 
