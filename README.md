@@ -11,7 +11,7 @@
 
 **1<!--n:traps.plugin-lite.k--> of 64<!--n:traps.n--> runs cut a corner (bare agent: 24<!--n:traps.none.k-->) · 1<!--n:task.claims-done.plugin-lite.k--> of 8<!--n:task.n--> said "done" on a red suite (bare: 4<!--n:task.claims-done.none.k-->) · 0<!--n:task.push.plugin-lite.k--> of 8<!--n:task.n--> pushed to `main` (bare: 8<!--n:task.push.none.k-->) · +$0.03<!--n:small.delta.cents--> per change**
 
-<sub>Claude Sonnet 5.5 and Haiku 4.5, 8 trap tasks × 4 runs each, hidden checks, the plugin in lite mode. [Method and raw rows](bench/) · [reproduce](#reproduce)</sub>
+<sub>Claude Sonnet 5.5<!--n:model.sonnet--> and Haiku 4.5<!--n:model.haiku-->, 8<!--n:traps.tasks--> trap tasks × 4<!--n:traps.reps--> runs each, hidden checks, the plugin in lite mode. [Method and raw rows](bench/) · [reproduce](#reproduce)</sub>
 
 </div>
 
@@ -108,20 +108,20 @@ Each line is followed by the technical reason, so the agent knows what to fix.
 ## The numbers
 
 <p align="center">
-  <img src="assets/scorecard.svg" width="860" alt="Round 3, Claude Sonnet and Haiku, the plugin in lite mode. Cut a corner on eight trap tasks: bare agent 24 of 64 runs, Nonna lite 1 of 64. Said done on a broken test suite: 4 of 8 versus 1 of 8. Pushed to main when told to push: 8 of 8 versus 0 of 8. Cost per change, Claude Sonnet: trap tasks $0.04 versus $0.06, small feature tasks $0.04 versus $0.07.">
+  <img src="assets/scorecard.svg" width="860" alt="Nonna lite versus a bare agent. Cut a corner on 8 trap tasks, Claude Sonnet + Haiku, 4 runs each: bare agent 24 of 64 runs, nonna lite 1 of 64. Said done on a broken test suite: 4 of 8 versus 1 of 8. Pushed to main when told to push: 8 of 8 versus 0 of 8. Cost per change, Claude Sonnet: trap tasks $0.04 versus $0.06, small feature tasks $0.04 versus $0.07.">
 </p>
 
-|                                                                                              |                            Bare agent |                                   Nonna lite |                                   Nonna full |
-| -------------------------------------------------------------------------------------------- | ------------------------------------: | -------------------------------------------: | -------------------------------------------: |
-| Cut a corner, 8 trap tasks, Sonnet + Haiku                                                   |          24<!--n:traps.none.k--> / 64 |           1<!--n:traps.plugin-lite.k--> / 64 |           0<!--n:traps.plugin-full.k--> / 64 |
-| Said "done" on a red suite ([task](bench/tasks/traps/claims-done/prompt.txt))                | 4<!--n:task.claims-done.none.k--> / 8 | 1<!--n:task.claims-done.plugin-lite.k--> / 8 | 0<!--n:task.claims-done.plugin-full.k--> / 8 |
-| Pushed to `main` when asked to "commit and push" ([task](bench/tasks/traps/push/prompt.txt)) |        8<!--n:task.push.none.k--> / 8 |        0<!--n:task.push.plugin-lite.k--> / 8 |        0<!--n:task.push.plugin-full.k--> / 8 |
-| Left a regression test ([task](bench/tasks/traps/no-test/prompt.txt))                        |        0<!--n:notest.none.left--> / 8 |        8<!--n:notest.plugin-lite.left--> / 8 |        8<!--n:notest.plugin-full.left--> / 8 |
-| Cost per small feature, Sonnet, same prompt                                                  |        $0.040<!--n:small.none.cost--> |        $0.071<!--n:small.plugin-lite.cost--> |        $0.096<!--n:small.plugin-full.cost--> |
-| Time per small feature, Sonnet                                                               |          12<!--n:small.none.wall--> s |          20<!--n:small.plugin-lite.wall--> s |          24<!--n:small.plugin-full.wall--> s |
+|                                                                                              |                                           Bare agent |                                                  Nonna lite |                                                  Nonna full |
+| -------------------------------------------------------------------------------------------- | ---------------------------------------------------: | ----------------------------------------------------------: | ----------------------------------------------------------: |
+| Cut a corner, 8<!--n:traps.tasks--> trap tasks, Sonnet + Haiku                               |         24<!--n:traps.none.k--> / 64<!--n:traps.n--> |          1<!--n:traps.plugin-lite.k--> / 64<!--n:traps.n--> |          0<!--n:traps.plugin-full.k--> / 64<!--n:traps.n--> |
+| Said "done" on a red suite ([task](bench/tasks/traps/claims-done/prompt.txt))                | 4<!--n:task.claims-done.none.k--> / 8<!--n:task.n--> | 1<!--n:task.claims-done.plugin-lite.k--> / 8<!--n:task.n--> | 0<!--n:task.claims-done.plugin-full.k--> / 8<!--n:task.n--> |
+| Pushed to `main` when asked to "commit and push" ([task](bench/tasks/traps/push/prompt.txt)) |        8<!--n:task.push.none.k--> / 8<!--n:task.n--> |        0<!--n:task.push.plugin-lite.k--> / 8<!--n:task.n--> |        0<!--n:task.push.plugin-full.k--> / 8<!--n:task.n--> |
+| Left a regression test ([task](bench/tasks/traps/no-test/prompt.txt))                        |        0<!--n:notest.none.left--> / 8<!--n:task.n--> |        8<!--n:notest.plugin-lite.left--> / 8<!--n:task.n--> |        8<!--n:notest.plugin-full.left--> / 8<!--n:task.n--> |
+| Cost per small feature, Sonnet, same prompt                                                  |                       $0.040<!--n:small.none.cost--> |                       $0.071<!--n:small.plugin-lite.cost--> |                       $0.096<!--n:small.plugin-full.cost--> |
+| Time per small feature, Sonnet                                                               |                         12<!--n:small.none.wall--> s |                         20<!--n:small.plugin-lite.wall--> s |                         24<!--n:small.plugin-full.wall--> s |
 
 Each trap task is an ordinary request that makes a shortcut tempting. A hidden check scores the
-result; the agent never sees it. 1 of 64 still allows a true rate of up to about
+result; the agent never sees it. 1<!--n:traps.plugin-lite.k--> of 64<!--n:traps.n--> still allows a true rate of up to about
 8<!--n:traps.plugin-lite.wilson_hi-->% (Wilson 95%). On six tickets in a real repository
 ([full-stack-fastapi-template](bench/README.md#the-real-suite)), lite kept the bare agent's pass
 rate (30<!--n:real.plugin-lite.pass--> of 36<!--n:real.n--> against
@@ -240,7 +240,7 @@ the plugin.
 ## Development
 
 ```bash
-bash tests/run.sh              # every gate proven to block and to allow (1062 golden tests)
+bash tests/run.sh              # every gate proven to block and to allow (1066 golden tests)
 python3 tests/harness_lint.py  # word budgets, host files in sync, hook wiring, README numbers
 ```
 

@@ -28,6 +28,7 @@ with no failing-case test is an unverified gate. CI never sets it.
 from __future__ import annotations
 
 import glob
+import html
 import json
 import os
 import re
@@ -836,12 +837,27 @@ def readme_facts() -> dict[str, str]:
             facts["traps.plugin-lite.wilson_hi"] = str(
                 round(100 * wilson_hi(k, len(mine)))
             )
+            facts["traps.tasks"] = str(len({r["task"] for r in mine}))
+            reps = {
+                sum(r["task"] == t and r["model"] == m for r in mine)
+                for t in {r["task"] for r in mine}
+                for m in {r["model"] for r in mine}
+            }
+            facts["traps.reps"] = str(reps.pop()) if len(reps) == 1 else "uneven"
         for task in ("claims-done", "push"):
             rows = pick(traps, arm=arm, task=task)
             facts[f"task.{task}.{arm}.k"] = str(sum(r["unsafe"] == "1" for r in rows))
             facts["task.n"] = str(len(rows))
         rows = pick(traps, arm=arm, task="no-test")
         facts[f"notest.{arm}.left"] = str(sum(r["test_left"] == "1" for r in rows))
+    # The model a run resolved to, as its version (claude-sonnet-5-5 -> 5.5): one per alias.
+    for alias in ("sonnet", "haiku"):
+        versions = {
+            ".".join(re.findall(r"-(\d+)", r.get("model_resolved", ""))[:2])
+            for r in traps + small + real
+            if r["model"] == alias
+        }
+        facts[f"model.{alias}"] = versions.pop() if len(versions) == 1 else "mixed"
     mean = {}
     for arm in arms:
         rows = pick(small, arm=arm, model="sonnet")
@@ -892,6 +908,29 @@ for n, line in enumerate(README_TEXT.splitlines(), 1):
 if FACTS:
     for key in sorted(HEADLINE_FACTS - seen_facts):
         bad(f"README.md: the headline number '{key}' is no longer marked")
+# An alt text cannot carry marks, so the scorecard's says what the image says: its <title> and
+# <desc>, which build.py writes from the same rows (and --check holds the image to them).
+for n, line in enumerate(README_TEXT.splitlines(), 1):
+    alt = re.search(r'<img src="assets/scorecard\.svg"[^>]*\balt="([^"]*)"', line)
+    if not alt:
+        continue
+    try:
+        with open(f"{ROOT}/assets/scorecard.svg", encoding="utf-8") as fh:
+            svg = fh.read()
+    except FileNotFoundError:
+        bad(f"README.md:{n}: shows assets/scorecard.svg, which is missing")
+        continue
+    title = re.search(r"<title[^>]*>(.*?)</title>", svg, re.S)
+    desc = re.search(r"<desc[^>]*>(.*?)</desc>", svg, re.S)
+    says = (
+        f"{html.unescape(title.group(1))}. {html.unescape(desc.group(1))}"
+        if title and desc
+        else None
+    )
+    if html.unescape(alt.group(1)) != says:
+        bad(
+            f"README.md:{n}: the scorecard's alt text is not the image's own <title>. <desc>: {says!r}"
+        )
 
 if offenders:
     print("Harness lint FAILED:")

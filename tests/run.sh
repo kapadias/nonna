@@ -2697,6 +2697,17 @@ out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: a README numbe
 contains "lint: names the unknown mark" "number mark 'traps.plugin-lite.kk' is not a fact" "$out"
 contains "lint: a headline number must stay marked" "headline number 'traps.plugin-lite.k' is no longer marked" "$out"
 rm -rf "$FX"
+FX="$(lint_fixture)"
+sed -i 's/Haiku 4\.5<!--n:model\.haiku-->/Haiku 4.6<!--n:model.haiku-->/' "$FX/README.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: a model version the runs did not resolve to fails" 1 "$?"
+contains "lint: names the version the rows resolved" "4.6 marked model.haiku, but round 3's rows say 4.5" "$out"
+rm -rf "$FX"
+# An alt text cannot carry marks: the scorecard's must be the image's own title and description.
+FX="$(lint_fixture)"
+sed -i '/assets\/scorecard\.svg/s/bare agent 24 of 64/bare agent 23 of 64/' "$FX/README.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: a scorecard alt text that is not the image's own fails" 1 "$?"
+contains "lint: says what the image says" "the scorecard's alt text is not the image's own" "$out"
+rm -rf "$FX"
 
 echo "== bench/examples.py (examples/, round 3's rule-picked runs, word for word) =="
 # examples/ quotes benchmark runs verbatim; a page that no longer matches its sources is a
