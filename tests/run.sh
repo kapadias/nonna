@@ -156,6 +156,13 @@ printf 'OPENAI=%s\r\n' "$FAKE_OAI" | utf16le | scan; check "detects an OpenAI ke
 printf 'ANTHROPIC=%s\r\n' "$FAKE_ANT" | utf16le | scan; check "detects an Anthropic key in UTF-16 text" 0 "$?"
 printf 'AWS=%s\r\n' "$FAKE_AWS" | utf16le | scan; check "detects an AWS access key id in UTF-16 text" 0 "$?"
 printf -- '-----BEGIN RSA PRIVATE %s-----\r\n' KEY | utf16le | scan; check "detects a private key block in UTF-16 text" 0 "$?"
+# In UTF-16 text a character beyond ASCII leaves its high byte before the key once the NULs are gone:
+# "0" after a kana (U+30xx), "f" after 是 (U+662F). An OpenAI key as long as a real one (a tail of 80
+# or more; real ones have about 156) is a key wherever it starts, as an Anthropic key is.
+printf 'API\343\202\255\343\203\274\343\201\257%s\r\n' "$FAKE_OAI" | utf16le | scan; check "detects an OpenAI key right after a kana in UTF-16 text" 0 "$?"
+printf '\345\257\206\351\222\245\346\230\257%s\r\n' "$FAKE_OAI" | utf16le | scan; check "detects an OpenAI key right after a CJK character in UTF-16 text" 0 "$?"
+printf 'word\000%s\000%s' "${FAKE_OAI:0:30}" "${FAKE_OAI:30}" | scan; check "detects an OpenAI key glued to a word by one NUL and cut by another" 0 "$?"
+printf 'ApiKey\000%s\000' "$FAKE_OAI" | utf16le | scan; check "detects an OpenAI key after a U+0000 in UTF-16 text (a string list)" 0 "$?"
 # macOS's grep reads its input in the user's locale and gives up on bytes that are not text there; a scan
 # that gave up would pass the key. The patterns are ASCII, so the scan reads bytes (LC_ALL=C).
 BSDGREP="$(mktemp -d)"; REALGREP="$(command -v grep)"
@@ -189,8 +196,9 @@ res="$( . "$HOOKS/lib/secret-patterns.sh"
   done
   echo "$n cases, $bad wrong" )"
 check "property: a vendor-prefixed key is found iff its tail has 40+ characters" "77 cases, 0 wrong" "$res"
-# Property: for a key over any tail, a NUL anywhere in it, UTF-16, and a sample word before it or glued
-# after it never hide it, and a sample word at the start of its tail always makes it a sample. The keys,
+# Property: for a key over any tail, a NUL anywhere in it, UTF-16 (a string list's U+0000 before it too),
+# and a sample word before it or glued after it never hide it, and a sample word at the start of its tail
+# always makes it a sample. The keys,
 # words and cut points come from a seeded generator, so a failure replays. (Bash 3.2 reads no comment
 # inside a command substitution and ends one at the bracket closing a case pattern, so each pattern
 # below opens with a bracket too, and no comment goes inside.)
@@ -202,10 +210,11 @@ res="$( . "$HOOKS/lib/secret-patterns.sh"
     for round in 1 2; do
       t=''; for ((i = 0; i < 95; i++)); do draw; t="$t${alpha:$(( r % 64 )):1}"; done
       k="$p$t"; draw; w="${words[$(( r % 9 ))]}"; draw; c=$(( 1 + r % (${#k} - 1) ))
-      for form in nul utf16 before after start; do
+      for form in nul utf16 strlist before after start; do
         case "$form" in
           (nul) printf 'k = "%s\000%s"' "${k:0:$c}" "${k:$c}" | nonna_scan_secrets >/dev/null; got=$?; want=0 ;;
           (utf16) printf 'k = "%s"\r\n' "$k" | utf16le | nonna_scan_secrets >/dev/null; got=$?; want=0 ;;
+          (strlist) printf 'ApiKey\000%s\000' "$k" | utf16le | nonna_scan_secrets >/dev/null; got=$?; want=0 ;;
           (before) printf 'K="${%s-%s}"' "$w" "$k" | nonna_scan_secrets >/dev/null; got=$?; want=0 ;;
           (after) printf 'k = "%s%s"' "$k" "$w" | nonna_scan_secrets >/dev/null; got=$?; want=0 ;;
           (start) printf 'k = "%s%s%s"' "$p" "$w" "${t:${#w}}" | nonna_scan_secrets >/dev/null; got=$?; want=1 ;;
@@ -215,7 +224,7 @@ res="$( . "$HOOKS/lib/secret-patterns.sh"
     done
   done
   echo "$n cases, $bad wrong" )"
-check "property: a NUL, UTF-16 or a sample word around a key never hides it; one at its start makes it a sample" "70 cases, 0 wrong" "$res"
+check "property: a NUL, UTF-16 or a sample word around a key never hides it; one at its start makes it a sample" "84 cases, 0 wrong" "$res"
 
 echo "== secret-scan.sh (PreToolUse write gate) =="
 SS="$HOOKS/secret-scan.sh"
