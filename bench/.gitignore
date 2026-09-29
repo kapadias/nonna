@@ -1,4 +1,5 @@
 runs/
 __pycache__/
 results/.lock
+results/*/.lock
 results/rescored/
