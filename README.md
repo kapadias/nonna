@@ -212,7 +212,8 @@ seconds does not block; the pre-push hook still runs it in full.
 
 **What does it change on my machine?** `.git/hooks/pre-push` and `.git/hooks/pre-commit` (only if
 you have none), a few `nonna.*` keys in the repository's git config, and small files under `.git/`
-(the last green run, when the session began). Nothing is committed. No hook makes a network call.
+(the last green run, when the session began, which branches she has warned about). Nothing is
+committed. No hook makes a network call.
 `/nonna uninstall` removes all of it.
 
 **Isn't it more expensive?** About 3<!--n:small.delta.cents_int--> cents per small change on Sonnet
@@ -239,7 +240,7 @@ the plugin.
 ## Development
 
 ```bash
-bash tests/run.sh              # every gate proven to block and to allow (1054 golden tests)
+bash tests/run.sh              # every gate proven to block and to allow (1056 golden tests)
 python3 tests/harness_lint.py  # word budgets, host files in sync, hook wiring, README numbers
 ```
 

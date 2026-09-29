@@ -58,8 +58,9 @@ discipline is **enforced by code, not prose**. Start with [`../CLAUDE.md`](../CL
   `subagent-verdict.sh` (**SubagentStop** — runs `check-review.sh` on the reviewer's own
   output, so ADR-0005 binds where the verdict is produced), `post-compact.sh` (**PostCompact** —
   restates branch, STATUS state, and review verdicts after a summary), `subagent-start.sh`
-  (**SubagentStart** — carries the mode's rules into every subagent under a plugin install, where
-  `SessionStart` context never reaches them; silent in a standalone checkout). Shared logic in
+  (**SubagentStart** — carries the mode's rules into every subagent wherever `.claude/rules/` is
+  not installed (a plugin, a lite copy-in), since `SessionStart` context never reaches them; silent
+  where the rules load natively). Shared logic in
   `lib/` (`json.sh`, `secret-patterns.sh`, `core.sh` — harness root, the mode, the carrier, the
   context emitter; `shell-words.awk` — how the shell will read a command, for the branch guard;
   `expand.awk` — its brace lists and globs, as the shell expands them;
