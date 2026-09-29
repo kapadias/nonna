@@ -87,7 +87,9 @@ Fix it and run the full suite, or tell the user plainly that it is not done and 
       fi
     fi
     # Where's the test? Source changed this session and no test did: a fix leaves behind a test that
-    # fails without it. A new, untracked test file counts; an untracked scratch file is not source.
+    # fails without it. A new, untracked test file counts, when it is a test's source: what a test
+    # run leaves under tests/ (bytecode, caches) is not a new test, and an untracked scratch file is
+    # not source.
     src_changed=""
     test_changed=""
     while IFS= read -r f; do
@@ -95,7 +97,7 @@ Fix it and run the full suite, or tell the user plainly that it is not done and 
     done <<<"$dirty"
     if [ -n "$src_changed" ] && [ -z "$test_changed" ]; then
       while IFS= read -r f; do
-        [ -n "$f" ] && nonna_is_test_file "$f" && test_changed=1 && break
+        [ -n "$f" ] && nonna_is_test_file "$f" && nonna_is_source_file "$f" && test_changed=1 && break
       done < <(git ls-files --others --exclude-standard 2>/dev/null)
     fi
     if [ -n "$src_changed" ] && [ -z "$test_changed" ]; then
