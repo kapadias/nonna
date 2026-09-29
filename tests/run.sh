@@ -886,7 +886,8 @@ rc=0; [ ! -e "$TMP/.claude/reviews" ] && [ ! -e "$TMP/AGENTS.md" ] || rc=1; chec
 contains "install: says what it did, in Nonna's voice" "Nonna" "$out"
 "${GIT[@]}" -C "$TMP" add -A; "${GIT[@]}" -C "$TMP" commit -q -m first 2>/dev/null; check "install: the installed pre-commit hook refuses a commit on main" 1 "$?"
 echo 'my own rules' > "$TMP/CLAUDE.md"
-( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --mode full >/dev/null 2>&1 ); check "install: a second run succeeds" 0 "$?"
+out2="$( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --mode full 2>&1 )"; check "install: a second run succeeds" 0 "$?"
+! printf '%s' "$out2" | grep -q 'you already have a'; check "install: a second run knows her own git hooks are hers" 0 "$?"
 grep -q 'my own rules' "$TMP/CLAUDE.md"; check "install: never overwrites an existing file" 0 "$?"
 rm -rf "$TMP"
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
