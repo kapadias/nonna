@@ -2657,5 +2657,129 @@ contains "lint: names the unknown mark" "number mark 'traps.plugin-lite.kk' is n
 contains "lint: a headline number must stay marked" "headline number 'traps.plugin-lite.k' is no longer marked" "$out"
 rm -rf "$FX"
 
+echo "== assets/build.py (the launch images, built from the benchmark data) =="
+# The scorecard, the social preview and one card per trap task are functions of bench/results/round3
+# and of the committed glyph outlines. --check is the gate: an image that no longer matches a fresh
+# build is a wrong number on a launch page. It must run on the standard library alone (CI's lint job
+# installs nothing), so it runs here under `python3 -I -S`, which cannot see site-packages.
+AB="$ROOT/assets/build.py"
+out="$(python3 "$ROOT/tests/test_assets.py" 2>&1)"; rc=$?
+check "assets: unit tests pass (numbers from the data, lettering to the digit, the SVGs)" 0 "$rc"
+[ "$rc" -eq 0 ] || printf '%s\n' "$out" | tail -25
+out="$(python3 -I -S "$AB" --check 2>&1)"; rc=$?
+check "assets: --check passes on the real tree, on the standard library alone" 0 "$rc"
+[ "$rc" -eq 0 ] || printf '%s\n' "$out"
+contains "assets: --check reports what it verified" "10 images" "$out"
+
+assets_copy() { # -> echoes a copy of what build.py reads and writes
+  local d; d="$(mktemp -d)"; mkdir -p "$d/bench/tasks" "$d/bench/results"
+  cp -R "$ROOT/assets" "$d/"; cp -R "$ROOT/bench/tasks/traps" "$d/bench/tasks/"
+  cp -R "$ROOT/bench/results/round3" "$d/bench/results/"
+  printf '%s' "$d"
+}
+assets_check() { NONNA_ASSETS_ROOT="$1" python3 -I -S "$AB" --check 2>&1; } # <root>
+assets_move() { # <root> <rows|both>: one more unsafe lite run on Haiku, in traps.tsv and (both) in summary.json
+  python3 - "$1/bench/results/round3" "$2" <<'PY'
+import json, sys
+d, which = sys.argv[1:]
+lines = open(f"{d}/traps.tsv", encoding="utf-8").read().split("\n")
+head = lines[0].split("\t")
+arm, model, unsafe = (head.index(k) for k in ("arm", "model", "unsafe"))
+for i, ln in enumerate(lines[1:], 1):
+    f = ln.split("\t")
+    if f[arm] == "plugin-lite" and f[model] == "haiku" and f[unsafe] == "0":
+        f[unsafe] = "1"
+        lines[i] = "\t".join(f)
+        break
+open(f"{d}/traps.tsv", "w", encoding="utf-8").write("\n".join(lines))
+if which == "both":
+    s = json.load(open(f"{d}/summary.json", encoding="utf-8"))
+    key = ("3", "traps", "haiku", "plugin-lite", "neutral", "-")
+    next(g for g in s["groups"] if (g["round"], g["suite"], g["model"], g["arm"], g["prompt"], g["label"]) == key)["unsafe"] += 1
+    json.dump(s, open(f"{d}/summary.json", "w", encoding="utf-8"))
+PY
+}
+AX="$(assets_copy)"
+assets_check "$AX" >/dev/null; check "assets: a copy of the tree passes (the copy is faithful)" 0 "$?"
+rm -rf "$AX"
+
+AX="$(assets_copy)"; printf '<!-- hand edit -->\n' >> "$AX/assets/scorecard.svg"
+out="$(assets_check "$AX")"; check "assets: --check fails on an SVG that differs from a fresh build" 1 "$?"
+contains "assets: names the stale SVG" "assets/scorecard.svg" "$out"
+contains "assets: says how to fix it" "python3 assets/build.py --render" "$out"
+rm -rf "$AX"
+
+AX="$(assets_copy)"; assets_move "$AX" both
+out="$(assets_check "$AX")"; check "assets: --check fails when the data moves and the images do not" 1 "$?"
+contains "assets: the scorecard went stale" "assets/scorecard.svg" "$out"
+contains "assets: so did the social preview" "assets/social-preview.svg" "$out"
+rm -rf "$AX"
+
+AX="$(assets_copy)"; assets_move "$AX" rows
+out="$(assets_check "$AX")"; check "assets: --check fails when traps.tsv and summary.json disagree" 1 "$?"
+contains "assets: says the two disagree" "disagree" "$out"
+rm -rf "$AX"
+
+AX="$(assets_copy)"; rm "$AX/assets/social-preview.png"
+out="$(assets_check "$AX")"; check "assets: --check fails on a PNG that is missing" 1 "$?"
+contains "assets: names the missing PNG" "assets/social-preview.png" "$out"
+rm -rf "$AX"
+
+AX="$(assets_copy)"; printf 'not a png' > "$AX/assets/cards/push.png"
+out="$(assets_check "$AX")"; check "assets: --check fails on a file that is not a PNG" 1 "$?"
+contains "assets: names it" "assets/cards/push.png: not a PNG" "$out"
+rm -rf "$AX"
+
+AX="$(assets_copy)"
+python3 -c 'import struct,sys; p=sys.argv[1]; b=bytearray(open(p,"rb").read()); b[16:20]=struct.pack(">I",1079); open(p,"wb").write(b)' "$AX/assets/cards/push.png"
+out="$(assets_check "$AX")"; check "assets: --check fails on a PNG of the wrong size" 1 "$?"
+contains "assets: says the size it found and the size it wants" "assets/cards/push.png: 1079x1080, want 1080x1080" "$out"
+rm -rf "$AX"
+
+AX="$(assets_copy)"; head -c 1000000 /dev/zero >> "$AX/assets/cards/push.png"
+out="$(assets_check "$AX")"; check "assets: --check fails on a PNG over the size budget" 1 "$?"
+contains "assets: says it is over budget" "assets/cards/push.png: over the 1000000-byte budget" "$out"
+rm -rf "$AX"
+
+AX="$(assets_copy)"; cp "$AX/assets/cards/secret.png" "$AX/assets/cards/push.png"
+out="$(assets_check "$AX")"; check "assets: --check fails on a PNG rendered from a different SVG" 1 "$?"
+contains "assets: says the PNG is stale" "assets/cards/push.png: rendered from a different SVG" "$out"
+rm -rf "$AX"
+
+AX="$(assets_copy)"; cp "$AX/assets/scorecard.svg" "$AX/kept.svg"; rm "$AX/assets/scorecard.svg"
+NONNA_ASSETS_ROOT="$AX" python3 -I -S "$AB" >/dev/null 2>&1; check "assets: a plain run writes the SVGs" 0 "$?"
+cmp -s "$AX/kept.svg" "$AX/assets/scorecard.svg"; check "assets: and writes exactly what is committed (the build is deterministic)" 0 "$?"
+out="$(CHROMIUM=/nonexistent/chrome NONNA_ASSETS_ROOT="$AX" python3 -I -S "$AB" --render 2>&1)"; check "assets: --render without a browser fails" 1 "$?"
+contains "assets: names the variable that points at one" "CHROMIUM" "$out"
+rm -rf "$AX"
+
+# --render, with a stand-in for Chromium that draws a blank PNG of the size it is asked for
+AX="$(assets_copy)"; rm "$AX"/assets/*.png "$AX"/assets/cards/*.png
+cat > "$AX/fake-chromium" <<'PY'
+#!/usr/bin/env python3
+import os, re, struct, sys, zlib
+args = " ".join(sys.argv[1:])
+if os.environ.get("FAKE_FAIL"):
+    sys.exit("fake browser: no display")
+w, h = map(int, re.search(r"--window-size=(\d+),(\d+)", args).groups())
+k = int(re.search(r"--force-device-scale-factor=(\d+)", args).group(1))
+out = re.search(r"--screenshot=(\S+)", args).group(1)
+w, h = w * k, h * k + int(os.environ.get("FAKE_EXTRA_ROWS", "0"))
+def chunk(kind, body): return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body))
+raw = b"".join(b"\x00" + b"\xff\xff\xff" * w for _ in range(h))
+png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+open(out, "wb").write(png + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+PY
+chmod +x "$AX/fake-chromium"
+FAKE_EXTRA_ROWS=1 CHROMIUM="$AX/fake-chromium" NONNA_ASSETS_ROOT="$AX" python3 -I -S "$AB" --render >/dev/null 2>"$AX/err"; check "assets: --render fails when the browser draws the wrong size" 1 "$?"
+contains "assets: and says so" "drew" "$(cat "$AX/err")"
+FAKE_FAIL=1 CHROMIUM="$AX/fake-chromium" NONNA_ASSETS_ROOT="$AX" python3 -I -S "$AB" --render >/dev/null 2>"$AX/err"; check "assets: --render fails when the browser fails" 1 "$?"
+contains "assets: and says what it said" "no display" "$(cat "$AX/err")"
+CHROMIUM="$AX/fake-chromium" NONNA_ASSETS_ROOT="$AX" python3 -I -S "$AB" --render >/dev/null 2>&1; check "assets: --render draws every PNG" 0 "$?"
+assets_check "$AX" >/dev/null; check "assets: and --check then passes: sized, in budget, stamped with the SVG they came from" 0 "$?"
+out="$(python3 -I -S "$AB" --frobnicate 2>&1)"; check "assets: an unknown flag is a usage error" 2 "$?"
+contains "assets: and the usage names the flags" "--check" "$out"
+rm -rf "$AX"
+
 printf '\n%s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]
