@@ -2674,24 +2674,26 @@ for b in bundle mvn dotnet mix java php; do printf '#!/bin/sh\necho %s >> "%s"\n
 printf '#!/bin/sh\nexit 0\n' > "$DET_STUBS/python3"
 chmod +x "$DET_STUBS"/*
 fx() { # <repo> <name>...: the files of a fixture, empty; a name ending in / is a directory, package.json
-  # has a test script, and gradlew and vendor/bin/phpunit are executable and log a run
+  # has a test script, and gradlew, mvnw, vendor/bin/pest and vendor/bin/phpunit are executable and log a run
   local d="$1" n; shift
   for n in "$@"; do
     case "$n" in
       */) mkdir -p "$d/$n" ;;
       package.json) printf '{"scripts":{"test":"node t.js"}}\n' > "$d/$n" ;;
-      gradlew | vendor/bin/phpunit)
+      gradlew | mvnw | vendor/bin/pest | vendor/bin/phpunit)
         mkdir -p "$d/$(dirname "$n")"
         printf '#!/bin/sh\necho %s >> "%s"\n' "$n" "$DET_LOG" > "$d/$n"; chmod +x "$d/$n" ;;
       *) mkdir -p "$d/$(dirname "$n")"; : > "$d/$n" ;;
     esac
   done
 }
-det() { # <repo> <runner>...: what detection names for <repo> when only those runners are installed
+det() { # <repo> <runner>...: what detection names for <repo> when only those runners are installed (and
+  # JAVA_HOME is DET_JAVA_HOME, or unset)
   local d="$1" bin r; shift
   bin="$(mktemp -d)"; ln -s "$(command -v grep)" "$bin/grep"
   for r in "$@"; do ln -s "$DET_STUBS/$r" "$bin/$r"; done
-  ( cd "$d" && . "$HOOKS/lib/tests.sh" && PATH="$bin" nonna_detect_test_cmd )
+  ( cd "$d" && . "$HOOKS/lib/tests.sh" && unset JAVA_HOME && { [ -z "${DET_JAVA_HOME-}" ] || export JAVA_HOME="$DET_JAVA_HOME"; } \
+    && PATH="$bin" nonna_detect_test_cmd )
   rm -rf "$bin"
 }
 named() { # <runners> <name>...: what detection names for a fresh repository made of those files, with only
@@ -2728,21 +2730,38 @@ answers() { # <runners> <name>...: the distinct answers detection gives as the f
 TMP="$(mktemp -d)"; fx "$TMP" gradlew vendor/bin/phpunit; "$TMP/gradlew"; "$TMP/vendor/bin/phpunit"; "$DET_STUBS/bundle"
 check "tests.sh: (control) a stand-in or fixture runner that runs leaves its mark" 3 "$(wc -l < "$DET_LOG" | tr -d ' ')"
 rm -rf "$TMP" "$DET_LOG"
-# Ruby: bundle exec needs a Gemfile, and spec/ or test/ alone say little (Jasmine and mocha use them).
+# Ruby: bundle exec needs a Gemfile, and .rspec or spec/spec_helper.rb says it is rspec; a bare spec/ or
+# test/ says little (Jasmine and mocha use them, and a Gemfile may only serve Danger or Jekyll).
 check "tests.sh: Ruby: a Gemfile and .rspec: bundle exec rspec" "bundle exec rspec" "$(named "$RUNNERS" Gemfile .rspec)"
-check "tests.sh: Ruby: a Gemfile and spec/: bundle exec rspec" "bundle exec rspec" "$(named "$RUNNERS" Gemfile spec/)"
+check "tests.sh: Ruby: a Gemfile and spec/spec_helper.rb: bundle exec rspec" "bundle exec rspec" "$(named "$RUNNERS" Gemfile spec/spec_helper.rb)"
 check "tests.sh: Ruby: a Gemfile, a Rakefile and test/: bundle exec rake test" "bundle exec rake test" "$(named "$RUNNERS" Gemfile Rakefile test/)"
 check "tests.sh: Ruby: rspec before rake test (a Rails app that added rspec keeps its test/)" "bundle exec rspec" "$(named "$RUNNERS" Rakefile test/ Gemfile .rspec)"
 check "tests.sh: Ruby: spec/ without a Gemfile is no Ruby app (a Node project's Jasmine specs): npm test" "npm test --silent" "$(named "$RUNNERS" spec/ package.json)"
+check "tests.sh: Ruby: a Gemfile for Danger beside a Jasmine spec/ is no rspec suite: npm test" "npm test --silent" "$(named "$RUNNERS" Gemfile spec/app.spec.js package.json)"
 check "tests.sh: Ruby: a Rakefile and test/ without a Gemfile (a mocha project) are no Ruby app: npm test" "npm test --silent" "$(named "$RUNNERS" Rakefile test/ package.json)"
 check "tests.sh: Ruby: a Gemfile alone (a Jekyll site) is no suite: npm test" "npm test --silent" "$(named "$RUNNERS" Gemfile package.json)"
 check "tests.sh: Ruby: bundle off PATH, rspec: nothing" "" "$(named "" Gemfile .rspec)"
 check "tests.sh: Ruby: bundle off PATH, rake test: nothing" "" "$(named "" Gemfile Rakefile test/)"
-# PHP: the runner is the project's own vendor/bin/phpunit.
+# PHP: the runner is the project's own vendor/bin/pest (a Pest project, where phpunit runs nothing) or
+# vendor/bin/phpunit, a php script, so php has to be there.
 check "tests.sh: PHP: phpunit.xml and vendor/bin/phpunit: vendor/bin/phpunit" "vendor/bin/phpunit" "$(named "$RUNNERS" phpunit.xml vendor/bin/phpunit)"
 check "tests.sh: PHP: phpunit.xml.dist and vendor/bin/phpunit: vendor/bin/phpunit" "vendor/bin/phpunit" "$(named "$RUNNERS" phpunit.xml.dist vendor/bin/phpunit)"
+check "tests.sh: PHP: phpunit.dist.xml and vendor/bin/phpunit: vendor/bin/phpunit" "vendor/bin/phpunit" "$(named "$RUNNERS" phpunit.dist.xml vendor/bin/phpunit)"
 check "tests.sh: PHP: phpunit.xml but no vendor/bin/phpunit (composer install not run): nothing" "" "$(named "$RUNNERS" phpunit.xml)"
-# Java and Kotlin: the Gradle wrapper is its own marker and runner; Maven needs mvn.
+check "tests.sh: PHP: a Pest project (vendor/bin/pest beside phpunit): vendor/bin/pest" "vendor/bin/pest" "$(named "$RUNNERS" phpunit.xml vendor/bin/phpunit vendor/bin/pest)"
+check "tests.sh: PHP: vendor/bin/pest alone: vendor/bin/pest" "vendor/bin/pest" "$(named "$RUNNERS" phpunit.xml vendor/bin/pest)"
+check "tests.sh: PHP: no php on PATH: nothing" "" "$(named "${RUNNERS/php/}" phpunit.xml vendor/bin/phpunit)"
+check "tests.sh: PHP: ...no php falls through to the package.json: npm test" "npm test --silent" "$(named "${RUNNERS/php/}" phpunit.xml vendor/bin/phpunit package.json)"
+check "tests.sh: PHP: no php, a Pest project: nothing" "" "$(named "${RUNNERS/php/}" phpunit.xml vendor/bin/pest)"
+TMP="$(mktemp -d)"; fx "$TMP" phpunit.xml vendor/bin/pest vendor/bin/phpunit; chmod -x "$TMP/vendor/bin/pest"
+# shellcheck disable=SC2086  # a word list on purpose
+check "tests.sh: PHP: a vendor/bin/pest that cannot run falls back to vendor/bin/phpunit" "vendor/bin/phpunit" "$(det "$TMP" $RUNNERS)"
+chmod -x "$TMP/vendor/bin/phpunit"
+# shellcheck disable=SC2086  # a word list on purpose
+check "tests.sh: PHP: ...and with neither able to run: nothing" "" "$(det "$TMP" $RUNNERS)"
+rm -rf "$TMP"
+# Java and Kotlin: the Gradle and Maven wrappers are their own marker and runner, and need a JVM the way
+# they find one: JAVA_HOME/bin/java when JAVA_HOME is set, else java on PATH. Maven without a wrapper needs mvn.
 check "tests.sh: Gradle: an executable gradlew: ./gradlew test" "./gradlew test" "$(named "$RUNNERS" gradlew)"
 TMP="$(mktemp -d)"; fx "$TMP" gradlew; chmod -x "$TMP/gradlew"
 # shellcheck disable=SC2086  # a word list on purpose
@@ -2751,16 +2770,35 @@ fx "$TMP" package.json
 # shellcheck disable=SC2086  # a word list on purpose
 check "tests.sh: Gradle: ...with a package.json beside it, npm test" "npm test --silent" "$(det "$TMP" $RUNNERS)"
 rm -rf "$TMP"
+check "tests.sh: Gradle: no java anywhere: nothing" "" "$(named "${RUNNERS/java/}" gradlew)"
+check "tests.sh: Gradle: ...no java falls through to the package.json: npm test" "npm test --silent" "$(named "${RUNNERS/java/}" gradlew package.json)"
+JH="$(mktemp -d)"; mkdir "$JH/bin"; printf '#!/bin/sh\nexit 0\n' > "$JH/bin/java"; chmod +x "$JH/bin/java"
+check "tests.sh: Gradle: no java on PATH, but JAVA_HOME/bin/java: ./gradlew test" "./gradlew test" "$(DET_JAVA_HOME="$JH" named "" gradlew)"
+check "tests.sh: Gradle: JAVA_HOME without a java in it, beside a java on PATH (the wrappers look in JAVA_HOME alone): nothing" "" "$(DET_JAVA_HOME="$JH/missing" named "java" gradlew)"
+rm -rf "$JH"
+check "tests.sh: Maven wrapper: an executable mvnw and java, no mvn: ./mvnw test" "./mvnw test" "$(named "java" pom.xml mvnw)"
+check "tests.sh: Maven wrapper: a JHipster app with java: the wrapper, not its package.json" "./mvnw test" "$(named "java" pom.xml mvnw package.json)"
+check "tests.sh: Maven wrapper: before mvn" "./mvnw test" "$(named "$RUNNERS" pom.xml mvnw)"
+check "tests.sh: Maven wrapper: no java anywhere: nothing" "" "$(named "" pom.xml mvnw)"
+TMP="$(mktemp -d)"; fx "$TMP" pom.xml mvnw; chmod -x "$TMP/mvnw"
+# shellcheck disable=SC2086  # a word list on purpose
+check "tests.sh: Maven wrapper: an mvnw that cannot run (mode lost in a zip) falls back to mvn: mvn test" "mvn test" "$(det "$TMP" $RUNNERS)"
+rm -rf "$TMP"
 check "tests.sh: Maven: a pom.xml: mvn test" "mvn test" "$(named "$RUNNERS" pom.xml)"
 check "tests.sh: Maven: mvn off PATH: nothing" "" "$(named "" pom.xml)"
 check "tests.sh: Gradle before Maven" "./gradlew test" "$(named "$RUNNERS" pom.xml gradlew)"
-# .NET: dotnet test in a folder with several solution or project files stops with MSB1011, a red.
+check "tests.sh: Gradle before the Maven wrapper" "./gradlew test" "$(named "$RUNNERS" mvnw gradlew)"
+# .NET: dotnet test in a folder with several solution or project files stops with MSB1011, a red. MSBuild's
+# own glob counts them: *.sln, *.slnx and *.*proj (.csproj, .fsproj, .vbproj, a docker-compose.dcproj).
 check "tests.sh: .NET: a .sln: dotnet test" "dotnet test" "$(named "$RUNNERS" App.sln)"
 check "tests.sh: .NET: a .slnx: dotnet test" "dotnet test" "$(named "$RUNNERS" App.slnx)"
 check "tests.sh: .NET: a .csproj: dotnet test" "dotnet test" "$(named "$RUNNERS" App.csproj)"
+check "tests.sh: .NET: a lone .fsproj: dotnet test" "dotnet test" "$(named "$RUNNERS" App.fsproj)"
 check "tests.sh: .NET: dotnet off PATH: nothing" "" "$(named "" App.sln)"
 check "tests.sh: .NET: two solutions, dotnet cannot choose: nothing" "" "$(named "$RUNNERS" App.sln Tools.sln)"
 check "tests.sh: .NET: a solution and a project of another name: nothing" "" "$(named "$RUNNERS" App.sln Tools.csproj)"
+check "tests.sh: .NET: a solution beside a docker-compose.dcproj counts two: nothing" "" "$(named "$RUNNERS" App.sln docker-compose.dcproj)"
+check "tests.sh: .NET: ...two files fall through to the package.json: npm test" "npm test --silent" "$(named "$RUNNERS" App.sln docker-compose.dcproj package.json)"
 # Elixir
 check "tests.sh: Elixir: a mix.exs: mix test" "mix test" "$(named "$RUNNERS" mix.exs)"
 check "tests.sh: Elixir: mix off PATH: nothing" "" "$(named "" mix.exs)"
@@ -2780,6 +2818,7 @@ check "tests.sh: fall through: ...but pytest's row claims its repository: a pyte
 check "tests.sh: order: pytest before Ruby" "python3 -m pytest -q" "$(named "$RUNNERS" Gemfile .rspec pytest.ini)"
 check "tests.sh: order: Ruby before package.json" "bundle exec rspec" "$(named "$RUNNERS" package.json Gemfile .rspec)"
 check "tests.sh: order: PHP before package.json" "vendor/bin/phpunit" "$(named "$RUNNERS" package.json phpunit.xml vendor/bin/phpunit)"
+check "tests.sh: order: Pest before package.json" "vendor/bin/pest" "$(named "$RUNNERS" package.json phpunit.xml vendor/bin/pest)"
 check "tests.sh: order: Gradle before package.json" "./gradlew test" "$(named "$RUNNERS" package.json gradlew)"
 check "tests.sh: order: Maven before package.json" "mvn test" "$(named "$RUNNERS" package.json pom.xml)"
 check "tests.sh: order: .NET before package.json" "dotnet test" "$(named "$RUNNERS" package.json App.sln)"
