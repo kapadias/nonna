@@ -1,7 +1,8 @@
 # Installing Nonna
 
 Two ways in: the Claude Code plugin, or `install.sh`, which puts the gates in the repository itself,
-for Claude Code and for other agents. Both start in lite mode.
+for Claude Code and for other agents. Both start in lite mode. Codex can install the plugin too
+([Codex: the plugin](#codex-the-plugin)).
 
 ## Claude Code: the plugin
 
@@ -252,6 +253,62 @@ Code loads them in every session and Nonna stops carrying her own, in lite mode 
 
 If another plugin already gives the agent the same "reuse before you write" ladder, full mode leaves
 its own copy out rather than say it twice. `NONNA_LADDER=on` or `off` decides it yourself.
+
+## Codex: the plugin
+
+Codex reads the same marketplace and installs the same plugin:
+
+```
+codex plugin marketplace add kapadias/nonna
+```
+
+Then install Nonna from `/plugins` in Codex, or with `codex plugin add nonna@nonna` from a terminal,
+and trust her hooks in `/hooks`. Codex runs no plugin hook until you trust it, and asks again when
+an update changes one.
+
+Codex loads her hooks from `hooks/codex-hooks.json`, which the plugin's `.codex-plugin/plugin.json`
+names, and runs the same scripts as Claude Code, with `NONNA_HOST=codex` so that each reads Codex's
+payload:
+
+| Codex event                   | What runs                                                                    |
+| ----------------------------- | ---------------------------------------------------------------------------- |
+| `SessionStart`                | wires the git hooks, records the test command, carries her rules             |
+| `PreToolUse` on `Bash`        | the branch guard and the secret guard, as under Claude Code                  |
+| `PreToolUse` on `apply_patch` | both guards, on each file the patch touches and the lines it adds            |
+| `Stop`                        | the test gate and "where's the test?": a red suite sends the agent back once |
+| `SubagentStart`               | carries her rules into each subagent                                         |
+
+Codex edits with `apply_patch`, one call that can add, change, move and delete several files.
+`lib/host-codex.sh` reads it as Claude Code's Write and Edit, one per file, so each guard judges a
+file of the patch as it judges a Claude Code edit. It refuses a patch it cannot read with
+certainty, and one over 256 KB or 200 files, too much to check before the hook times out.
+
+Nothing else is wired: Codex's `PostCompact` takes no context (its `SessionStart` after a compaction
+carries the rules again), the plugin never formats, and Codex runs none of her agents, so there is
+no review verdict to check.
+
+What differs from Claude Code:
+
+- **Her settings are git config.** `/nonna` is Claude Code's command; where a notice names it, use
+  `git config nonna.mode` and `git config nonna.testCmd` ([Configuration](#configuration)). The
+  plugin's options are Claude Code's too: under Codex she runs with their defaults, lite and
+  `run_tests` on.
+- **The git hooks link through Codex's plugin data directory** (`~/.codex/plugins/data/…/current`).
+  To take her out, run the [commands by hand](#what-nonna-changes-on-your-machine) in each
+  repository, then `codex plugin remove nonna@nonna`.
+- **Not yet proven in Codex.** The hooks are golden-tested against the payloads Codex documents,
+  and Codex 0.159.2 installs the plugin and lists exactly these hooks. They have not yet run in a
+  Codex session end to end, and the benchmark has no Codex arm, so no number in the README is
+  Codex's.
+- **What her Codex hooks do not see.** Codex runs no hook for input sent to a shell session that is
+  already running, so a command typed into a shell that already passed the guards is not read by
+  them, a later `git push --no-verify` there included. An `apply_patch` or a heredoc run through
+  the shell reaches her as a shell command, and nothing it writes is scanned for secrets. Her git
+  hooks are the backstop, except against `--no-verify`, which skips them; the wall is branch
+  protection on the server.
+
+Without the plugin, `install.sh --host agents` gives Codex the house rules in `AGENTS.md` and the git
+hooks, as every other agent gets them.
 
 ## Other agents: install.sh
 

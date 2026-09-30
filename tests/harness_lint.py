@@ -857,6 +857,58 @@ for rel, wiring in (
             if script not in wired:
                 bad(f"{rel}: {event} '{matcher}' must run {script} (a core gate)")
 
+# --- the Codex plugin: its manifest loads its own hooks file, which runs the core gates as Codex's ---
+# Codex installs the marketplace's plugin from .claude/ and, unless .codex-plugin/plugin.json names a
+# hooks file, loads hooks/hooks.json: Claude Code's wiring, whose gates would read an apply_patch as a
+# tool they do not guard. So the manifest must name hooks/codex-hooks.json, on the plugin's version,
+# and each command there tells the gate it runs under Codex (NONNA_HOST=codex, which picks its payload
+# adapter, lib/host-codex.sh), then the quoted plugin root and the script, and nothing after it.
+CODEX_MANIFEST = ".claude/.codex-plugin/plugin.json"
+CODEX_HOOKS = ".claude/hooks/codex-hooks.json"
+HOOK_FORMS[CODEX_HOOKS] = (
+    re.compile(
+        r'^NONNA_HOST=codex "\$\{PLUGIN_ROOT\}"/(hooks/[A-Za-z0-9_.-]+\.sh)(?P<data> "\$\{PLUGIN_DATA\}")?$'
+    ),
+    'NONNA_HOST=codex "${PLUGIN_ROOT}"/hooks/<script>.sh',
+)
+CODEX_GATES = {
+    ("PreToolUse", "^Bash$"): ("hooks/guard-branch.sh", "hooks/secret-scan.sh"),
+    ("PreToolUse", "^apply_patch$"): ("hooks/guard-branch.sh", "hooks/secret-scan.sh"),
+    ("Stop", "*"): ("hooks/stop-dod.sh",),
+    ("SessionStart", "*"): ("hooks/session-start.sh",),
+}
+try:
+    with open(f"{ROOT}/{CODEX_MANIFEST}", encoding="utf-8") as fh:
+        codex_manifest = json.load(fh)
+    with open(f"{ROOT}/{CODEX_HOOKS}", encoding="utf-8") as fh:
+        codex_hooks = json.load(fh)
+    with open(plugin_manifest, encoding="utf-8") as fh:
+        plugin_version = json.load(fh).get("version")
+except (OSError, json.JSONDecodeError) as exc:
+    bad(f"Codex plugin: cannot read its manifest or its hooks: {exc}")
+else:
+    if codex_manifest.get("hooks") != "./hooks/codex-hooks.json":
+        bad(
+            f'{CODEX_MANIFEST}: hooks must be "./hooks/codex-hooks.json", not {codex_manifest.get("hooks")!r}: without it Codex loads Claude Code\'s hooks.json'
+        )
+    if codex_manifest.get("version") != plugin_version:
+        bad(
+            f"{CODEX_MANIFEST}: version {codex_manifest.get('version')} is not the plugin's ({plugin_version}, .claude/.claude-plugin/plugin.json)"
+        )
+    check_hook_forms(CODEX_HOOKS, codex_hooks)
+    for (event, matcher), scripts in CODEX_GATES.items():
+        wired = {
+            hook_script(CODEX_HOOKS, event, h.get("command", ""))
+            for entry in (codex_hooks.get("hooks") or {}).get(event, [])
+            if entry.get("matcher", "*") == matcher
+            for h in entry.get("hooks", [])
+        }
+        for script in scripts:
+            if script not in wired:
+                bad(
+                    f"{CODEX_HOOKS}: {event} '{matcher}' must run {script} (a core gate)"
+                )
+
 # --- every Read settings.json denies, the Read hook refuses too, for Read and for Grep ---
 # A plugin install cannot carry permissions.deny: the hook is all it has. Each deny glob becomes a
 # sample path, and secret-scan.sh must refuse to Read it, and to Grep it (Claude Code applies Read

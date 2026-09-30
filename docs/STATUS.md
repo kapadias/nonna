@@ -62,7 +62,7 @@ never offered to the model, so it is not counted.
   `review-lanes.sh` sends the manifest and a root `hooks/hooks.json` to security review. The lint
   holds the manifest to what the CLI loads, and the release workflow holds its version to the tag.
 - **Docs** — this `STATUS.md`, `INSTALL.md`, `OVERVIEW.md`, `docs/benchmarks/`, `CHANGELOG.md`, the
-  `docs/adr/` index, and ADRs 0001–0012.
+  `docs/adr/` index, and ADRs 0001–0013.
 - **Launch images** — `assets/build.py` builds the scorecard, the social preview and one card per
   trap task from round 3's files; `--check` (standard library only) is run by `tests/run.sh`.
 - **CI** — `.github/workflows/ci.yml`: shellcheck (all scripts) + harness-lint + gate self-tests
@@ -73,6 +73,23 @@ never offered to the model, so it is not counted.
 ## Recently changed
 
 History lives in `CHANGELOG.md` and `git log`. Entries here describe the current unit of work.
+
+- **2026-09-30** — A Codex plugin (#25, ADR-0013), because Codex could end a turn on a red suite and
+  its edits passed both guards: an `apply_patch` adding a key or editing `.git/config` exited 0.
+  Codex installs the marketplace's `.claude/` (checked with Codex 0.159.2: its legacy
+  `.claude-plugin/marketplace.json` resolves there), so `.claude/.codex-plugin/plugin.json` points it
+  at `hooks/codex-hooks.json` instead of Claude Code's `hooks.json`. That file runs her scripts
+  with `NONNA_HOST=codex` on `SessionStart`, `PreToolUse` (`Bash`, `apply_patch`), `Stop` and
+  `SubagentStart`; the host comes from the file, never from the payload. `lib/patch.sh`, which
+  knows no host, reads an `apply_patch` by its grammar into a record a file, as an allowlist: the
+  review found that following Codex's trim rules let a header slip past both ways, so a line the
+  grammar does not allow now refuses the patch, and so does a patch over 256 KB or 200 files, too
+  much to check before a hook times out. `lib/host-codex.sh` turns each record into Claude Code's
+  Write or Edit with the lines it adds, and the gate checks each. Codex's `Stop` and `SessionStart`
+  payloads and answers already match. 53 golden tests (Codex's documented payloads, the grammar,
+  the lint's new checks) and the release's version check. Not yet run in a Codex session end to
+  end, and no Codex arm in `bench/`, so the README makes no parity claim; INSTALL says what the
+  Codex hooks do not see (input to a shell already running, a patch written through the shell).
 
 - **2026-09-30** — A Gemini CLI extension (#27). `gemini-extension.json` at the root (name `nonna`,
   the plugin's version) lets Gemini CLI users run
@@ -511,6 +528,9 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   also reads only the first marker on a line, so one inside a string before it, or a file with
   CR-only line endings, hides a marker with no trigger later on that line (also LOW).
 
+- The Codex plugin (#25) in a real Codex session: install it from `/plugins`, trust its hooks in
+  `/hooks`, and see a red suite send the agent back and a patch with a key refused; then a Codex
+  arm in `bench/` before the README says what it does for Codex.
 - Hooks for the Gemini CLI extension (`hooks/hooks.json`): the extension is rules only, so on Gemini
   CLI the test gate and the guards still come from `install.sh`'s git hooks. Nonna's hook scripts
   read Claude Code's JSON and exit codes, so Gemini CLI's hook contract needs an adapter first.

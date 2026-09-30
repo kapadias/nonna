@@ -80,6 +80,12 @@ raw_tool() { printf '%s' "$payload" | grep -oE '"tool_name"[[:space:]]*:[[:space
 has_field() { printf '%s' "$payload" | grep -qE "\"$1\"[[:space:]]*:[[:space:]]*\"[^\"]"; }
 
 payload="$(cat 2>/dev/null || true)"
+# Codex's apply_patch, read a file at a time (lib/host-codex.sh; codex-hooks.json sets NONNA_HOST).
+if [ "${NONNA_HOST:-}" = codex ]; then
+  # shellcheck source=/dev/null
+  . "$here/lib/host-codex.sh"
+  payload="$(printf '%s' "$payload" | nonna_codex_payload "$here/guard-branch.sh")" || exit 2
+fi
 tool="$(printf '%s' "$payload" | nonna_json_field '.tool_name')"
 [ -n "$tool" ] || tool="$(raw_tool)" # a parser that failed (jq, awk) leaves the name empty
 
