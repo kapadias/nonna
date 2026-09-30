@@ -70,32 +70,35 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
 
 - **2026-09-30** — Native Windows is measured, and it is not safe (#30). CI's `windows-latest` job
   reports and does not block. It runs `tests/run.sh` under Git Bash in three legs (`core.autocrlf`
-  true, false, and false with native symlinks), prints `tests/windows-probe.sh` (what Windows does to the
-  hooks) and shows what a `hooks.json` command becomes without Git for Windows. The first run
-  (36760188831, with two no-jq legs since dropped, which added nothing) passed 1162 of 1264 checks on
-  a CRLF checkout, 1164 on an LF one, and 1193 on an LF one with native symlinks and no jq. What it
-  found: Git Bash runs the hooks (CRLF scripts too; a native `jq.exe`'s CRLF is harmless); a
-  backslash path passes `guard-branch.sh` for `.git/config`, `.git/hooks` and the cwd check, and
-  `secret-scan.sh` passed two secret paths whose directory did not exist (the probe now makes the
-  directory) and does not exempt `tests\`; the PowerShell tool and `git.exe` pass the branch guard; a
-  git hook that Git Bash's `ln -s` copied cannot find its `lib/` and commits a staged key; a
-  plugin's `D:/…` paths read as relative, so session start wires no git hook; and without Git for
-  Windows PowerShell cannot parse a hook's command (exit 1), so no hook runs and Claude Code
-  reports a non-blocking error. Fixed here: a `.gitattributes` checks text out as LF whatever
-  `core.autocrlf` says (the CRLF leg's two data-file checks), and `session-start.sh` and
-  `install.sh` remove a hook that `ln -s` copied and say the gate is not enforced, where they had
-  said they added it (15 golden tests; 12 fail without the fix, and three pin what must not
-  change). A copying `ln` on Linux shows the price on the legs without native symlinks: 20
-  existing checks that passed on an inert copy now fail (13 in install, 7 in session start, which
-  assume a link), and 9 that failed on it pass. The reviews then found that her pre-push script
-  names its own path in a comment, so a byte copy of it, which the old session start left under
-  Git Bash, counted as a hook that chains hers: no warning, a check mark in `/nonna status`, a gate
-  that enforces nothing. A comment no longer counts as a chain, and a byte copy is named (session
-  start warns, `install.sh` exits 1, status shows `a copy, not a link: not enforced`) and never
-  deleted (27 more golden tests; 19 fail without the fix). The guard scripts wait for #25, #26 and
-  #29, which are changing them. `docs/INSTALL.md` has the measured section (use WSL 2). Mirrors:
-  `.claude/README.md` and `CLAUDE.md` considered and skipped (session start still installs both git
-  hooks); no ADR until a follow-up chooses a fix.
+  true, false, and false with native symlinks), prints `tests/windows-probe.sh` (what Windows does to
+  the hooks) and shows what a `hooks.json` command becomes without Git for Windows. The latest run
+  (36771120623, at 3230606) passed 1167 of 1279 checks with `core.autocrlf` true and the same 1167
+  with false (the same 112 fail, so `.gitattributes` made the two legs one), and 1229 with native
+  symlinks; the first run (36760188831) passed 1162 and 1164 of 1264, and 1193 with native symlinks
+  and no jq. What they found: Git Bash runs the hooks (CRLF scripts too; a native `jq.exe`'s CRLF is
+  harmless); a backslash path passes `guard-branch.sh` for `.git/config`, `.git/hooks` and the cwd
+  check, while `secret-scan.sh` refuses the secret paths whose directory exists, and does not exempt
+  `tests\`; the PowerShell tool and `git.exe` pass the branch guard; `ln -s` copies, and a copy of a
+  git hook cannot find its `lib/` and commits a staged key; a plugin's `D:/…` paths read as
+  relative, so session start wires no git hook; and without Git for Windows PowerShell cannot parse
+  a hook's command (exit 1), so no hook runs and Claude Code reports a non-blocking error.
+  Fixed here and measured on Windows: `.gitattributes` checks text out as LF whatever
+  `core.autocrlf` says, and `session-start.sh` and `install.sh` leave no copy (`not installed`, and
+  the note that `ln -s` made one), where they had said they added it. The price, as a copying `ln`
+  on Linux had shown, check for check: 20 existing checks that passed on an inert copy fail (13 in
+  install, 7 in session start, which assume a link), and 9 that failed on it pass. Fixed here and
+  tested on Linux with a copying `ln`, not yet measured on Windows: a byte copy of her script that
+  the old session start left counted as a hook that chains hers (her pre-push script names its own
+  path in a comment), with no warning and a check mark in `/nonna status`. A comment is no longer a
+  chain, and a copy is named (session start warns, `install.sh` exits 1, status shows
+  `a copy, not a link: not enforced`, uninstall says to delete it, each adding "unless you copied
+  its lib/ beside it") and never deleted. One check added in round 2 failed on Windows on every leg and
+  passes on Linux (a file committed with CRLF stays as committed); its cause is not known, so the
+  test now counts CRs as bytes and pins the scratch repo's `core.autocrlf`. The guard scripts wait
+  for #25, #26 and #29, which are changing them. `docs/INSTALL.md` has the measured section (use
+  WSL 2). Mirrors: `.claude/README.md` says session start names a copy, and `CLAUDE.md` is
+  considered and skipped (session start still installs both git hooks); no ADR until a follow-up
+  chooses a fix.
 - **2026-09-30** — No demo video in the repository's tree. The README's demo (a gif, an mp4 and the
   raw recording of one session, and the page on how it was recorded) is removed with its block in
   the README, and the split-screen film on `chore/17-demo` is not merged: both are launch

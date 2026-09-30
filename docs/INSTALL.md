@@ -330,7 +330,8 @@ cannot be installed without native symlinks, which Git Bash does not use by defa
 is not installed, none of her Claude Code hooks runs at all. Claude Code goes on after a hook that cannot
 run: it reports a non-blocking error and does not stop.
 
-This was measured on GitHub's `windows-latest` (Windows Server 2025, image `windows-2025-vs2026` 20260925.250.1)
+This was measured on GitHub's `windows-latest` (Windows Server 2025, image `windows-2025-vs2026`: 20260925.250.1 in
+run 36760188831, 20260922.246.2 in run 36771120623)
 by [the Windows job in CI](../.github/workflows/ci.yml) and [`tests/windows-probe.sh`](../tests/windows-probe.sh),
 which prints the same facts on your machine: run `bash tests/windows-probe.sh` in Git Bash. WSL 2 was not
 measured, because no CI job runs it. The gaps are tracked from #30 and listed in [`docs/STATUS.md`](STATUS.md).
@@ -367,23 +368,25 @@ Claude Code chooses by whether Git for Windows is there
 Measured with Git for Windows 2.55.0.windows.5 (bash 5.3.15). `fails open` is a hook that runs and lets
 through what it should stop; `never runs` is a hook that cannot start; `untested` is WSL 2.
 
-| Hook                                   | Git for Windows, Git Bash                                                                                                                                                                                                                                                                                                                                                                                | PowerShell, no Git for Windows | WSL 2    |
-| -------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ | -------- |
-| `session-start.sh`                     | runs. A plugin install wires no git hook: `D:/…` reads as a relative path, and the note calls her scripts "missing from the harness". A copy-in install got copies, not links, and said it had added them (tested on Linux with a copying `ln`; not yet measured on Windows: it now removes the copy it just made and says the gate is not enforced; a copy an older version left is named, not deleted) | never runs                     | untested |
-| `guard-branch.sh`, commands            | Bash tool: refuses a force push and a commit on `main`, whether `CLAUDE_PLUGIN_ROOT` is `/d/…`, `D:/…` or `D:\…`. Passes: the PowerShell tool, `git.exe push --force`, and a script run from her skill directory (the `cwd` has backslashes)                                                                                                                                                             | never runs                     | untested |
-| `guard-branch.sh`, Edit and Write      | fails open: `.git/config` is refused, but `D:\…\.git\config` and `D:\…\.git\hooks\pre-commit` pass                                                                                                                                                                                                                                                                                                       | never runs                     | untested |
-| `secret-scan.sh`, Read and Grep        | refuses `.env` by a backslash path. Passes `.ssh\id_rsa` and `secrets\db.yml` when their directory does not exist, which was the probe's case; it resolves a path through its directory first, which is why `.env` (its directory exists) was refused. The probe now makes the directories                                                                                                               | never runs                     | untested |
-| `secret-scan.sh`, Write and Edit       | refuses a key by a backslash path; refuses one under `tests\` too, where the exemption should let it through                                                                                                                                                                                                                                                                                             | never runs                     | untested |
-| `secret-scan.sh`, commands             | Bash tool: runs. PowerShell tool: `Get-Content .env` passes                                                                                                                                                                                                                                                                                                                                              | never runs                     | untested |
-| `format.sh` (copy-in only)             | runs                                                                                                                                                                                                                                                                                                                                                                                                     | never runs                     | untested |
-| `stop-dod.sh`                          | runs: GNU `timeout` comes first on the PATH. Its fallback for a machine without `timeout` failed the suite's check                                                                                                                                                                                                                                                                                       | never runs                     | untested |
-| `subagent-verdict.sh`                  | runs with jq; without jq it exits 0 and checks nothing, as designed                                                                                                                                                                                                                                                                                                                                      | never runs                     | untested |
-| `subagent-start.sh`, `post-compact.sh` | run                                                                                                                                                                                                                                                                                                                                                                                                      | never run                      | untested |
-| git `pre-commit` and `pre-push`        | a link runs and refuses a staged key (exit 1). A copy, which is what `ln -s` makes, cannot find its `lib/` and lets the commit through (exit 0)                                                                                                                                                                                                                                                          | not installed                  | untested |
+| Hook                                   | Git for Windows, Git Bash                                                                                                                                                                                                                                                                                                                                                                                                                                                             | PowerShell, no Git for Windows | WSL 2    |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ | -------- |
+| `session-start.sh`                     | runs. A plugin install wires no git hook: `D:/…` reads as a relative path, and the note calls her scripts "missing from the harness". A copy-in install used to get copies, not links, and say it had added them; it now leaves no hook and says so (run 36771120623: `not installed`, and the note `ln -s made a copy of require-status-sync.sh, not a link`). A copy an older version left is named, not deleted (tested on Linux with a copying `ln`; not yet measured on Windows) | never runs                     | untested |
+| `guard-branch.sh`, commands            | Bash tool: refuses a force push and a commit on `main`, whether `CLAUDE_PLUGIN_ROOT` is `/d/…`, `D:/…` or `D:\…`. Passes: the PowerShell tool, `git.exe push --force`, and a script run from her skill directory (the `cwd` has backslashes)                                                                                                                                                                                                                                          | never runs                     | untested |
+| `guard-branch.sh`, Edit and Write      | fails open: `.git/config` is refused, but `D:\…\.git\config` and `D:\…\.git\hooks\pre-commit` pass                                                                                                                                                                                                                                                                                                                                                                                    | never runs                     | untested |
+| `secret-scan.sh`, Read and Grep        | refuses `.env`, `.ssh\id_rsa` and `secrets\db.yml` by a backslash path when their directory exists, because it resolves a path through its directory first (run 36771120623). Passes `.aws\credentials` where the directory is missing, and then the file is missing too                                                                                                                                                                                                              | never runs                     | untested |
+| `secret-scan.sh`, Write and Edit       | refuses a key by a backslash path; refuses one under `tests\` too, where the exemption should let it through                                                                                                                                                                                                                                                                                                                                                                          | never runs                     | untested |
+| `secret-scan.sh`, commands             | Bash tool: runs. PowerShell tool: `Get-Content .env` passes                                                                                                                                                                                                                                                                                                                                                                                                                           | never runs                     | untested |
+| `format.sh` (copy-in only)             | runs                                                                                                                                                                                                                                                                                                                                                                                                                                                                                  | never runs                     | untested |
+| `stop-dod.sh`                          | runs: GNU `timeout` comes first on the PATH. Its fallback for a machine without `timeout` failed the suite's check                                                                                                                                                                                                                                                                                                                                                                    | never runs                     | untested |
+| `subagent-verdict.sh`                  | runs with jq; without jq it exits 0 and checks nothing, as designed                                                                                                                                                                                                                                                                                                                                                                                                                   | never runs                     | untested |
+| `subagent-start.sh`, `post-compact.sh` | run                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | never run                      | untested |
+| git `pre-commit` and `pre-push`        | a link runs and refuses a staged key (exit 1; run 36771120623, native symlinks). Without native symlinks no hook is installed, and the commit goes through (exit 0). A copy, which is what `ln -s` used to leave, cannot find its `lib/` and let the commit through too (exit 0; run 36760188831)                                                                                                                                                                                     | not installed                  | untested |
 
-`tests/run.sh` passed 1164 of its 1264 checks on an LF checkout, and 1193 with native symlinks and no jq. What
-fails is mostly the suite's own assumptions (real symlinks, jq, POSIX paths in Python) and the two gaps above;
-the follow-up issues say which.
+`tests/run.sh`, on run 36771120623: 1167 of its 1279 checks pass with `core.autocrlf` true and the same 1167 with
+false (the same 112 fail: `.gitattributes` made the two legs one), and 1229 pass with native symlinks (50 fail).
+Run 36760188831, before the fixes, passed 1162 and 1164 of 1264, and 1193 with native symlinks and no jq. What
+fails is mostly the suite's own assumptions (real symlinks, tools hidden by a fixture, POSIX paths in Python)
+and the gaps above; the follow-up issues say which.
 
 ### What stops a hook, in the words you will see
 
@@ -392,22 +395,27 @@ the follow-up issues say which.
   PowerShell 5.1.26100.33438). Claude Code reports `Failed with non-blocking status code` and goes on.
   With Git for Windows off the PATH, `bash` is `C:\Windows\system32\bash.exe`, the WSL launcher, and there
   is no `git`.
-- **A copied git hook**: bash stops at line 22 of the copy, where it sources `lib/secret-patterns.sh` from the
-  directory beside it (`.git/hooks/pre-commit: line 22: …/.git/hooks/lib/secret-patterns.sh: No such file or
-directory`; the probe's row was cut off after `…/.git/ho`, and now keeps the whole line), and a staged
-  AWS-style key commits (exit 0). An older session start left such copies and said it had added them,
-  and took a copy of her pre-push for a hook that chains hers, because her script names its own path in a
-  comment. Now a comment is not a chain, and a copy is named (`.git/hooks/pre-push is a copy of her
-require-status-sync.sh, not a link`; `/nonna status` shows `a copy, not a link: not enforced` in place of a
-  check mark): delete it, and with native symlinks the next session links the real one. Git Bash's `ln -s` makes a copy unless Developer Mode is on and
-  `MSYS=winsymlinks:nativestrict` is set ([MSYS2](https://www.msys2.org/docs/symlinks/)); with both, the
-  hooks were links and the same commit was refused (exit 1).
+- **A copied git hook**: before session start refused one, bash stopped at line 22 of the copy, where it sources
+  `lib/secret-patterns.sh` from the directory beside it
+  (`.git/hooks/pre-commit: line 22: …/.git/hooks/lib/secret-patterns.sh: No such file or directory`; run 36760188831
+  cut that row off after `…/.git/ho`), and a staged AWS-style key committed (exit 0). Session start now leaves no copy: run 36771120623 finds no hook
+  installed, the note `ln -s made a copy of require-status-sync.sh, not a link`, and the staged key committing (exit 0)
+  because there is no hook. Git Bash's `ln -s` makes a copy unless Developer Mode is on and
+  `MSYS=winsymlinks:nativestrict` is set ([MSYS2](https://www.msys2.org/docs/symlinks/)); with both, the hooks are
+  links and the same commit is refused (exit 1). A copy an older version left is another matter. It counted as a hook
+  that chains hers, because her pre-push script names its own path in a comment, and the old session start said it had
+  added it. Now a comment is not a chain, and a copy is named: session start warns
+  (`.git/hooks/pre-push is a copy of her require-status-sync.sh, not a link`), `/nonna status` shows
+  `a copy, not a link: not enforced` in place of a check mark, and `/nonna uninstall` says to delete it. Each adds
+  "(unless you copied its lib/ beside it)", since a copy with its `lib/` beside it works. Nothing deletes it. This
+  part was tested on Linux with a copying `ln`, and is not yet measured on Windows.
 - **`D:/…` paths**: a plugin's root and data directory arrive with a drive letter, which session start reads
   as a relative path: `Note: require-status-sync.sh is missing from the harness, so the pre-push gate is NOT enforced`.
 - **CRLF**: Git Bash runs a CRLF script without a word (exit 0). `core.autocrlf=true` is Git for Windows'
   default, and the runner's system config has it. A CRLF checkout failed two checks more than an LF one,
   which compare bytes or anchor a regex at a line end. The repository's `.gitattributes` now makes every
-  new checkout LF (tested on Linux with `core.autocrlf=true`; not yet measured on Windows). An existing
+  new checkout LF: run 36771120623 sets `core.autocrlf=true`, git reports `w/lf attr/text=auto eol=lf` for the checkout and
+  for a clone with it, and that leg fails exactly the checks the `false` leg does. An existing
   checkout that moves to this commit keeps CRLF in the files git does not rewrite, and `git status` reads
   clean. To convert it, clone again; or commit or stash your work first, then run
   `git rm --cached -r -q . && git reset --hard`, which discards uncommitted changes. WSL's bash does not
@@ -421,8 +429,8 @@ require-status-sync.sh, not a link`; `/nonna status` shows `a copy, not a link: 
 Windows Server 2025 (10.0.26100); Git for Windows 2.55.0.windows.5 with `core.autocrlf=true` and
 `core.symlinks=true` in its system config; bash 5.3.15(2) on MSYS 3.6.10, GNU Awk 5.4.1, sed 4.9, grep 3.0,
 `timeout` from GNU coreutils 8.32, Perl 5.42.3; jq 1.8.1; Python 3.12.10; PowerShell 7.6.6 and Windows
-PowerShell 5.1.26100.33438. Claude Code's documentation is as of 2.1.285. One `guard-branch.sh` run took 1.3
-to 1.7 seconds here and 0.1 on Linux, and a Bash tool call runs two hooks.
+PowerShell 5.1.26100.33438. Claude Code's documentation is as of 2.1.285. One `guard-branch.sh` run took 1.1
+to 1.9 seconds here and 0.1 on Linux, and a Bash tool call runs two hooks.
 
 ### If you use it anyway
 

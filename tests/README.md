@@ -164,6 +164,6 @@ alongside `shellcheck` over every script and `claude plugin validate --strict` o
 manifests. `run.sh` also runs on a macOS runner under `/bin/bash` 3.2 with only Apple's tools on
 the PATH (no Homebrew), because the guards parse shell in bash and awk and those differ from
 Linux's. It runs a third time under Git Bash on Windows, in three legs, and there it only
-reports: 100 of 1264 checks failed on an LF checkout the first time, and
+reports: 112 of 1279 checks fail there without native symlinks and 50 with them (run 36771120623), and
 [`docs/INSTALL.md`](../docs/INSTALL.md#windows) says which gates that costs. Adopters wire their own
 lint/type/test/coverage gate as additional jobs — see [`stacks/`](../stacks/).

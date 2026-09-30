@@ -123,7 +123,7 @@ Your AI agent says "done"; Nonna makes it prove it.
 - **Native Windows is measured, and it is not safe yet: use WSL 2** (#30). CI runs the gate tests
   under Git Bash on `windows-latest` in three legs (`core.autocrlf` true, false, and false with
   native symlinks), and `tests/windows-probe.sh` prints what Windows does to the hooks. The job reports and
-  does not block. On an LF checkout 1164 of the 1264 checks passed; the rest are the suite's own
+  does not block. On the latest run 1167 of the 1279 checks passed without native symlinks and 1229 with them; the rest are the suite's own
   POSIX assumptions and the gaps below. `docs/INSTALL.md` says which hooks run, which let a blocked
   action through and which never start, with versions. The gaps: a backslash path passes the
   file-tool guards, the PowerShell tool and `git.exe` pass the branch guard, and with no Git for
