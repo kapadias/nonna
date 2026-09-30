@@ -19,8 +19,9 @@ Every check below fails the build (boundaries.md: deterministic gates decide):
     review ask which adds code must name a failing input (ADR-0008).
   - README numbers: every number README.md marks (`<!--n:key-->`) equals the fact
     the lint computes from bench/results/round3/*.tsv.
-  - README translations: each README.<lang>.md marks the numbers README.md marks
-    and carries its code blocks word for word, so neither goes stale in a language.
+  - README translations: README.md links each README.<lang>.md, which marks the
+    numbers README.md marks and carries its code blocks word for word, so neither
+    goes stale in a language.
 
 NONNA_LINT_ROOT points the linter at a different tree. It exists so tests/run.sh
 can golden-test the linter itself against mutated copies of this repo — a linter
@@ -165,6 +166,8 @@ for rel in (
     "tests/README.md",
     ".claude/README.md",
     "docs/STATUS.md",
+    # A translation leaves the count out; one left behind is held to run.sh all the same.
+    *sorted(os.path.relpath(p, ROOT) for p in glob.glob(f"{ROOT}/README.*.md")),
 ):
     path = os.path.join(ROOT, rel)
     if not os.path.isfile(path):
@@ -981,14 +984,19 @@ check_scorecard("README.md", README_TEXT)
 # A translation marks the numbers README.md marks (held to the rows above, in whatever order its
 # language puts them), gives the scorecard the image's own alt text (the image is in English), and
 # carries README.md's code blocks word for word: a command, a path or a line Nonna prints is not
-# translated, a shell comment may be. So a number or a command changed in README.md fails here until
-# every translation follows. The golden-test count is left out of them: only README.md's is checked.
+# translated, a comment in a shell block may be, where README.md has one. So a number or a command
+# changed in README.md fails here until every translation follows. README.md's top line links each.
 FENCE = re.compile(r"^[ \t]*```.*?^[ \t]*```", re.M | re.S)
+SHELL_FENCE = re.compile(r"[ \t]*```(?:bash|sh|shell)\b")
 SHELL_COMMENT = re.compile(r"[ \t]*(?<!\S)#.*$", re.M)
 
 
 def code_blocks(text: str) -> list[str]:
-    return [SHELL_COMMENT.sub("", block) for block in FENCE.findall(text)]
+    # A comment becomes a bare " #": its words may change, its place may not.
+    return [
+        SHELL_COMMENT.sub(" #", block) if SHELL_FENCE.match(block) else block
+        for block in FENCE.findall(text)
+    ]
 
 
 for path in sorted(glob.glob(f"{ROOT}/README.*.md")):
@@ -1004,8 +1012,10 @@ for path in sorted(glob.glob(f"{ROOT}/README.*.md")):
     check_scorecard(rel, text)
     if code_blocks(text) != code_blocks(README_TEXT):
         bad(
-            f"{rel}: its code blocks are not README.md's word for word (only a # comment may be translated)"
+            f"{rel}: its code blocks are not README.md's word for word (only a # comment README.md's shell blocks have may be translated)"
         )
+    if f"]({rel})" not in README_TEXT:
+        bad(f"README.md: does not link {rel} (its top line links every translation)")
 
 if offenders:
     print("Harness lint FAILED:")
