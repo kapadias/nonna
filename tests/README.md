@@ -53,6 +53,13 @@ Exercises each deterministic gate with fixed inputs and asserts the exit code:
 - **tests say no** (Stop and pre-push): when code changed, both run the project's own test
   command (detected, or `NONNA_TEST_CMD`) and refuse on red; the Stop hook blocks once, then lets
   an agent that cannot fix it stop and say so.
+- **test-command detection** (`lib/tests.sh`): per language (Ruby, PHP, Java and Kotlin, .NET,
+  Elixir) the exact command, nothing when the runner, or the JVM or php a wrapper script needs, is off
+  `PATH` (the test owns `PATH` with stand-in runners, so nothing real runs), the fall-through to
+  `package.json`, `go.mod` and `Cargo.toml`, and the order where two ecosystems meet: pytest, the back
+  ends, `package.json`, `go.mod`, `Cargo.toml`. A property test (`detect_property.py`) builds seeded
+  random piles of marker files and runners and wants what the first matching row of a table says, with
+  every row reached; a check proves detection started no runner.
 - **stop-dod** (Stop): blocks a turn ending with tracked code changed and
   `docs/STATUS.md` untouched; lets doc-only edits, untracked scratch, and a clean
   tree end freely; fails **open** outside a git repo, because a Stop hook that

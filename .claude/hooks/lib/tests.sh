@@ -10,8 +10,32 @@
 #                  and says so. So the Stop hook and the git pre-push hook run one command, and the
 #                  user can see and change it. The pre-push hook passes `git-hook`: it ignores
 #                  NONNA_TEST_CMD, which the command that runs git could set.
-# nonna_detect_test_cmd  prints the command detection finds here: pytest config/tests,
-#                  package.json's "test" script, go.mod or Cargo.toml.
+# nonna_detect_test_cmd  prints the command detection finds here: the first row of this list that
+#                  matches, and only when its runner is there. A missing runner would read as a red suite
+#                  and block every push, so a row whose runner is missing is skipped and the search goes
+#                  on below it: a repository that package.json, go.mod or Cargo.toml gates is gated still.
+#                  pytest's row is the old exception: its files claim the repository, and without pytest
+#                  nothing is named. Detection looks for a runner and never starts one.
+#                    pytest config or tests; pytest                   python3 -m pytest -q
+#                    Gemfile, .rspec or spec/spec_helper.rb; bundle   bundle exec rspec
+#                    Gemfile, Rakefile and test/; bundle              bundle exec rake test
+#                    phpunit.xml, .xml.dist or phpunit.dist.xml; php
+#                      vendor/bin/pest (executable)                   vendor/bin/pest
+#                      vendor/bin/phpunit (executable)                vendor/bin/phpunit
+#                    gradlew (executable); a JVM                      ./gradlew test
+#                    mvnw (executable); a JVM                         ./mvnw test
+#                    pom.xml; mvn                                     mvn test
+#                    one .sln, .slnx or .*proj file; dotnet           dotnet test
+#                    mix.exs; mix                                     mix test
+#                    a "test" script in package.json                  npm test --silent
+#                    go.mod                                           go test ./...
+#                    Cargo.toml                                       cargo test --quiet
+#                  The back ends come before package.json, which in a Rails, Laravel or Phoenix app
+#                  usually serves the front end. A Gemfile alone is no Ruby suite, nor is a bare spec/
+#                  (Jasmine has one). The scripts a repository ships bring no runtime, so gradlew and mvnw
+#                  need a JVM, looked for as they look (JAVA_HOME/bin/java when JAVA_HOME is set, else
+#                  java on PATH), and vendor/bin/pest and phpunit need php. dotnet test cannot choose
+#                  among several solution or project files.
 # nonna_run_tests  runs it with a timeout (NONNA_TEST_TIMEOUT seconds, default 600); exit status is
 #                  the suite's, 124 when it timed out. $NONNA_TEST_TAIL gets what a person needs to
 #                  see: up to five failing-test lines (pytest, jest, go, cargo, TAP) and the summary,
@@ -36,16 +60,48 @@ nonna_test_cmd() { # [git-hook]: a git hook takes nothing from the environment (
   nonna_detect_test_cmd
 }
 
+nonna_have() { command -v "$1" >/dev/null 2>&1; } # <command>: found on PATH; looking runs nothing
+nonna_have_java() { # a JVM as gradlew and mvnw find one: $JAVA_HOME/bin/java if JAVA_HOME is set, else java on PATH
+  # debt: macOS's /usr/bin/java stub counts as a JVM with no JDK installed, ask java_home when a Mac reports a red ./gradlew test
+  if [ -n "${JAVA_HOME:-}" ]; then [ -x "$JAVA_HOME/bin/java" ]; else nonna_have java; fi
+}
+
 nonna_detect_test_cmd() {
-  local t has_py_tests=0
+  local t f dotnet_files=0 has_phpunit_xml=0 has_py_tests=0
   for t in tests/test_*.py tests/*_test.py test/test_*.py test_*.py; do
     [ -f "$t" ] && has_py_tests=1 && break
   done
+  for f in *.sln *.slnx *.*proj; do [ -f "$f" ] && dotnet_files=$((dotnet_files + 1)); done # MSBuild's own glob
+  for f in phpunit.xml phpunit.xml.dist phpunit.dist.xml; do [ -f "$f" ] && has_phpunit_xml=1; done
   if [ -f pytest.ini ] || [ -f tox.ini ] || [ -f conftest.py ] || [ "$has_py_tests" = 1 ]; then
     # Only when pytest is there: "No module named pytest" is not a red suite. Found, not imported,
     # and never from the repository's own directory: a pytest.py it ships must not run.
     python3 -c 'import sys; sys.path[:] = [p for p in sys.path if p not in ("", ".")]; import importlib.util; sys.exit(importlib.util.find_spec("pytest") is None)' >/dev/null 2>&1 \
       && printf 'python3 -m pytest -q'
+  # The back ends come before package.json, which in a Rails, Laravel or Phoenix app serves the front
+  # end. A row whose runner is missing is skipped, not claimed: the search goes on below it, so a
+  # repository that package.json, go.mod or Cargo.toml gates stays gated. A runner is looked for
+  # (nonna_have, -x), never started. The wrappers a repository ships bring no runtime: a JVM or php too.
+  elif [ -f Gemfile ] && { [ -f .rspec ] || [ -f spec/spec_helper.rb ]; } && nonna_have bundle; then # a bare spec/ is also Jasmine's
+    printf 'bundle exec rspec'
+  elif [ -f Gemfile ] && [ -f Rakefile ] && [ -d test ] && nonna_have bundle; then
+    printf 'bundle exec rake test'
+  elif [ "$has_phpunit_xml" = 1 ] && nonna_have php && [ -x vendor/bin/pest ]; then
+    printf 'vendor/bin/pest' # a Pest project: phpunit runs none of its tests
+  elif [ "$has_phpunit_xml" = 1 ] && nonna_have php && [ -x vendor/bin/phpunit ]; then
+    printf 'vendor/bin/phpunit'
+  elif [ -x gradlew ] && nonna_have_java; then
+    printf './gradlew test'
+  elif [ -x mvnw ] && nonna_have_java; then
+    printf './mvnw test'
+  elif [ -f pom.xml ] && nonna_have mvn; then
+    printf 'mvn test'
+  elif [ "$dotnet_files" = 1 ] && nonna_have dotnet; then
+    # dotnet test exits with MSB1011, which reads as a red suite, where several solution or project files sit.
+    # debt: a .sln and a .csproj of one name count as two and are skipped, name the solution when a repository reports it
+    printf 'dotnet test'
+  elif [ -f mix.exs ] && nonna_have mix; then
+    printf 'mix test'
   elif [ -f package.json ] && grep -qE '"test"[[:space:]]*:' package.json && ! grep -q 'no test specified' package.json; then
     printf 'npm test --silent'
   elif [ -f go.mod ]; then
