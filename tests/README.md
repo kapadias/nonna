@@ -32,7 +32,11 @@ Exercises each deterministic gate with fixed inputs and asserts the exit code:
   update or that introduces a secret (no fixture exemption at push time); allows a
   synced push.
 - **session-start**: emits context, auto-installs the pre-push hook, and warns
-  instead of overwriting a foreign one.
+  instead of overwriting a foreign one. When `ln -s` only copies the script (Git Bash), it
+  removes the copy and says the gate is not enforced; `install.sh` does the same and exits 1.
+- **.gitattributes**: a clone with `core.autocrlf=true` holds no CR in a script, an awk file or a
+  markdown file; a file committed with CRLF keeps it and the clone stays clean; every tracked
+  `*.sh` and `*.awk` resolves to `eol: lf`.
 - **check-review** (review verdict gate): blocks on `request_changes`, any
   CRITICAL/HIGH, or an out-of-schema verdict/severity; extracts one fenced json
   block; fails closed on invalid JSON — same on the jq and no-jq paths.
@@ -154,5 +158,7 @@ Both run in CI on every push and pull request (`.github/workflows/ci.yml`),
 alongside `shellcheck` over every script and `claude plugin validate --strict` on both
 manifests. `run.sh` also runs on a macOS runner under `/bin/bash` 3.2 with only Apple's tools on
 the PATH (no Homebrew), because the guards parse shell in bash and awk and those differ from
-Linux's. Adopters wire their own
+Linux's. It runs a third time under Git Bash on Windows, in three legs, and there it only
+reports: 100 of 1264 checks failed on an LF checkout the first time, and
+[`docs/INSTALL.md`](../docs/INSTALL.md#windows) says which gates that costs. Adopters wire their own
 lint/type/test/coverage gate as additional jobs — see [`stacks/`](../stacks/).

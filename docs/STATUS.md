@@ -68,21 +68,29 @@ never offered to the model, so it is not counted.
 
 History lives in `CHANGELOG.md` and `git log`. Entries here describe the current unit of work.
 
-- **2026-09-30** — Native Windows is measured, not assumed (#30, round 1). CI gains a `windows-latest`
-  job, `continue-on-error` until what it finds is fixed, that runs `tests/run.sh` under Git Bash in
-  four legs (a CRLF checkout, an LF one, LF without jq, and that with native symlinks) and prints
-  `tests/windows-probe.sh`, which reports what Windows does to the hooks; a PowerShell step shows what
-  a `hooks.json` command becomes where Git for Windows is absent. Read from the code and from Claude
-  Code's hooks documentation, and reproduced on Linux with Windows-shaped input, ahead of the log: a
-  CRLF checkout (Git for Windows' default) breaks every hook, by exit 127 or, where the shebang's CR
-  is tolerated, by exit 2 on every call; a native `jq.exe` writes CRLF under Git Bash, so the guards
-  read the tool name as `Bash\r` and pass everything; Git Bash's `ln -s` copies, so a git hook becomes
-  a copy that cannot find its `lib/` and lets a staged key through; a plugin's `C:/…` paths read as
-  relative, so session start wires no git hook; file-tool paths arrive with backslashes, so the
-  guards for `.git/config`, `.git/hooks` and the secret files fail open; and the PowerShell tool, on
-  by default beside Git Bash, is matched by nothing Nonna wires. `docs/INSTALL.md` has a Windows section, a draft
-  until the log is in, that says to use WSL 2. Nothing under `.claude/` changed, so its index and
-  `CLAUDE.md` stand; no ADR until the fixes are chosen.
+- **2026-09-30** — Native Windows is measured, and it is not safe (#30). CI's `windows-latest` job
+  reports and does not block. It runs `tests/run.sh` under Git Bash in three legs (`core.autocrlf`
+  true, false, and false with native symlinks), prints `tests/windows-probe.sh` (what Windows does to the
+  hooks) and shows what a `hooks.json` command becomes without Git for Windows. The first run
+  (36760188831, with two no-jq legs since dropped, which added nothing) passed 1162 of 1264 checks on
+  a CRLF checkout, 1164 on an LF one, and 1193 on an LF one with native symlinks and no jq. What it
+  found: Git Bash runs the hooks (CRLF scripts too; a native `jq.exe`'s CRLF is harmless); a
+  backslash path passes `guard-branch.sh` for `.git/config`, `.git/hooks` and the cwd check, and
+  `secret-scan.sh` passed two secret paths whose directory did not exist (the probe now makes the
+  directory) and does not exempt `tests\`; the PowerShell tool and `git.exe` pass the branch guard; a
+  git hook that Git Bash's `ln -s` copied cannot find its `lib/` and commits a staged key; a
+  plugin's `D:/…` paths read as relative, so session start wires no git hook; and without Git for
+  Windows PowerShell cannot parse a hook's command (exit 1), so no hook runs and Claude Code
+  reports a non-blocking error. Fixed here: a `.gitattributes` checks text out as LF whatever
+  `core.autocrlf` says (the CRLF leg's two data-file checks), and `session-start.sh` and
+  `install.sh` remove a hook that `ln -s` copied and say the gate is not enforced, where they had
+  said they added it (15 golden tests; 12 fail without the fix, and three pin what must not
+  change). A copying `ln` on Linux shows the price on the legs without native symlinks: 20
+  existing checks that passed on an inert copy now fail (13 in install, 7 in session start, which
+  assume a link), and 9 that failed on it pass. The guard scripts wait for #25, #26 and #29,
+  which are changing them. `docs/INSTALL.md`
+  has the measured section (use WSL 2). Mirrors: `.claude/README.md` and `CLAUDE.md` considered and
+  skipped (session start still installs both git hooks); no ADR until a follow-up chooses a fix.
 - **2026-09-30** — No demo video in the repository's tree. The README's demo (a gif, an mp4 and the
   raw recording of one session, and the page on how it was recorded) is removed with its block in
   the README, and the split-screen film on `chore/17-demo` is not merged: both are launch
@@ -463,10 +471,14 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
 
 ## Next / open
 
-- Native Windows (#30): fix what the `windows-latest` job and `tests/windows-probe.sh` find, each fix
-  with a golden test that fails on Windows first; write the rest up as issues; finish the Windows
-  section of `docs/INSTALL.md` with what runs, fails and never runs, with versions; then drop
-  `continue-on-error`. Until then the docs say to use WSL 2.
+- Native Windows (#30): the Windows CI job reports and does not block, and the docs say to use
+  WSL 2, until these are fixed; one follow-up each. The first four touch scripts that #25, #26 and #29 are
+  changing, so they wait for those: backslash paths in the guards (`guard-branch.sh:92`, `:109`;
+  `secret-scan.sh:38`, `:161`; `lib/secret-patterns.sh:11`); the PowerShell tool, which no hook
+  matches; `git.exe` (`guard-branch.sh:41`, `lib/shell-words.awk:223`); the Stop gate's `timeout`
+  and perl fallback on Windows (`lib/tests.sh:62-68`). Then git hooks as copies (a wrapper where
+  `ln -s` cannot link), the test suite's own POSIX assumptions, a WSL leg in CI, and whether a
+  PowerShell-only install, where no hook runs, is supported at all. Then drop `continue-on-error`.
 - The rest of the launch plan (#17): deleting the finished branches (the film's first), the v2.0.0
   release as an ordinary merge of `develop` into `main`, and the go/no-go checks. `/nonna` ran
   headless in default and auto mode during the smoke runs; an interactive check stays on the

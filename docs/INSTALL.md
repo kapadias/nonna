@@ -321,17 +321,21 @@ the repository gets them, plugin or not.
 
 ## Windows
 
-> **Draft, pending the CI run.** The Windows job in `.github/workflows/ci.yml` and
-> `tests/windows-probe.sh` (issue #30) have not reported yet. What follows is read from the code and
-> from Claude Code's documentation. The rows about paths, tool names, line endings, links and jq were
-> also reproduced on Linux, by giving the hooks the input Claude Code documents for Windows; none of it
-> is measured on Windows yet, and this note goes when it is.
+**Native Windows is not safe today. Use WSL 2.** Where Git for Windows is installed, Claude Code runs her
+hooks in Git Bash. Most of her gates run there, but several do not stop what they guard, and a git hook
+cannot be installed without native symlinks, which Git Bash does not use by default. Where Git for Windows
+is not installed, none of her Claude Code hooks runs at all. Claude Code goes on after a hook that cannot
+run: it reports a non-blocking error and does not stop.
 
-**Use WSL 2 for now.** Claude Code inside WSL is Linux as far as Nonna can tell, and everything in this
-guide applies: install Claude Code and `git` inside the distribution, and keep the repository on its own
-file system (`~/project`, not `/mnt/c`, which is slow and shows a Windows checkout's CRLF). On native
-Windows several of her gates do not run, or let through what they guard, and Claude Code does not stop
-for it: a hook that cannot run is a non-blocking error.
+This was measured on GitHub's `windows-latest` (Windows Server 2025, image `windows-2025-vs2026` 20260925.250.1)
+by [the Windows job in CI](../.github/workflows/ci.yml) and [`tests/windows-probe.sh`](../tests/windows-probe.sh),
+which prints the same facts on your machine: run `bash tests/windows-probe.sh` in Git Bash. WSL 2 was not
+measured, because no CI job runs it. The gaps are tracked from #30 and listed in [`docs/STATUS.md`](STATUS.md).
+
+**In WSL 2**, Claude Code runs on Linux and her hooks run as they do there, which is where her tests run.
+That is expected, not measured. Install Claude Code and `git` inside the distribution, and keep the
+repository on its own file system (`~/project`, not `/mnt/c`, which is slow and can hold a Windows
+checkout's CRLF).
 
 ### Which shell runs her hooks
 
@@ -351,71 +355,79 @@ Claude Code chooses by whether Git for Windows is there
   ```
 
 - **Without Git for Windows**, or where Claude Code cannot find it (set `CLAUDE_CODE_GIT_BASH_PATH` to
-  `bash.exe`), hooks run in PowerShell and there is no Bash tool. Her hooks are bash: PowerShell cannot
-  parse `"C:/…/2.0.0"/hooks/guard-branch.sh`, so each exits 1, Claude Code reports
-  `Failed with non-blocking status code` and goes on. None of her Claude Code hooks runs, and
-  `install.sh` needs bash too, so nothing is enforced.
+  `bash.exe`), hooks run in PowerShell and there is no Bash tool. Her hooks are bash, and PowerShell
+  cannot parse their command. None of her Claude Code hooks runs, and `install.sh` needs bash too, so
+  nothing is enforced.
 
 ### What runs where
 
-Expected, not measured. `fails open` is a hook that runs and lets through what it should stop; `never
-runs` is a hook that cannot start. The Git Bash column assumes no `jq` on the PATH, which Git for
-Windows does not bring; a native `jq.exe` changes it, below.
+Measured with Git for Windows 2.55.0.windows.5 (bash 5.3.15). `fails open` is a hook that runs and lets
+through what it should stop; `never runs` is a hook that cannot start; `untested` is WSL 2.
 
-| Hook                                   | Git for Windows, Git Bash                                                                                                                                                     | PowerShell, no Git for Windows | WSL 2 |
-| -------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------ | ----- |
-| `session-start.sh`                     | runs; under the plugin it wires no git hook (`C:/…` reads as a relative path, so it reports her scripts "missing from the harness"); a copy-in install gets copies, not links | never runs                     | runs  |
-| `guard-branch.sh`, commands            | Bash tool: runs, but `git.exe push --force` passes, and so does a script run from her skill directory (the `cwd` has backslashes). PowerShell tool: never sees it             | never runs                     | runs  |
-| `guard-branch.sh`, Edit and Write      | fails open: a write to `.git\config` or `.git\hooks\…` passes                                                                                                                 | never runs                     | runs  |
-| `secret-scan.sh`, Read and Grep        | fails open for `.env`, `.ssh\`, `.aws\`, `secrets\`, `id_rsa*`, `credentials`, `kubeconfig` and `.npmrc`; `*.pem`, `*.key` and their kind are refused                         | never runs                     | runs  |
-| `secret-scan.sh`, Write and Edit       | runs; the test-path exemption does not match backslashes, so a key in a fixture is refused                                                                                    | never runs                     | runs  |
-| `secret-scan.sh`, commands             | Bash tool: runs. PowerShell tool: never sees it (`Get-Content .env` passes)                                                                                                   | never runs                     | runs  |
-| `format.sh` (copy-in only)             | runs, when a formatter is on the PATH                                                                                                                                         | never runs                     | runs  |
-| `stop-dod.sh`                          | runs; where `timeout` is Windows' own, a green suite reads as red, and `python3` may be missing                                                                               | never runs                     | runs  |
-| `subagent-verdict.sh`                  | needs `jq`, which Git for Windows does not bring; without it the hook exits 0 and checks nothing                                                                              | never runs                     | runs  |
-| `subagent-start.sh`, `post-compact.sh` | runs                                                                                                                                                                          | never runs                     | runs  |
-| git `pre-commit` and `pre-push`        | a link runs. A copy does not: it cannot find its `lib/` and lets the commit or push through                                                                                   | not installed                  | runs  |
+| Hook                                   | Git for Windows, Git Bash                                                                                                                                                                                                                                                                  | PowerShell, no Git for Windows | WSL 2    |
+| -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------ | -------- |
+| `session-start.sh`                     | runs. A plugin install wires no git hook: `D:/…` reads as a relative path, and the note calls her scripts "missing from the harness". A copy-in install got copies, not links, and said it had added them (it now removes a copy and says the gate is not enforced)                        | never runs                     | untested |
+| `guard-branch.sh`, commands            | Bash tool: refuses a force push and a commit on `main`, whether `CLAUDE_PLUGIN_ROOT` is `/d/…`, `D:/…` or `D:\…`. Passes: the PowerShell tool, `git.exe push --force`, and a script run from her skill directory (the `cwd` has backslashes)                                               | never runs                     | untested |
+| `guard-branch.sh`, Edit and Write      | fails open: `.git/config` is refused, but `D:\…\.git\config` and `D:\…\.git\hooks\pre-commit` pass                                                                                                                                                                                         | never runs                     | untested |
+| `secret-scan.sh`, Read and Grep        | refuses `.env` by a backslash path. Passes `.ssh\id_rsa` and `secrets\db.yml` when their directory does not exist, which was the probe's case; it resolves a path through its directory first, which is why `.env` (its directory exists) was refused. The probe now makes the directories | never runs                     | untested |
+| `secret-scan.sh`, Write and Edit       | refuses a key by a backslash path; refuses one under `tests\` too, where the exemption should let it through                                                                                                                                                                               | never runs                     | untested |
+| `secret-scan.sh`, commands             | Bash tool: runs. PowerShell tool: `Get-Content .env` passes                                                                                                                                                                                                                                | never runs                     | untested |
+| `format.sh` (copy-in only)             | runs                                                                                                                                                                                                                                                                                       | never runs                     | untested |
+| `stop-dod.sh`                          | runs: GNU `timeout` comes first on the PATH. Its fallback for a machine without `timeout` failed the suite's check                                                                                                                                                                         | never runs                     | untested |
+| `subagent-verdict.sh`                  | runs with jq; without jq it exits 0 and checks nothing, as designed                                                                                                                                                                                                                        | never runs                     | untested |
+| `subagent-start.sh`, `post-compact.sh` | run                                                                                                                                                                                                                                                                                        | never run                      | untested |
+| git `pre-commit` and `pre-push`        | a link runs and refuses a staged key (exit 1). A copy, which is what `ln -s` makes, cannot find its `lib/` and lets the commit through (exit 0)                                                                                                                                            | not installed                  | untested |
 
-What stops a hook, in the words you will see:
+`tests/run.sh` passed 1164 of its 1264 checks on an LF checkout, and 1193 with native symlinks and no jq. What
+fails is mostly the suite's own assumptions (real symlinks, jq, POSIX paths in Python) and the two gaps above;
+the follow-up issues say which.
 
-- A checkout with CRLF line endings, which Git for Windows makes by default (`core.autocrlf=true`).
-  Where the shebang's CR is not tolerated, a hook cannot start
-  (`/usr/bin/env: 'bash\r': No such file or directory`, exit 127) and Claude Code goes on without it.
-  Where it is, the hook starts and trips on every line (`set: pipefail\r: invalid option name`,
-  `$'\r': command not found`) and exits 2, which blocks every tool call. Git's own hooks refuse every
-  commit either way. The log says which one Git Bash does.
-- Git Bash's `ln -s`, which makes a copy unless Developer Mode is on and `MSYS=winsymlinks:nativestrict`
-  is set ([MSYS2](https://www.msys2.org/docs/symlinks/)). A copied git hook prints
-  `.git/hooks/lib/secret-patterns.sh: No such file or directory` and lets the commit through.
-- A native `jq.exe` (winget, Scoop, Chocolatey), which writes CRLF under Git Bash unless it is given
-  `--binary` ([jq manual](https://jqlang.org/manual/)). Every value it prints ends in `\r`, so the
-  tool name reads `Bash\r`, no case in `guard-branch.sh` matches, and it and the Read guard pass
-  everything (no error, exit 0). Without jq they read the JSON in awk.
-- PowerShell: `ParserError: You must provide a value expression following the '/' operator.`
-- `timeout`, when `C:\Windows\System32` comes before Git's `usr\bin` on the PATH:
-  `ERROR: Invalid syntax. Default option is not allowed more than '1' time(s).`
+### What stops a hook, in the words you will see
 
-Versions: the CI job runs on Windows Server 2025 (runner image 20260922.270.2) with Git for Windows
-2.55.0.windows.5, Bash 5.3.15 and PowerShell 7.6.6, from GitHub's image notes; the job's log confirms
-them. Claude Code's documentation is as of 2.1.285. WSL 2 is not a CI job of its own: its hooks are the
-Linux ones.
+- **PowerShell**, for the command every hook in `hooks.json` has the shape of: exit 1,
+  `You must provide a value expression following the '/' operator.` (PowerShell 7.6.6, and Windows
+  PowerShell 5.1.26100.33438). Claude Code reports `Failed with non-blocking status code` and goes on.
+  With Git for Windows off the PATH, `bash` is `C:\Windows\system32\bash.exe`, the WSL launcher, and there
+  is no `git`.
+- **A copied git hook**: bash stops at line 22 of the copy, where it sources `lib/secret-patterns.sh` from the
+  directory beside it (`.git/hooks/pre-commit: line 22: …/.git/hooks/lib/secret-patterns.sh: No such file or
+directory`; the probe's row was cut off after `…/.git/ho`, and now keeps the whole line), and a staged
+  AWS-style key commits (exit 0). Git Bash's `ln -s` makes a copy unless Developer Mode is on and
+  `MSYS=winsymlinks:nativestrict` is set ([MSYS2](https://www.msys2.org/docs/symlinks/)); with both, the
+  hooks were links and the same commit was refused (exit 1).
+- **`D:/…` paths**: a plugin's root and data directory arrive with a drive letter, which session start reads
+  as a relative path: `Note: require-status-sync.sh is missing from the harness, so the pre-push gate is NOT enforced`.
+- **CRLF**: Git Bash runs a CRLF script without a word (exit 0). `core.autocrlf=true` is Git for Windows'
+  default, and the runner's system config has it. A CRLF checkout failed two checks more than an LF one,
+  which compare bytes or anchor a regex at a line end. The repository's `.gitattributes` now makes every
+  checkout LF. WSL's bash does not tolerate CRLF (reproduced on Linux: `/usr/bin/env: 'bash\r': No such file or directory`).
+- **jq.exe**: the runner's jq 1.8.1 is a native Windows build and writes CRLF (`x \r \n`, and `x \n` with
+  `--binary`). It made no difference to a gate: the probe's rows are the same with and without it. Git for
+  Windows brings no jq.
 
-### Before you rely on it
+### Versions and cost
 
-Until this note is final, check each gate on your machine before you trust it.
-`bash tests/windows-probe.sh`, from a clone in Git Bash, prints one `probe …` line per fact and marks
-`DIFFERS` where a gate does something else than it does on Linux. Then the three checks that matter:
-commit on `main`, write a fake key into a file, and end a turn on a failing test. Each must be
-refused. What helps meanwhile:
+Windows Server 2025 (10.0.26100); Git for Windows 2.55.0.windows.5 with `core.autocrlf=true` and
+`core.symlinks=true` in its system config; bash 5.3.15(2) on MSYS 3.6.10, GNU Awk 5.4.1, sed 4.9, grep 3.0,
+`timeout` from GNU coreutils 8.32, Perl 5.42.3; jq 1.8.1; Python 3.12.10; PowerShell 7.6.6 and Windows
+PowerShell 5.1.26100.33438. Claude Code's documentation is as of 2.1.285. One `guard-branch.sh` run took 1.3
+to 1.7 seconds here and 0.1 on Linux, and a Bash tool call runs two hooks.
 
-- Claude Code's own [deny-list](#optional-claude-codes-own-deny-list), which it matches after turning
-  `C:\Users\alice` into `/c/Users/alice` ([permissions](https://code.claude.com/docs/en/permissions)),
-  covers the secret files her Read guard misses.
-- Keep a native `jq.exe` off the PATH of the shell Claude Code uses, until her hooks run jq with
-  `--binary`: the gates read the JSON in awk without it (`subagent-verdict.sh` then does nothing).
-- `git config --global core.autocrlf input` before the plugin is cloned keeps the scripts LF.
-- Developer Mode, and `MSYS=winsymlinks:nativestrict` in your user environment, make `ln -s` link:
-  `ls -l .git/hooks/pre-push` must show `->`.
+### If you use it anyway
+
+Check each gate on your machine before you trust it: `bash tests/windows-probe.sh` marks `DIFFERS` where a gate
+does something else than it does on Linux, and then the three checks that matter are to commit on `main`,
+write a fake key into a file, and end a turn on a failing test. Each must be refused. What helps:
+
+- Turn the PowerShell tool off, as above.
+- Use native symlinks: Developer Mode, and `MSYS=winsymlinks:nativestrict` in your user environment, so that
+  `ls -l .git/hooks/pre-push` shows `->`. A plugin install still wires no git hook, because of the `D:/…`
+  paths; use a copy-in install ([`install.sh`](#other-agents-installsh)) in Git Bash instead.
+- In a copy-in install, add `*.sh text eol=lf` and `*.awk text eol=lf` to your own `.gitattributes`: the
+  repository's covers its own checkout, not the files it copies into yours.
+- Add Claude Code's own [deny-list](#optional-claude-codes-own-deny-list), which it matches after turning
+  `C:\Users\alice` into `/c/Users/alice` ([permissions](https://code.claude.com/docs/en/permissions)): it
+  covers the secret files her Read guard can miss.
 
 ## Optional: Claude Code's own deny-list
 

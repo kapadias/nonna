@@ -120,11 +120,14 @@ Your AI agent says "done"; Nonna makes it prove it.
 - **The launch README** leads with the plugin install and round 3's numbers. Each benchmark number
   carries a mark the lint checks against the rows (`harness_lint.py`), and the scorecard's alt text
   must be the image's own description.
-- **CI runs the gate tests under Git Bash on Windows**, in four legs (a CRLF checkout, an LF one, LF
-  without jq, and that with native symlinks), and `tests/windows-probe.sh` prints what Windows does
-  to the hooks: CRLF, a jq.exe that writes CRLF, `ln -s` making copies, `C:/` and backslash paths,
-  `timeout.exe`, the PowerShell tool. The job reports and does not block yet. `docs/INSTALL.md` has a Windows section, a draft until the log is
-  in: use WSL 2 meanwhile (#30).
+- **Native Windows is measured, and it is not safe yet: use WSL 2** (#30). CI runs the gate tests
+  under Git Bash on `windows-latest` in three legs (`core.autocrlf` true, false, and false with
+  native symlinks), and `tests/windows-probe.sh` prints what Windows does to the hooks. The job reports and
+  does not block. On an LF checkout 1164 of the 1264 checks passed; the rest are the suite's own
+  POSIX assumptions and the gaps below. `docs/INSTALL.md` says which hooks run, which let a blocked
+  action through and which never start, with versions. The gaps: a backslash path passes the
+  file-tool guards, the PowerShell tool and `git.exe` pass the branch guard, and with no Git for
+  Windows PowerShell cannot parse a hook's command, so none of them runs.
 
 ### Changed
 
@@ -139,6 +142,12 @@ Your AI agent says "done"; Nonna makes it prove it.
   is not a terminal. A pack an earlier `install.sh` wrote is kept: delete it and run again.
 - **`install.sh` exits non-zero when a git hook is not wired**: a foreign hook that does not run
   hers, a hook manager's directory, or a link it could not make.
+- **Text checks out as LF whatever `core.autocrlf` says** (`.gitattributes`), and **a git hook that
+  `ln -s` copied is refused, not counted.** Git for Windows sets `core.autocrlf=true`: a CRLF
+  checkout failed two data checks, and WSL's bash cannot start a CRLF script. Git Bash's `ln -s`
+  makes a copy of the hook, which cannot find the `lib/` beside her script and lets a staged key
+  through. `session-start.sh` and `install.sh` now remove the copy and say the gate is not
+  enforced, where they had said they added it (#30). Linux and macOS behave as before.
 - **CI pins every action to a commit SHA, runs with a read-only token, and runs the gate self-tests
   on a stock Mac too** (`/bin/bash` 3.2 and Apple's own tools); only the release job can write.
 - **The plugin no longer formats the files the agent edits.** It ran whatever formatter it found on
