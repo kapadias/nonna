@@ -2870,6 +2870,22 @@ space_run "$SP/.claude/settings.json"
 check "settings.json: every command runs from a project dir with a space (ran $ran)${bad_cmds:+ (not: $bad_cmds)}" 0 "$rc"
 rm -rf "$(dirname "$SP")"
 
+echo "== gemini-extension.json (the rules Gemini CLI loads, and the hooks it does not) =="
+# `gemini extensions install https://github.com/kapadias/nonna` loads the lite rules from the file
+# contextFileName names, and installs no git hook. That file is generated (hosts/build.py) from the
+# source of every host's lite rules, under a header that says what is true of an extension: the hooks
+# come from `install.sh --host gemini`. The lint below holds the manifest to it.
+GX="$(cat "$ROOT/hosts/gemini-extension/GEMINI.md" 2>/dev/null)"
+check "gemini extension: the manifest is named nonna, the name the docs tell users to update and uninstall" nonna \
+  "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["name"])' "$ROOT/gemini-extension.json" 2>/dev/null)"
+contains "gemini extension: the loaded text says install.sh --host gemini adds the git hooks" "install.sh --host gemini" "$GX"
+contains "gemini extension: ...and that the extension installs none itself" "installs no git hooks" "$GX"
+contains "gemini extension: it carries lite's house rules" "whole test suite passes" "$GX"
+case "$GX" in "" | *"This repository runs Nonna"*) rc=1 ;; *) rc=0 ;; esac
+check "gemini extension: it does not claim the git hooks are already in the repository" 0 "$rc"
+case "$GX" in "" | *@*) rc=1 ;; *) rc=0 ;; esac
+check "gemini extension: it holds no @ (Gemini CLI reads @path in a context file as an import)" 0 "$rc"
+
 echo "== harness_lint.py (the linter is itself a gate) =="
 # A linter with no failing-case test is an unverified gate: it would still print
 # "OK" if a check silently stopped firing. Each case copies the real tree, breaks
@@ -3053,6 +3069,14 @@ sed_i 's/^## Never$/## Never\
 - One more never./' "$FX/.claude/rules/00-core.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks host rule files that drifted from 00-core.md" 1 "$?"
 contains "lint: names the stale host file" "hosts/AGENTS.md" "$out"
+rm -rf "$FX"
+# The context file is generated like every host's rules file: a hand edit is drift, and writing it again fixes it.
+FX="$(lint_fixture)"
+printf 'A line nobody generated.\n' >> "$FX/hosts/gemini-extension/GEMINI.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a hand-edited extension context file" 1 "$?"
+contains "lint: names the drifted context file" "hosts/gemini-extension/GEMINI.md: out of date" "$out"
+python3 "$FX/hosts/build.py"
+python3 "$FX/hosts/build.py" --check >/dev/null 2>&1; check "build: writing the extension's context file again makes --check pass" 0 "$?"
 rm -rf "$FX"
 # Proportional review is only proportional if /review asks the script, not the model.
 FX="$(lint_fixture)"
