@@ -56,14 +56,19 @@ has hooks with Nonna's contracts: exit code 2 blocks a `PreToolUse` call, a `Sto
    through `nonna_codex_payload`. Anything but an `apply_patch` passes through unchanged, so Claude
    Code's input is read exactly as before. Another host gets its own `lib/host-<host>.sh` and its own
    block.
-4. **An `apply_patch` is checked a file at a time, by the gate itself.** The adapter turns the patch
-   into Claude Code's payloads: a Write of each file it adds, its lines as the content; an Edit of
-   each file it updates or moves a file to, with the lines it adds; an Edit with nothing added of
-   each file it deletes or moves away. The gate runs once on each, and the first refusal stands. File
-   headers are read as Codex's parser reads them, blanks trimmed. Only the lines a patch adds are
-   scanned, as the pre-commit hook scans a diff, so a patch that takes a key out passes. A patch that
-   cannot be read (jq or awk failing) is refused, and so is one in which no file is read: Codex's
-   grammar puts a file in every patch.
+4. **An `apply_patch` is checked a file at a time, by the gate itself.** `lib/patch.sh`, which knows
+   no host, reads the patch into one record a file, and the adapter turns each into Claude Code's
+   payload: a Write of each file it adds, its lines as the content; an Edit of each file it updates
+   or moves a file to, with the lines it adds; an Edit with nothing added of each file it deletes or
+   moves away. The gate runs once on each, and the first refusal stands. Only the lines a patch adds
+   are scanned, as the pre-commit hook scans a diff, so a patch that takes a key out passes.
+   **A patch the adapter cannot read with certainty is refused.** The grammar is read as an
+   allowlist rather than by following Codex's trim rules, which a header slipped past in review: a
+   line an Update hunk may hold is never a header, `*** Move to:` counts only as written and on the
+   line after its header, and any other line must be `*** Begin Patch`, `*** End Patch` or a file
+   header once spaces, tabs and CRs are stripped, its file name ending in printable ASCII. So is a
+   patch that cannot be decoded (jq or awk failing), or that names no file, since the grammar puts
+   one in every patch.
 5. **The lint holds the Codex file to its own form and core gates**: the command form above, the
    gates on `Bash`, `apply_patch`, `Stop` and `SessionStart`, and a manifest that names the file on
    the plugin's version. The release checks the Codex manifest's version with the others.

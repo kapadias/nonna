@@ -2870,6 +2870,18 @@ space_run "$SP/.claude/settings.json"
 check "settings.json: every command runs from a project dir with a space (ran $ran)${bad_cmds:+ (not: $bad_cmds)}" 0 "$rc"
 rm -rf "$(dirname "$SP")"
 
+echo "== lib/patch.sh (the apply_patch format, read by its grammar, a record a file) =="
+# A host that edits with one patch over several files (Codex) has its adapter turn each record into
+# the payload a gate reads, so what this reads is what the gates judge. The shapes below are as
+# Codex 0.159.2's own parser (codex --codex-run-as-apply-patch) reads them.
+pf() { # <patch line>...: the records nonna_patch_files prints for those lines, then its status
+  printf '%s\n' "$@" | bash -c '. "$1"; nonna_patch_files' _ "$HOOKS/lib/patch.sh"; printf 'rc=%s' "$?"
+}
+check "patch: a record a file, for Add, Update, a move and Delete" "$(printf 'Add\ta.py\t\tk = 1\\nm = \\"q\\"\nUpdate\tb.py\t\tnew\nUpdate\tc.py\td.py\tz\nDelete\te.py\t\t\nrc=0')" \
+  "$(pf '*** Begin Patch' '*** Add File: a.py' '+k = 1' '+m = "q"' '*** Update File: b.py' '@@ def f():' ' ctx' '-old' '+new' '*** Update File: c.py' '*** Move to: d.py' '@@' '+z' '*** Delete File: e.py' '*** End Patch')"
+check "patch: a header led by another blank, after an Add hunk, is refused" "rc=1" "$(pf '*** Begin Patch' '*** Add File: a.py' '+x = 1' "$(printf '\v*** Update File: .git/config')" '+[core]' '*** End Patch')"
+check "patch: space-led Move to and Update File lines in an Update hunk are context" "$(printf 'Update\tconfig.py\t\tk = 1\nrc=0')" "$(pf '*** Begin Patch' '*** Update File: config.py' ' *** Move to: tests/x.py' ' *** Update File: tests/y.py' '+k = 1' '*** End Patch')"
+
 echo "== Codex plugin (hooks/codex-hooks.json: Codex's own payloads, read by the same gates) =="
 # Codex loads the plugin's hooks from hooks/codex-hooks.json, which .codex-plugin/plugin.json names, and
 # runs each command with NONNA_HOST=codex; a gate that reads a tool call passes Codex's payload through
@@ -2927,6 +2939,12 @@ check "codex: deleting a git hook by patch is refused" 2 "$(cx_run PreToolUse '^
 check "codex: moving a file over a git hook is refused" 2 "$(cx_run PreToolUse '^apply_patch$' "$(cx_patch '*** Update File: tools/hook.sh' '*** Move to: .git/hooks/pre-commit' '@@' '+exit 0')")"
 check "codex: a sample key under a test fixture path passes, as in a Write" 0 "$(cx_run PreToolUse '^apply_patch$' "$(cx_patch '*** Add File: tests/fixtures/keys.py' "+aws_id = \"$FAKE_AWS\"")")"
 check "codex: a patch that takes a key out passes (only what it adds is written)" 0 "$(cx_run PreToolUse '^apply_patch$' "$(cx_patch '*** Update File: settings.py' '@@' "-aws_id = \"$FAKE_AWS\"" '+aws_id = os.environ["AWS_ID"]')")"
+# The patch is read by Codex's grammar, and what is not certain is refused. Codex 0.159.2's own parser
+# (codex --codex-run-as-apply-patch) takes a header led by a blank other than a space or a tab, after an
+# Add hunk, as a header, and a line in an Update hunk that starts with a space as context.
+check "codex: a header led by another blank, after an Add hunk, is refused" 2 "$(cx_run PreToolUse '^apply_patch$' "$(cx_patch '*** Add File: a.py' '+x = 1' "$(printf '\v*** Update File: .git/config')" '+[core]')")"
+check "codex: a space-led Move to line is context, so the key after it is the updated file's" 2 "$(cx_run PreToolUse '^apply_patch$' "$(cx_patch '*** Update File: config.py' ' *** Move to: tests/fixtures/keys.py' "+aws_id = \"$FAKE_AWS\"")")"
+check "codex: a space-led Update File line is context, so the key after it is the updated file's" 2 "$(cx_run PreToolUse '^apply_patch$' "$(cx_patch '*** Update File: config.py' ' *** Update File: tests/fixtures/keys.py' "+aws_id = \"$FAKE_AWS\"")")"
 # What the gates read, exactly: a Write of each file the patch adds and an Edit of each it updates, with the
 # lines it adds; an Edit with nothing added of each file it deletes or moves away. A stand-in gate records them.
 REC="$(mktemp -d)"; printf 'cat >> "%s/seen"; echo >> "%s/seen"\n' "$REC" "$REC" > "$REC/gate.sh"
