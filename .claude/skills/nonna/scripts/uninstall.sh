@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # /nonna uninstall: take Nonna's git hooks, settings and state back out of this repository, and
 # name each thing taken, with its value. Only what is hers goes: a git hook that is not her link
-# (nonna_hook_is_hers) is left alone and named, and so is the user's own hook that chains hers.
+# (nonna_hook_is_hers) is left alone and named, and so is the user's own hook that chains hers and a
+# byte copy of her script (what an older session start left where ln -s copies).
 # Her hooks live in the repository's shared .git/hooks, wherever core.hooksPath now points; her
 # state lives in each worktree's git dir. Runs in the project directory (nonna.sh sees to it).
 set -uo pipefail
@@ -22,7 +23,9 @@ for pair in pre-push:require-status-sync.sh pre-commit:pre-commit.sh; do
   if [ -L "$d" ] && nonna_hook_is_hers "$(readlink "$d")" "$s" "$root/hooks/$s"; then
     rm -f "$d" && removed+=("$d (her link to $s)")
   elif [ -e "$d" ] || [ -L "$d" ]; then
-    if nonna_hook_chains_hers "$d" "$s" "$root/hooks/$s"; then
+    if nonna_hook_is_copy "$d" "$root/hooks/$s"; then
+      left+=("$d is a copy of her $s that enforces nothing (unless you copied its lib/ beside it): delete it") # named, never deleted: not a link of hers
+    elif nonna_hook_chains_hers "$d" "$s" "$root/hooks/$s"; then
       left+=("$d is yours but still runs her $s: take that line out yourself")
     else
       left+=("$d is not hers: left alone")
