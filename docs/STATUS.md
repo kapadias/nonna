@@ -182,6 +182,8 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
       stopped at a byte that is not UTF-8, and the empty ledger it left passed the marker. A sort
       or awk that fails while the markers are classified is now a stop (exit 2), not a clean
       ledger;
+    - `bench/examples.py` runs on a stock Mac's Python 3.9: its `str | None` annotations needed
+      3.10, and it now defers them (`from __future__ import annotations`), as the other scripts do.
   - **Secret scan:** it missed Anthropic keys and OpenAI's `sk-proj-`, `sk-svcacct-` and `sk-admin-`
     keys, which the docs said it caught. The write guard, pre-commit and pre-push now refuse them;
     golden tests hold each key type and a key given as a shell default, a property test holds the

@@ -18,6 +18,8 @@ links the template instead of quoting one. Inputs that disagree stop the build w
 or two for a run, a verdict and an unsafe flag that differ, a final message that is not the stream's.
 """
 
+from __future__ import annotations
+
 import argparse
 import csv
 import json
