@@ -22,9 +22,11 @@ nested path.
 - A GitHub URL installs the **latest release's source archive**, not `main`; it clones only when the
   repository has no release. Update checks compare release tags. The manifest's `version` is what
   `extensions list` shows.
-- An extension can also carry hooks (`hooks/hooks.json`). Nonna's hook scripts read Claude Code's
-  JSON and exit codes, so Gemini CLI's hooks need an adapter of their own (CONTRIBUTING, "Adding an
-  agent host", step 3).
+- An extension can also carry hooks (`hooks/hooks.json`), commands, skills, agents and policies,
+  which the CLI loads from the extension root, and the manifest can add `mcpServers`,
+  `excludeTools`, `settings` and `migratedTo`. Nonna's hook scripts read Claude Code's JSON and
+  exit codes, so Gemini CLI's hooks need an adapter of their own (CONTRIBUTING, "Adding an agent
+  host", step 3).
 
 ## Options considered
 
@@ -47,8 +49,15 @@ Option 3. `gemini-extension.json` carries `name` (`nonna`), `version` (the plugi
 `hooks/lib/lite.md` and `--check` covers it like the other hosts' files. The release workflow holds
 the manifest's version to the tag with the other two manifests, since the archive Gemini CLI installs
 is the tagged tree. The lint holds the manifest to the loader's own rules (a relative path to a real
-file), to the sentence that says where the hooks come from, and to the plugin's version: each a way
-the CLI stays silent.
+file), to the plugin's version and to the sentence that says where the hooks come from: each a way
+the CLI stays silent. It accepts only the generated file as `contextFileName`, because whatever that
+names is loaded into every session and `--check` vouches for one file.
+
+"Rules only" is enforced, not just stated. The lint refuses a manifest key beyond those four and a
+root `hooks/hooks.json`, `commands/`, `skills/`, `agents/` or `policies/`; other files under
+`hooks/` stay allowed, since another host keeps its own hooks file there. `review-lanes.sh` treats
+the manifest and those root paths as risky, so a change to them always reaches the security
+reviewer.
 
 ## Consequences
 
@@ -59,4 +68,8 @@ the CLI stays silent.
 - The extension applies in every repository the user opens, where `install.sh` is per repository.
   Someone who runs both reads the rules twice.
 - Checked against what the CLI reports loading, not in a live session. When hooks are added, the
-  context file's header changes, and the lint's required sentence with it.
+  context file's header changes, the lint's required sentence with it, and its refusal of
+  `hooks/hooks.json` is lifted in the same change, which `review-lanes.sh` sends to a security
+  review.
+- The URL install works from v2.0.0. The latest release is what Gemini CLI installs, and v1.0.0 has
+  no manifest.

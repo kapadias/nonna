@@ -44,9 +44,10 @@ Exercises each deterministic gate with fixed inputs and asserts the exit code:
 - **review-lanes** (review proportionality, ADR-0009): a fast-lane-sized, ordinary diff takes the
   light lane with no security review. Risky added **or removed** code (Python, Go, Node shell calls,
   a deleted auth check), a deleted risky file, a dependency manifest, harness markdown, a
-  `NONNA_CRITICAL_PATHS` match, a non-ASCII file name, a subdirectory cwd and an untracked symlink
-  all end in security review. No `develop`/`main` base, a bad base, no repo, a missing classifier
-  or a legacy `KEEL_CRITICAL_PATHS` alone fail closed.
+  `NONNA_CRITICAL_PATHS` match, the Gemini extension's manifest and root `hooks/`, `commands/`,
+  `skills/`, `agents/` and `policies/`, a non-ASCII file name, a subdirectory cwd and an untracked
+  symlink all end in security review. No `develop`/`main` base, a bad base, no repo, a missing
+  classifier or a legacy `KEEL_CRITICAL_PATHS` alone fail closed.
 - **dep-audit** (supply-chain): exits non-zero when a required scanner is missing
   (a skipped scan is not a pass).
 - **tests say no** (Stop and pre-push): when code changed, both run the project's own test
@@ -89,7 +90,8 @@ Exercises each deterministic gate with fixed inputs and asserts the exit code:
   rather than as a regex.
 - **release.yml** (the tag must agree with every manifest): the job's own script runs on a copy of
   the plugin, marketplace and Gemini extension manifests. A tag all three agree with passes; a tag
-  one of them disagrees with fails, and the message names the first that does.
+  one of them disagrees with fails, and the message names the first that does; a tree with no
+  extension manifest fails closed.
 - **gemini-extension.json** (what Gemini CLI loads): the file `contextFileName` names is generated
   from the lite rules, says `install.sh --host gemini` adds the git hooks and that the extension
   installs none, carries lite's rules, and holds no `@` (Gemini CLI reads `@path` in a context file
@@ -114,13 +116,13 @@ skills missing a trigger, a side-effecting workflow that does not set
 wired hooks absent on disk, `settings.json` and `hooks.json` disagreeing about
 which gates are wired, dead intra-repo markdown links, backticked `docs/`
 references that do not exist, domain-specific vocabulary in a domain-agnostic
-harness, malformed plugin manifests, a Gemini extension manifest whose context file the CLI
-cannot load or whose version is not the plugin's, five token budgets (CLAUDE.md, per-rule,
-total always-on, `00-core.md`'s SessionStart-channel size, and the combined
-skill/agent description metadata), a ladder rung missing from either of its two
-copies, `/review` or `/sync` no longer wiring `check-debt.sh`, the review-inflation
-rule dropping out of `dev-process.md` or the severity rubric, and an adapted
-project's name anywhere but `README.md`.
+harness, malformed plugin manifests, a Gemini extension manifest whose context file the CLI cannot
+load or is not the generated one, whose version is not the plugin's, or that carries more than rules
+(another key, a root `hooks/hooks.json`, `commands/`, `skills/`, `agents/` or `policies/`), five
+token budgets (CLAUDE.md, per-rule, total always-on, `00-core.md`'s SessionStart-channel size, and
+the combined skill/agent description metadata), a ladder rung missing from either of its two copies,
+`/review` or `/sync` no longer wiring `check-debt.sh`, the review-inflation rule dropping out of
+`dev-process.md` or the severity rubric, and an adapted project's name anywhere but `README.md`.
 
 ### `test_assets.py` — the launch images
 

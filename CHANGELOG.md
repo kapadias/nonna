@@ -110,8 +110,11 @@ Your AI agent says "done"; Nonna makes it prove it.
   hosts' rules files. Rules only: an extension installs no git hooks, and the loaded text says
   `install.sh --host gemini` adds them. Gemini CLI installs the latest release's archive, so the
   release workflow refuses a tag that differs from the extension's `version`. The lint holds that
-  version to the plugin's, and the manifest to what Gemini CLI loads: it skips a context file that
-  is missing, absolute, climbing out with `..` or a directory, and says nothing.
+  version to the plugin's and the manifest to what Gemini CLI loads (it skips a context file that is
+  missing, absolute, climbing out with `..` or a directory, and says nothing), accepts only the
+  generated file as the context file, and keeps the extension rules only: no other manifest key, and
+  no root `hooks/hooks.json`, `commands/`, `skills/`, `agents/` or `policies/`. `review-lanes.sh`
+  sends a change to any of them to a security review.
 - **Benchmark round 3, registered before it ran** (`bench/`). Five arms ran: bare, the plugin in
   lite and in full, another plugin alone, and that plugin with lite (a sixth, the copy-in, reruns
   rounds 1–2). Each run starts isolated (`env -i`,

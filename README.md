@@ -182,7 +182,7 @@ What each agent gets:
 | Can't end its turn on a red suite; "where's the test?"                   |     yes     |        no         |
 | Secret guard on every file write and read, branch guard on every command |     yes     |        no         |
 
-Gemini CLI can also load the house rules as an extension:
+From v2.0.0, Gemini CLI can also load the house rules as an extension:
 `gemini extensions install https://github.com/kapadias/nonna`. It carries the rules only, with no
 git hooks; `install.sh --host gemini` adds them
 ([details](docs/INSTALL.md#gemini-cli-the-extension)).

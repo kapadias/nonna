@@ -29,7 +29,10 @@ Three principles govern everything here:
   **`install.sh`** is the copy-in install for any of them.
 - **`gemini-extension.json`**: the Gemini CLI extension, which loads lite's rules from
   `hosts/gemini-extension/GEMINI.md` (generated too) and installs no git hook. Its `version` is the
-  plugin's: bump them together, and the lint and the release workflow hold them there.
+  plugin's: bump them together, and the lint and the release workflow hold them there. It is rules
+  only: the lint refuses any other manifest key and a root `hooks/hooks.json`, `commands/`,
+  `skills/`, `agents/` or `policies/`, which Gemini CLI would load, and `review-lanes.sh` sends a
+  change to any of them to a security review.
 - **`tests/`**: `run.sh`, the gate golden tests, and `harness_lint.py`, the harness checking itself.
 - **`bench/`**: the benchmark; **`examples/`** holds one run of each trap task.
 - **`docs/`**: `STATUS.md` (the living state), `INSTALL.md`, `OVERVIEW.md`, `benchmarks/`, and `adr/`

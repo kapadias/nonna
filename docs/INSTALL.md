@@ -298,7 +298,9 @@ you pipe? `curl -fsSLO …/install.sh`, read it, then `bash install.sh`.
 
 ### Gemini CLI: the extension
 
-Gemini CLI can also take the house rules as an extension, with nothing to pipe into a shell:
+Gemini CLI can also take the house rules as an extension, with nothing to pipe into a shell. This
+works from v2.0.0: Gemini CLI installs the latest release, and v1.0.0, the one before, has no
+extension manifest.
 
 ```bash
 gemini extensions install https://github.com/kapadias/nonna
