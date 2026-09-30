@@ -171,7 +171,9 @@ push it has 600 seconds, and a suite that runs out of time there is refused.
 
 The `pre-push` test gate tastes what you push. It runs in the working tree, so it refuses a push
 while the tree differs from `HEAD`, untracked files included. A pushed branch that is not checked
-out gets a warning that its tests did not run; tags and deletes run nothing.
+out gets a warning that its tests did not run; tags and deletes run nothing. A pushed merge counts
+for what it takes from each side, not only for what its resolution changed, so a clean merge runs
+the tests too.
 
 ### A test command per directory
 
@@ -186,17 +188,20 @@ command instead ([ADR 0012](adr/0012-a-test-command-per-directory.md)):
 That sets `git config nonna.packages/api.testCmd`, the directory named from the repository's top. A
 changed file belongs to the longest such directory it is in, and a file in none belongs to the
 repository's own command, if there is one. At the end of a turn, the Stop hook runs the command of
-each directory that owns a file changed this session, once and in that directory, then the
-repository's command if a changed file is in no directory. The commands run in the order `/nonna`
-lists them, share the 240 seconds, and the first red one sends the agent back, named with its
-directory. A directory that has not changed since its command last passed is not run again. Before
-a push, the `pre-push` hook chooses the same way from the pushed commits, and each command gets its
-600 seconds.
+each directory that owns a file changed this session (a new file git does not ignore counts), once
+and in that directory, then the repository's command if a changed file is in no directory. If it
+cannot list the changes, it runs every command. The commands run in the order `/nonna` lists them,
+share the 240 seconds, and the first red one sends the agent back, named with its directory. A
+directory's command is not run again while nothing but other directories has changed since it last
+passed; a shared file outside every package, such as a lockfile, runs it again. A directory that
+leads out of the repository, through a link, is red. Before a push, the `pre-push` hook chooses the
+same way from the pushed commits, and each command gets its 600 seconds.
 
 `NONNA_TEST_CMD` still replaces them all at the end of a turn. A directory's command is read from the
 repository's own config, never the global one. An empty one is no command, so the directory's files
 go to the repository's command; to test nothing there, give it a command that passes, such as
-`true`. A change in one package that breaks another is caught only by a command that runs the other
+`true`. With directory commands set, `/nonna test off` turns off only the repository's own command.
+A change in one package that breaks another is caught only by a command that runs the other
 package's tests.
 
 ### These switches are yours

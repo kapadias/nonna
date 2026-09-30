@@ -39,23 +39,31 @@ should have forgotten.
    `packages/apix/y.py`. A file in no directory belongs to the root's command, if there is one. The
    answer does not depend on the order the keys were set.
 3. **Where a command runs.** A directory's command runs in that directory, so `pytest` there tests
-   that package. The root's command runs where it runs today.
+   that package, and only inside the repository: a directory that resolves outside it (a link) is
+   red. The root's command runs where it runs today.
 4. **At the end of a turn,** the Stop hook lists the files changed this session exactly (unquoted, a
-   rename as both of its paths, `docs/` and `.claude/reviews/` left out as before) and runs each
-   owning command once. The directories' commands run in the order git config lists them, which is the
+   rename as both of its paths), new files git does not ignore among them, with `docs/` and
+   `.claude/reviews/` left out as before. It runs each owning command once. A listing that fails, or
+   finds none of the changes, runs every directory's command and the root's: an error never means
+   nothing runs. The directories' commands run in the order git config lists them, which is the
    order `/nonna` shows, and the root's runs last. The commands share the 240 seconds. One that runs
    out of time stops the rest, and that is not red, as before. The first red blocks, named with its
-   command and directory. A green run is remembered per directory, by the directory's own tree
-   (tracked and untracked files) and its command, in `.git/nonna/green-<hash of the directory>`. So a
-   package that no later change touched is not run again. The root's green run is remembered as
-   before, by the whole tree and the command in `.git/nonna-green`, because the root's command may
-   test everything.
-5. **Before a push,** the pre-push hook makes the same selection over the code files of the pushed
-   range. Each command gets the full 600 seconds, and the first red refuses the push, named. The hook
-   already refuses a push whose files it cannot list. That is stricter than running every command, so
-   this case needs no rule of its own.
+   command and directory. A directory's green run is remembered by the whole tree (tracked and
+   untracked files) except the other directories that have commands of their own, and by its
+   command, in `.git/nonna/green-<hash of the directory>`. So another package's change does not run
+   it again, and a change to a shared file outside every package (a lockfile, a base config) does.
+   The root's green run is remembered as before, by the whole tree and the command in
+   `.git/nonna-green`, because the root's command may test everything.
+5. **Before a push,** the pre-push hook makes the same selection over the code the pushed range
+   brings, reading each merge against each of its parents (`-m`, pinned to separate diffs). `--cc`
+   leaves out what a merge takes from one side, and lists nothing for a clean merge, so a merge could
+   push untested. The STATUS gate still reads each commit as before (`--cc`): what a merge itself
+   authors is its resolution. Each command gets the full 600 seconds, and the first red refuses the
+   push, named. The hook already refuses a push whose files it cannot list. That is stricter than
+   running every command, so this case needs no rule of its own.
 6. **`NONNA_TEST_CMD`** still overrides everything at the end of a turn with one command, and the
-   pre-push hook still ignores it. With no directory keys, both hooks behave exactly as before.
+   pre-push hook still ignores it. With no directory keys, both hooks behave as before, but for the
+   merge fix in 5, which holds for every repository: a clean merge used to push with no tests.
 7. **`/nonna`.** `/nonna test --dir <dir> '<command>'` sets a directory's command, and
    `/nonna test --dir <dir> off` removes it. The directory is resolved (`./`, a trailing `/`, `..` and
    links) and must be a directory inside the repository, other than its top. `/nonna` lists each
@@ -68,8 +76,9 @@ should have forgotten.
 
 - **Run order: config order, not sorted.** Sorting needs `sort`, which the Stop hook avoids so that
   minimal machines keep working. Config order is stable, and `/nonna` shows it.
-- **A directory's green run is keyed by its own tree, not the whole tree.** Keyed by the whole tree,
-  a package would run again every time another package changed.
+- **A directory's green run is keyed by the whole tree but the other directories' own.** Keyed by the
+  whole tree, a package would run again every time another package changed. Keyed by its own tree
+  alone, a change to a shared file outside every package would leave a red suite reported green.
 - **A directory's command runs in its directory, not at the top.** At the top, the issue's own example
   (`pytest`) would run the whole suite.
 - **An empty directory command means no command, not "off".** If empty meant off, one empty value
@@ -85,12 +94,15 @@ should have forgotten.
   package's tests. Per-directory commands trust the user's directory boundaries. A package that
   depends on code outside it can include that code's tests in its command, or leave that code to a
   root command that runs them.
-- A package's green run is keyed by its own tree. Suppose its files changed earlier in the session and
-  have not changed since, and a later change outside the package breaks its tests. The Stop hook's
-  cache does not notice. The pre-push hook has no cache and runs the package's command.
+- A package's green run leaves out the other packages. Suppose its files changed earlier in the
+  session and have not changed since, and a later change in another package breaks its tests. The
+  Stop hook's cache does not notice. The pre-push hook has no cache and runs the package's command.
 - A repository with directory keys costs the Stop hook a few more git calls at each turn end: an exact
-  list of the changed files, and a key for each owning directory. A repository without them costs
-  nothing more.
+  list of the changed and new files, and for each owning directory a key read over the whole tree,
+  about what `git status` costs. A repository without them costs nothing more.
+- The green-run files can be written from the shell: the branch guard keeps `.git/nonna/` and
+  `.git/nonna-green` from the agent's file tools only, as it already did for `.git/nonna-green`.
+  Closing that needs new parsing in the guard, so it is a follow-up of its own.
 - A hand-written key that is not a clean directory name (`./x`, `x/`) owns nothing. `/nonna test --dir`
   never writes one.
 - Revisit if monorepo users ask for dependency-aware selection (run B when A changes, because B

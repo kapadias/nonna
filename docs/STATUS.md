@@ -72,12 +72,16 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   suite runs past the Stop hook's 240 seconds, so it got no verdict until the push. Now
   `git config nonna.<dir>.testCmd` (set with `/nonna test --dir`) gives a directory its own
   command. A changed file belongs to the longest such directory it is in, else to the repository's
-  command. The Stop hook runs each owning command once, in its directory, within the shared budget,
-  and blocks on the first red, naming the directory. A directory's green run is remembered by its
-  own tree, so an untouched package is not run again. The pre-push hook chooses the same way from
-  the pushed range. `/nonna` lists the directories' commands, and `/nonna uninstall` removes every
-  `nonna` subsection (it used to leave them behind). With no such keys, both hooks behave as
-  before. Golden tests for each hook and for `/nonna`, and a property test for ownership.
+  command. The Stop hook runs each owning command once, in its directory and only inside the
+  repository, within the shared budget, and blocks on the first red, naming the directory; new
+  files count, and a listing that fails runs every command. A directory's green run is remembered by
+  the whole tree but the other directories, so another package's change does not run it again and a
+  shared file does. The pre-push hook chooses the same way from the pushed range, reading each merge
+  against each parent: for every repository, a clean merge used to push with no tests. `/nonna`
+  lists the directories' commands, and `/nonna uninstall` removes every `nonna` subsection (it used
+  to leave them behind). Otherwise, with no such keys, both hooks behave as before. Golden tests
+  for each hook and for `/nonna`, a property test for ownership, and each fix pinned against a
+  mutant of it. Two gaps it found are follow-ups (Next / open).
 - **2026-09-30** — No demo video in the repository's tree. The README's demo (a gif, an mp4 and the
   raw recording of one session, and the page on how it was recorded) is removed with its block in
   the README, and the split-screen film on `chore/17-demo` is not merged: both are launch
@@ -471,6 +475,11 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   `\v`, a no-break space) as a trigger; it should trim all of it (the security review's LOW). It
   also reads only the first marker on a line, so one inside a string before it, or a file with
   CR-only line endings, hides a marker with no trigger later on that line (also LOW).
+- The branch guard keeps `.git/nonna/` and `.git/nonna-green` (her green runs) from the agent's
+  file tools, not from a shell redirection, so a green run can be written from the shell (#29's
+  security review, LOW). Its shell-write refusal names `.git/config` and `.git/hooks` in four
+  patterns, and misses a linked worktree's state, so closing it needs new parsing.
+- The pre-push hook only warns when a pushed branch is not checked out, and runs no tests for it.
 
 - A behavioural eval on the failures the gates exist for (a secret in a fixture, a push to a
   protected branch, an error hidden by a "fix"), scored on "did it get caught".
