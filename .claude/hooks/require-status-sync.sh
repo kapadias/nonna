@@ -195,12 +195,11 @@ if [ "${#code_files[@]}" -gt 0 ] && [ -f "$here/lib/tests.sh" ]; then
       } >&2
       fail=1
     else
-      top="$(git rev-parse --show-toplevel 2>/dev/null)"
       i=0
       while [ "$i" -lt "${#NONNA_RUN_CMDS[@]}" ]; do
         cmd="${NONNA_RUN_CMDS[i]}" dir="${NONNA_RUN_DIRS[i]}"
         i=$((i + 1))
-        nonna_run_tests "$cmd" ${dir:+"$top/$dir"}
+        nonna_run_tests "$cmd" "$dir"
         rc=$?
         if [ "$rc" = 124 ]; then
           {

@@ -14,7 +14,8 @@
 #                  package.json's "test" script, go.mod or Cargo.toml.
 # nonna_run_tests  runs it with a timeout (NONNA_TEST_TIMEOUT seconds, default 600), in the directory
 #                  given (a directory's own command, below), else here; exit status is
-#                  the suite's, 124 when it timed out. $NONNA_TEST_TAIL gets what a person needs to
+#                  the suite's, 124 when it timed out, 1 when the directory does not lead to one inside
+#                  the repository. $NONNA_TEST_TAIL gets what a person needs to
 #                  see: up to five failing-test lines (pytest, jest, go, cargo, TAP) and the summary,
 #                  else the last eight lines; colour codes stripped, and any line that looks like a
 #                  secret replaced, because this text is shown to the agent and to the user.
@@ -120,12 +121,17 @@ nonna_test_runs() {
   if [ -n "$root" ] && [ -n "$cmd" ]; then NONNA_RUN_DIRS+=(""); NONNA_RUN_CMDS+=("$cmd"); fi
 }
 
-nonna_run_tests() { # <command> [<absolute directory>]
+nonna_run_tests() { # <command> [<directory, from the repository's top>]
   local out rc secs="${NONNA_TEST_TIMEOUT:-600}" log
   # Output goes to a file, not $(...): a child that outlives a timeout must not hold the pipe open.
   log="$(mktemp)" || return 1
   (
-    [ -z "${2:-}" ] || cd "$2" || exit # a directory that is gone fails; it never passes
+    # A directory that is gone, or leads out of the repository (a link), fails; it never passes.
+    if [ -n "${2:-}" ] && ! { top="$(git rev-parse --show-toplevel 2>/dev/null)" && top="$(cd -P "$top" 2>/dev/null && pwd -P)" \
+      && cd -P "$top/$2" 2>/dev/null && case "$(pwd -P)/" in "$top"/?*) ;; *) false ;; esac; }; then
+      echo "$2 is not a directory inside this repository, so its command did not run."
+      exit 1
+    fi
     if command -v timeout >/dev/null 2>&1; then # GNU timeout signals the whole process group
       timeout "$secs" bash -c "$1"
     elif command -v perl >/dev/null 2>&1; then # macOS: own process group, killed whole on the alarm
@@ -171,17 +177,24 @@ nonna_is_source_file() {
 
 # nonna_green_key <command> [<directory>]  the key a passing run is remembered by (git rev-parse
 #                  --git-path nonna-green): the tree, tracked and untracked files read through a scratch
-#                  index, and the command. With a directory's own command, that directory's tree alone,
-#                  read from wherever this runs, so a change elsewhere leaves its key as it was.
+#                  index, and the command. With a directory's own command (after nonna_read_pkgs), the
+#                  whole tree but the other directories that have their own, read from wherever this
+#                  runs: another package's change leaves its key as it was, a shared file does not.
 #                  Nothing when the tree cannot be read. It writes git objects, so a
 #                  reader computes it only when there is a key to compare with.
 nonna_green_key() {
-  local idx tree spec=.
-  [ -z "${2:-}" ] || spec=":(top,literal)$2"
+  local idx tree d spec=. others=()
+  if [ -n "${2:-}" ]; then
+    spec=":/"
+    for d in ${NONNA_PKG_DIRS[@]+"${NONNA_PKG_DIRS[@]}"}; do
+      case "$2/" in "$d"/*) ;; *) others+=(":(top,literal)$d") ;; esac # itself, or one around it, stays
+    done
+  fi
   idx="$(mktemp 2>/dev/null)" || return 0
   if cp "$(git rev-parse --git-path index)" "$idx" 2>/dev/null \
-    && tree="$(GIT_INDEX_FILE="$idx" git add -A "$spec" >/dev/null 2>&1 && GIT_INDEX_FILE="$idx" git write-tree 2>/dev/null)" \
-    && { [ -z "${2:-}" ] || tree="$(git rev-parse --verify --quiet "$tree:$2" 2>/dev/null)"; }; then
+    && tree="$(GIT_INDEX_FILE="$idx" git add -A "$spec" >/dev/null 2>&1 \
+      && { [ "${#others[@]}" -eq 0 ] || GIT_INDEX_FILE="$idx" git rm -r -q --cached --ignore-unmatch -- "${others[@]}" >/dev/null 2>&1; } \
+      && GIT_INDEX_FILE="$idx" git write-tree 2>/dev/null)"; then
     printf '%s\n%s' "$tree" "$1" | git hash-object --stdin 2>/dev/null
   fi
   rm -f "$idx"

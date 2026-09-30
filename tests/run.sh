@@ -2673,7 +2673,7 @@ printf 'def test_x():\n    pass\n' > "$TMP/tests/test_x.py"
 printf '#!/bin/sh\nexit 1\n' > "$STUB/python3"; chmod +x "$STUB/python3"
 got="$(cd "$TMP" && unset NONNA_TEST_CMD && . .claude/hooks/lib/tests.sh && nonna_test_cmd)"; contains "tests.sh: detects pytest in a copy-in install" "pytest" "$got"
 got="$(cd "$TMP" && unset NONNA_TEST_CMD && . "$HOOKS/lib/tests.sh" && nonna_test_cmd)"; check "tests.sh: the same repo, from a harness elsewhere (a plugin), detects nothing" "" "$got"
-# shellcheck disable=SC2031
+# shellcheck disable=SC2030,SC2031  # PATH is meant to change only inside the subshell
 got="$(cd "$TMP" && unset NONNA_TEST_CMD && PATH="$STUB:$PATH" && . .claude/hooks/lib/tests.sh && nonna_test_cmd)"; check "tests.sh: no pytest installed, no pytest command" 0 "${#got}"
 rm -rf "$TMP" "$STUB"
 # The test command: NONNA_TEST_CMD > git config nonna.testCmd > detection (copy-in only); empty is off.
@@ -2816,7 +2816,40 @@ git -C "$MONO" config nonna.packages/api.testCmd "sleep 3; echo late >> $CNT"
 out="$(printf '{}' | NONNA_TEST_TIMEOUT=4 CLAUDE_PROJECT_DIR="$MONO" "$SD")"
 check "stop: the commands share the budget: the second gets what the first left" 0 "$(grep -c late "$CNT")"
 printf '%s' "$out" | grep -q 'the tests say no'; check "stop: ...and running out of it is not red" 1 "$?"
-rm -rf "$MONO"
+# A listing that fails runs every directory's command, and the repository's: never none.
+FG="$(mktemp -d)"; printf '#!/bin/sh\ncase " $* " in *" ls-files "*) exit 128 ;; esac\nexec "%s" "$@"\n' "$(command -v git)" > "$FG/git"
+chmod +x "$FG/git"
+git -C "$MONO" config nonna.packages/web.testCmd "echo web >> $CNT"
+git -C "$MONO" config nonna.packages/api.testCmd "echo api >> $CNT"
+: > "$CNT"
+# shellcheck disable=SC2031  # the suite's own PATH: the earlier changes stayed in their subshells
+printf '{}' | PATH="$FG:$PATH" CLAUDE_PROJECT_DIR="$MONO" "$SD" >/dev/null
+check "stop: a listing that fails runs every command, the repository's too" 3 "$(grep -c -e api -e web -e root "$CNT")"
+rm -rf "$FG"
+# A directory's command runs only inside the repository: one whose directory now leads out of it is red.
+OUT="$(mktemp -d)"; printf 'x = 1\n' > "$OUT/app.py"; rm -rf "$MONO/packages/api"; ln -s "$OUT" "$MONO/packages/api"
+out="$(printf '{}' | CLAUDE_PROJECT_DIR="$MONO" "$SD")"
+contains "stop: a package directory that leads out of the repository reads red" "failed in packages/api" "$(printf '%s' "$out" | jq -r .reason)"
+rm -rf "$MONO" "$OUT"
+# A directory's green run is keyed by the whole tree but the other directories' own: a shared file
+# outside every package (a root lockfile, a shared config) runs it again.
+SH="$(mktemp -d)"; "${GIT[@]}" -C "$SH" init -q; mkdir -p "$SH/packages/api" "$SH/packages/web"
+printf 'ok\n' > "$SH/shared.cfg"; printf 'x = 1\n' > "$SH/packages/api/app.py"; printf 'x = 1\n' > "$SH/packages/web/app.py"
+"${GIT[@]}" -C "$SH" add -A; "${GIT[@]}" -C "$SH" commit -qm init
+git -C "$SH" config nonna.packages/api.testCmd "grep -qx ok ../../shared.cfg"
+git -C "$SH" config nonna.packages/web.testCmd true
+printf 'x = 2\n' > "$SH/packages/api/app.py"; printf '{}' | CLAUDE_PROJECT_DIR="$SH" "$SD" >/dev/null
+printf 'broken\n' > "$SH/shared.cfg"
+out="$(printf '{}' | CLAUDE_PROJECT_DIR="$SH" "$SD")"
+contains "stop: a shared file outside every package runs a green package again" "failed in packages/api" "$(printf '%s' "$out" | jq -r .reason)"
+# A new file git does not ignore counts toward its package too: a new failing test in one package,
+# beside a tracked edit in another, blocks.
+"${GIT[@]}" -C "$SH" checkout -q -- .
+git -C "$SH" config nonna.packages/api.testCmd 'for t in test_*.py; do [ ! -e "$t" ] || python3 "$t" || exit 1; done'
+printf 'raise SystemExit("test_mod fails")\n' > "$SH/packages/api/test_mod.py"; printf 'x = 2\n' > "$SH/packages/web/app.py"
+out="$(printf '{}' | CLAUDE_PROJECT_DIR="$SH" "$SD")"
+contains "stop: a new test file in one package, beside an edit in another, runs its package" "failed in packages/api" "$(printf '%s' "$out" | jq -r .reason)"
+rm -rf "$SH"
 # Pre-push: the same selection over the range git names on stdin, each command in its directory; the
 # first red refuses the push, named with its directory and the setting that holds it.
 PP="$(mktemp -d)"; BARE="$(mktemp -d)"; PS="$(mktemp)"; ZERO=0000000000000000000000000000000000000000

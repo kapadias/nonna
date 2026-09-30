@@ -59,22 +59,28 @@ reason=""
 # no cache.
 # Where directories have commands of their own (ADR-0012), each that owns a file changed this session
 # runs once, in its directory, then the repository's for a file in none. They share the budget, the
-# first red blocks, and a directory's green run is remembered by its own tree.
+# first red blocks, and a directory's green run is remembered by the whole tree but the other
+# directories' own.
 if ! printf '%s' "$payload" | grep -qE '"stop_hook_active"[[:space:]]*:[[:space:]]*true' \
   && [ -f "$here/lib/tests.sh" ]; then
   # shellcheck source=/dev/null
   . "$here/lib/tests.sh"
-  # For that, the files changed this session exactly: unquoted, and a rename as both of its paths.
+  # For that, the files changed this session exactly (unquoted, a rename as both of its paths), and new
+  # ones git does not ignore. A listing that fails, or finds none of the changes above, runs every
+  # directory's command and the repository's: running none would be a gate off without saying so.
   nonna_read_pkgs
   files=()
-  top=""
   if [ "${#NONNA_PKG_DIRS[@]}" -gt 0 ]; then
-    top="$(git rev-parse --show-toplevel 2>/dev/null)"
-    while IFS= read -r -d '' f; do
+    list="$(mktemp 2>/dev/null)" && {
+      { [ -z "$base" ] || git -c core.quotePath=false diff --name-only --no-renames -z "$base"; } \
+        && git -c core.quotePath=false diff --name-only --no-renames -z --cached \
+        && git -c core.quotePath=false diff --name-only --no-renames -z \
+        && git -c core.quotePath=false ls-files --others --exclude-standard --full-name -z :/
+    } > "$list" 2>/dev/null && while IFS= read -r -d '' f; do
       case "$f" in docs/* | .claude/reviews/*) ;; *) files+=("$f") ;; esac
-    done < <( { [ -z "$base" ] || git -c core.quotePath=false diff --name-only --no-renames -z "$base"
-      git -c core.quotePath=false diff --name-only --no-renames -z --cached
-      git -c core.quotePath=false diff --name-only --no-renames -z; } 2>/dev/null)
+    done < "$list"
+    rm -f "${list:-}"
+    [ "${#files[@]}" -gt 0 ] || files=("${NONNA_PKG_DIRS[@]}" "") # each directory owns itself; "" is in none
   fi
   nonna_test_runs "$(nonna_test_cmd)" ${files[@]+"${files[@]}"}
   if [ "${#NONNA_RUN_CMDS[@]}" -gt 0 ]; then
@@ -94,7 +100,7 @@ if ! printf '%s' "$payload" | grep -qE '"stop_hook_active"[[:space:]]*:[[:space:
         continue # this exact tree already passed this exact command
       fi
       t0=$SECONDS
-      NONNA_TEST_TIMEOUT="$left" nonna_run_tests "$cmd" ${dir:+"$top/$dir"}
+      NONNA_TEST_TIMEOUT="$left" nonna_run_tests "$cmd" "$dir"
       rc=$?
       if [ "$rc" = 0 ]; then
         [ -z "$dir" ] || mkdir -p "${green_file%/*}" 2>/dev/null
