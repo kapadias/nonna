@@ -54,7 +54,8 @@ fi
 wired=()
 hook_warns=()
 wire_hook() { # <git hook name> <script name>
-  local dest="$hooks_dir/$1" target="$hooks_src/$2"
+  local dest="$hooks_dir/$1" target="$hooks_src/$2" real
+  case "$target" in /*) real="$target" ;; *) real="$hooks_dir/$target" ;; esac # where her script is, from here
   if [ -L "$dest" ] && [ ! -e "$dest" ] && nonna_hook_is_hers "$(readlink "$dest")" "$2" "$target"; then
     rm -f "$dest" # dangling and hers: repaired below
   fi
@@ -76,6 +77,10 @@ wire_hook() { # <git hook name> <script name>
     if nonna_hook_is_hers "$(readlink "$dest" 2>/dev/null)" "$2" "$target"; then
       # Hers, but git skips a link that points at nothing without a word.
       [ -e "$dest" ] || hook_warns+=("$dest points at nothing, so her $1 gate is NOT enforced")
+    elif nonna_hook_is_copy "$dest" "$real"; then
+      # What an older session start left where ln -s copies (Git Bash): it runs, finds no lib/ beside itself
+      # and enforces nothing. Named and never deleted: it was there before me.
+      hook_warns+=("$dest is a copy of her $2, not a link, and a copy cannot find its lib/, so her $1 gate is NOT enforced; delete it")
     else # the user's own, even when it shares her script's name, unless it chains hers
       nonna_hook_chains_hers "$dest" "$2" "$target" \
         || hook_warns+=("$dest is not Nonna's, so her $1 gate is NOT enforced; chain $target from it")

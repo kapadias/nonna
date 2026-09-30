@@ -276,7 +276,14 @@ link_hook() { # <git hook name> <script under .claude/hooks>
       fi
       return 0
     fi
-    grep -qsF ".claude/hooks/$2" "$dest" || {
+    # A byte copy of her script (an older install, under Git Bash, made one and said it had linked it) finds no
+    # lib/ beside itself, so it enforces nothing. Named and never deleted: it was there before me.
+    if nonna_hook_is_copy "$dest" ".claude/hooks/$2"; then
+      warn_msgs+=("$1: $dest is a copy of .claude/hooks/$2, not a link, and a copy cannot find its lib/, so this gate is not running: delete it and run me again (Git Bash: turn on Developer Mode and set MSYS=winsymlinks:nativestrict first, or use WSL)")
+      failed=1
+      return 0
+    fi
+    nonna_hook_chains_hers "$dest" "$2" || {
       warn_msgs+=("$1: you already have a $1 hook — chain .claude/hooks/$2 from it, or my gates do not run")
       failed=1
     }

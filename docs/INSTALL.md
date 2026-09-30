@@ -286,12 +286,15 @@ way, so an existing full install needs nothing done. Your own `nonna.mode`, in t
 It never overwrites a file or a git hook that already exists, and never writes through a symlink. It
 merges into an existing `.claude/` file by file and lists what it left alone, so running it again
 adds what is missing and leaves every file already there as it is. Where you already have a git
-hook, it tells you to chain hers from it; where a hook manager owns the hooks (a custom
+hook, it tells you to chain hers from it (a line of code that runs her script counts; a comment
+that names it does not). A copy of her script that is not a link, which an older install left
+under Git Bash, it names as a copy and leaves for you to delete: a copy cannot find the `lib/`
+beside her script, so it enforces nothing. Where a hook manager owns the hooks (a custom
 `core.hooksPath`) or a linked worktree shares the main checkout's, it tells you which scripts to
 point them at. It exits non-zero when a gate is not in place, and the output says which: a symlink
 in the way, a file it could not write, a `.claude/settings.json` of yours that does not run her
-hooks, or a git hook it did not wire (yours does not run hers, a hook manager or a linked worktree
-owns the directory, or the link failed). On hosts other than Claude Code the git hooks are the only
+hooks, or a git hook it did not wire (yours does not run hers, a copy of hers, a hook manager or a
+linked worktree owns the directory, or the link failed). On hosts other than Claude Code the git hooks are the only
 enforcement, so read that exit as a gate that is off. Once your hook or your hook manager runs hers,
 running it again exits 0. Pin a release with `curl … | NONNA_REF=<tag> bash`. Prefer to read before
 you pipe? `curl -fsSLO …/install.sh`, read it, then `bash install.sh`.
@@ -392,7 +395,11 @@ the follow-up issues say which.
 - **A copied git hook**: bash stops at line 22 of the copy, where it sources `lib/secret-patterns.sh` from the
   directory beside it (`.git/hooks/pre-commit: line 22: …/.git/hooks/lib/secret-patterns.sh: No such file or
 directory`; the probe's row was cut off after `…/.git/ho`, and now keeps the whole line), and a staged
-  AWS-style key commits (exit 0). Git Bash's `ln -s` makes a copy unless Developer Mode is on and
+  AWS-style key commits (exit 0). An older session start left such copies and said it had added them,
+  and took a copy of her pre-push for a hook that chains hers, because her script names its own path in a
+  comment. Now a comment is not a chain, and a copy is named (`.git/hooks/pre-push is a copy of her
+require-status-sync.sh, not a link`; `/nonna status` shows `a copy, not a link: not enforced` in place of a
+  check mark): delete it, and with native symlinks the next session links the real one. Git Bash's `ln -s` makes a copy unless Developer Mode is on and
   `MSYS=winsymlinks:nativestrict` is set ([MSYS2](https://www.msys2.org/docs/symlinks/)); with both, the
   hooks were links and the same commit was refused (exit 1).
 - **`D:/…` paths**: a plugin's root and data directory arrive with a drive letter, which session start reads

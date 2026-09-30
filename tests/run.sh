@@ -1288,6 +1288,25 @@ printf '#!/bin/sh\n# lint staged files: scripts/pre-commit.sh\nexit 0\n' > "$TMP
 out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"
 contains "install: a hook that merely names her script's file is told to chain hers" "chain .claude/hooks/pre-commit.sh from it" "$out"
 rm -rf "$TMP"
+# A byte copy of her script in .git/hooks (an older install left one where ln -s copies, and said it had linked
+# it) finds no lib/ beside itself and enforces nothing. Her pre-push script names its own path in a comment,
+# which once made that copy count as a hook that chains hers: install names the copy, fails, deletes nothing.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
+( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" >/dev/null 2>&1 )
+rm -f "$TMP/.git/hooks/pre-push" "$TMP/.git/hooks/pre-commit"
+cp "$TMP/.claude/hooks/require-status-sync.sh" "$TMP/.git/hooks/pre-push"; cp "$TMP/.claude/hooks/pre-commit.sh" "$TMP/.git/hooks/pre-commit"
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a copy of her hooks in .git/hooks is a failure, since it enforces nothing" 1 "$?"
+contains "install: ...and names the pre-push copy, which is not a link" "pre-push: .git/hooks/pre-push is a copy of .claude/hooks/require-status-sync.sh, not a link" "$out"
+contains "install: ...and the pre-commit copy" "pre-commit: .git/hooks/pre-commit is a copy of .claude/hooks/pre-commit.sh, not a link" "$out"
+rc=0; [ -f "$TMP/.git/hooks/pre-push" ] && [ ! -L "$TMP/.git/hooks/pre-push" ] && [ -f "$TMP/.git/hooks/pre-commit" ] && [ ! -L "$TMP/.git/hooks/pre-commit" ] || rc=1; check "install: ...and deletes neither" 0 "$rc"
+rm -f "$TMP/.git/hooks/pre-commit" # linked again by the runs below, so only pre-push is in question there
+printf '# an older version\n' >> "$TMP/.git/hooks/pre-push"
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a copy of an older version of her pre-push is a failure too" 1 "$?"
+contains "install: ...told to chain hers, like any hook that does not run it" "pre-push: you already have a pre-push hook" "$out"
+printf '#!/bin/sh\n# TODO: chain .claude/hooks/require-status-sync.sh\nexit 0\n' > "$TMP/.git/hooks/pre-push"
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a hook that names her script only in a comment is a failure" 1 "$?"
+contains "install: ...and is told to chain hers" "pre-push: you already have a pre-push hook" "$out"
+rm -rf "$TMP"
 # --mode lite: the gates and the house rules, nothing else; the mode is recorded for every hook.
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
 out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --mode lite 2>&1)"; check "install: --mode lite succeeds" 0 "$?"
@@ -2072,6 +2091,51 @@ printf '#!/bin/sh\n# thanks, Nonna\nexit 0\n' > "$TMP/.git/hooks/pre-push"; chmo
 out="$(CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$ROOT/.claude" "$HOOKS/session-start.sh")"
 contains "plugin: a foreign hook that only names her is reported" ".git/hooks/pre-push is not Nonna's" "$out"
 rm -rf "$TMP"
+# Her pre-push script names its own path in its install comment, so a copy of it (an older session start left
+# one where ln -s copies, and said it had added it) once counted as a hook that chains hers. A comment runs
+# nothing: only a line of code that names her script is a chain.
+chains() { # <hook file> <script>: 0 when nonna_hook_chains_hers takes the hook for one that runs her script
+  bash -c '. "$1/lib/core.sh"; nonna_hook_chains_hers "$2" "$3"; echo $?' _ "$HOOKS" "$1" "$2"
+}
+TMP="$(mktemp -d)"
+check "chain: a copy of her pre-push script is not a hook that chains hers" 1 "$(chains "$HOOKS/require-status-sync.sh" require-status-sync.sh)"
+check "chain: nor is a copy of her pre-commit script" 1 "$(chains "$HOOKS/pre-commit.sh" pre-commit.sh)"
+printf '#!/bin/sh\necho mine\n.claude/hooks/require-status-sync.sh "$@"\n' > "$TMP/runs"
+check "chain: a hook that runs her script is one" 0 "$(chains "$TMP/runs" require-status-sync.sh)"
+printf '#!/bin/sh\n.claude/hooks/require-status-sync.sh "$@" # the DoD gate\n' > "$TMP/runs-and-says"
+check "chain: ...also with a comment after the call" 0 "$(chains "$TMP/runs-and-says" require-status-sync.sh)"
+printf '#!/bin/sh\nexec "$HOME/plugin/current/hooks/pre-commit.sh" "$@"\n' > "$TMP/runs-plugin"
+check "chain: ...and with her plugin's path" 0 "$(chains "$TMP/runs-plugin" pre-commit.sh)"
+printf '#!/bin/sh\n# chain .claude/hooks/require-status-sync.sh from here\nexit 0\n' > "$TMP/names"
+check "chain: a hook that names her path only in a comment is not one" 1 "$(chains "$TMP/names" require-status-sync.sh)"
+printf '#!/bin/sh\n\t  # chain .claude/hooks/require-status-sync.sh from here\nexit 0\n' > "$TMP/names-indented"
+check "chain: ...nor with the comment indented" 1 "$(chains "$TMP/names-indented" require-status-sync.sh)"
+rm -rf "$TMP"
+# A copy already in .git/hooks is named, and left for the user to delete: a copy cannot find the lib/ beside
+# the real script, so it enforces nothing, while the warning that it is "not Nonna's" says to chain hers.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; copy_in "$TMP"
+cp "$TMP/.claude/hooks/require-status-sync.sh" "$TMP/.git/hooks/pre-push"; cp "$TMP/.claude/hooks/pre-commit.sh" "$TMP/.git/hooks/pre-commit"
+out="$(CLAUDE_PROJECT_DIR="$TMP" "$TMP/.claude/hooks/session-start.sh")"; check "copy-in: copies of her scripts already in .git/hooks: still exits 0" 0 "$?"
+contains "copy-in: ...names the pre-push copy, which is not a link" ".git/hooks/pre-push is a copy of her require-status-sync.sh, not a link" "$out"
+contains "copy-in: ...and the pre-commit copy" ".git/hooks/pre-commit is a copy of her pre-commit.sh, not a link" "$out"
+contains "copy-in: ...and says her gate is NOT enforced" "her pre-push gate is NOT enforced" "$out"
+rc=0; cmp -s "$HOOKS/require-status-sync.sh" "$TMP/.git/hooks/pre-push" && [ ! -L "$TMP/.git/hooks/pre-push" ] || rc=1; check "copy-in: ...and leaves the copy where it is, for the user to delete" 0 "$rc"
+printf '# an older version\n' >> "$TMP/.git/hooks/pre-push"
+out="$(CLAUDE_PROJECT_DIR="$TMP" "$TMP/.claude/hooks/session-start.sh")"
+contains "copy-in: a copy of an older version of her script is not hers, and is said to be" ".git/hooks/pre-push is not Nonna's" "$out"
+rm -rf "$TMP"
+# A link is not a copy, even to a file that is one.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; copy_in "$TMP"; mkdir -p "$TMP/scripts"
+cp "$HOOKS/require-status-sync.sh" "$TMP/scripts/require-status-sync.sh"; ln -s ../../scripts/require-status-sync.sh "$TMP/.git/hooks/pre-push"
+out="$(CLAUDE_PROJECT_DIR="$TMP" "$TMP/.claude/hooks/session-start.sh")"
+contains "copy-in: the user's link to a file like hers is not hers" ".git/hooks/pre-push is not Nonna's" "$out"
+rm -rf "$TMP"
+# Under a plugin her script is the plugin's own, reached through the data dir.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; PD="$(mktemp -d)"
+cp "$ROOT/.claude/hooks/require-status-sync.sh" "$TMP/.git/hooks/pre-push"
+out="$(CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$ROOT/.claude" "$HOOKS/session-start.sh" "$PD/data")"
+contains "plugin: a copy of her pre-push script in .git/hooks is named, not taken for a gate" ".git/hooks/pre-push is a copy of her require-status-sync.sh, not a link" "$out"
+rm -rf "$TMP" "$PD"
 # A hook manager (core.hooksPath) owns the hooks: say where to point it, write nothing.
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; git -C "$TMP" config core.hooksPath .husky
 out="$(CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$ROOT/.claude" "$HOOKS/session-start.sh")"
@@ -2227,6 +2291,17 @@ gp() { # <repo> <name>: where git keeps it for that repo, as a path from here (g
   local p; p="$(git -C "$1" rev-parse --git-path "$2")"
   case "$p" in /*) printf '%s' "$p" ;; *) printf '%s/%s' "$1" "$p" ;; esac
 }
+# A byte copy of her script in .git/hooks (an older session start left one where ln -s copies) is not a link
+# and finds no lib/ beside itself: the status does not give it a check mark. A copy of an older version is not hers.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
+cp "$HOOKS/require-status-sync.sh" "$TMP/.git/hooks/pre-push"; cp "$HOOKS/pre-commit.sh" "$TMP/.git/hooks/pre-commit"
+out="$(ns "$TMP")"
+contains "/nonna: a copy of her pre-push in .git/hooks is shown as a copy, not enforced" "pre-push a copy, not a link: not enforced" "$out"
+contains "/nonna: ...and her pre-commit" "pre-commit a copy, not a link: not enforced" "$out"
+printf '%s' "$out" | grep -q "✓"; check "/nonna: ...with no check mark for either" 1 "$?"
+printf '# an older version\n' >> "$TMP/.git/hooks/pre-push"
+contains "/nonna: a copy of an older version of her pre-push is not hers" "pre-push not hers" "$(ns "$TMP")"
+rm -rf "$TMP"
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; "${GIT[@]}" -C "$TMP" commit -q --allow-empty -m init --no-verify
 out="$(ns "$TMP")"
 contains "/nonna: the status names her version, mode and where it comes from" "Nonna $VER · lite (the default)" "$out"

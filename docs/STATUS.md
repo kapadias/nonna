@@ -87,10 +87,15 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   said they added it (15 golden tests; 12 fail without the fix, and three pin what must not
   change). A copying `ln` on Linux shows the price on the legs without native symlinks: 20
   existing checks that passed on an inert copy now fail (13 in install, 7 in session start, which
-  assume a link), and 9 that failed on it pass. The guard scripts wait for #25, #26 and #29,
-  which are changing them. `docs/INSTALL.md`
-  has the measured section (use WSL 2). Mirrors: `.claude/README.md` and `CLAUDE.md` considered and
-  skipped (session start still installs both git hooks); no ADR until a follow-up chooses a fix.
+  assume a link), and 9 that failed on it pass. The reviews then found that her pre-push script
+  names its own path in a comment, so a byte copy of it, which the old session start left under
+  Git Bash, counted as a hook that chains hers: no warning, a check mark in `/nonna status`, a gate
+  that enforces nothing. A comment no longer counts as a chain, and a byte copy is named (session
+  start warns, `install.sh` exits 1, status shows `a copy, not a link: not enforced`) and never
+  deleted (27 more golden tests; 19 fail without the fix). The guard scripts wait for #25, #26 and
+  #29, which are changing them. `docs/INSTALL.md` has the measured section (use WSL 2). Mirrors:
+  `.claude/README.md` and `CLAUDE.md` considered and skipped (session start still installs both git
+  hooks); no ADR until a follow-up chooses a fix.
 - **2026-09-30** — No demo video in the repository's tree. The README's demo (a gif, an mp4 and the
   raw recording of one session, and the page on how it was recorded) is removed with its block in
   the README, and the split-screen film on `chore/17-demo` is not merged: both are launch

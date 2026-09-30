@@ -62,11 +62,21 @@ nonna_hook_is_hers() {
 }
 
 # nonna_hook_chains_hers <hook file> <script> [<her link now>]
-#   True when a hook that is not hers runs hers: its text names her script's path (the link she
-#   would make, .claude/hooks/<script> or current/hooks/<script>), not merely a file that shares
-#   the script's name.
+#   True when a hook that is not hers runs hers: a line of its text that is not a comment names her
+#   script's path (the link she would make, .claude/hooks/<script> or current/hooks/<script>), not
+#   merely a file that shares the script's name. A comment runs nothing: her pre-push script names
+#   its own path in its install comment, so a copy of it, from any version, is not a chain.
 nonna_hook_chains_hers() {
-  grep -qsF -e ".claude/hooks/$2" -e "current/hooks/$2" -e "${3:-.claude/hooks/$2}" "$1"
+  # The second grep reads to the end (no -q), so a closed pipe never cuts the first one off under pipefail.
+  grep -asv '^[[:space:]]*#' "$1" | grep -aF -e ".claude/hooks/$2" -e "current/hooks/$2" -e "${3:-.claude/hooks/$2}" >/dev/null
+}
+
+# nonna_hook_is_copy <git hook> <her script>
+#   True when the git hook is a regular file, not a link, that is byte for byte her script: what
+#   Git Bash's ln -s leaves in place of a link. Her script finds its lib/ beside itself, so a copy
+#   in .git/hooks finds none: it runs, exits 0 and enforces nothing.
+nonna_hook_is_copy() {
+  [ -f "$1" ] && [ ! -L "$1" ] && [ -f "$2" ] && cmp -s "$1" "$2"
 }
 
 # nonna_mode [git-hook]
