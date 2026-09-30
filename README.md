@@ -220,7 +220,8 @@ both). When she pays for herself: the [break-even table](bench/README.md#break-e
 **What if I need to ship without a test?** On a branch, behind a `debt:` marker that says when you
 will add it. She will remember.
 
-**Windows?** macOS, Linux and WSL. The hooks are bash; native Windows is not tested yet.
+**Windows?** macOS, Linux and WSL 2. The hooks are bash, and on native Windows some gates do not run:
+[what is known so far](docs/INSTALL.md#windows).
 
 **Why Nonna?** Because she doesn't care that it compiled.
 

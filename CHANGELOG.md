@@ -120,6 +120,11 @@ Your AI agent says "done"; Nonna makes it prove it.
 - **The launch README** leads with the plugin install and round 3's numbers. Each benchmark number
   carries a mark the lint checks against the rows (`harness_lint.py`), and the scorecard's alt text
   must be the image's own description.
+- **CI runs the gate tests under Git Bash on Windows**, in four legs (a CRLF checkout, an LF one, LF
+  without jq, and that with native symlinks), and `tests/windows-probe.sh` prints what Windows does
+  to the hooks: CRLF, a jq.exe that writes CRLF, `ln -s` making copies, `C:/` and backslash paths,
+  `timeout.exe`, the PowerShell tool. The job reports and does not block yet. `docs/INSTALL.md` has a Windows section, a draft until the log is
+  in: use WSL 2 meanwhile (#30).
 
 ### Changed
 

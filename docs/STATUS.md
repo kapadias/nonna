@@ -60,14 +60,29 @@ never offered to the model, so it is not counted.
 - **Launch images** — `assets/build.py` builds the scorecard, the social preview and one card per
   trap task from round 3's files; `--check` (standard library only) is run by `tests/run.sh`.
 - **CI** — `.github/workflows/ci.yml`: shellcheck (all scripts) + harness-lint + gate self-tests
-  (on Linux, and again on a stock Mac) + plugin manifest (`claude plugin validate --strict`, pinned
-  CLI). Every action is pinned to a commit SHA, the token is read-only by default, and only the
+  (on Linux, again on a stock Mac, and under Git Bash on Windows, where it only reports) + plugin
+  manifest (`claude plugin validate --strict`, pinned CLI). Every action is pinned to a commit SHA, the token is read-only by default, and only the
   release job can write.
 
 ## Recently changed
 
 History lives in `CHANGELOG.md` and `git log`. Entries here describe the current unit of work.
 
+- **2026-09-30** — Native Windows is measured, not assumed (#30, round 1). CI gains a `windows-latest`
+  job, `continue-on-error` until what it finds is fixed, that runs `tests/run.sh` under Git Bash in
+  four legs (a CRLF checkout, an LF one, LF without jq, and that with native symlinks) and prints
+  `tests/windows-probe.sh`, which reports what Windows does to the hooks; a PowerShell step shows what
+  a `hooks.json` command becomes where Git for Windows is absent. Read from the code and from Claude
+  Code's hooks documentation, and reproduced on Linux with Windows-shaped input, ahead of the log: a
+  CRLF checkout (Git for Windows' default) breaks every hook, by exit 127 or, where the shebang's CR
+  is tolerated, by exit 2 on every call; a native `jq.exe` writes CRLF under Git Bash, so the guards
+  read the tool name as `Bash\r` and pass everything; Git Bash's `ln -s` copies, so a git hook becomes
+  a copy that cannot find its `lib/` and lets a staged key through; a plugin's `C:/…` paths read as
+  relative, so session start wires no git hook; file-tool paths arrive with backslashes, so the
+  guards for `.git/config`, `.git/hooks` and the secret files fail open; and the PowerShell tool, on
+  by default beside Git Bash, is matched by nothing Nonna wires. `docs/INSTALL.md` has a Windows section, a draft
+  until the log is in, that says to use WSL 2. Nothing under `.claude/` changed, so its index and
+  `CLAUDE.md` stand; no ADR until the fixes are chosen.
 - **2026-09-30** — No demo video in the repository's tree. The README's demo (a gif, an mp4 and the
   raw recording of one session, and the page on how it was recorded) is removed with its block in
   the README, and the split-screen film on `chore/17-demo` is not merged: both are launch
@@ -448,6 +463,10 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
 
 ## Next / open
 
+- Native Windows (#30): fix what the `windows-latest` job and `tests/windows-probe.sh` find, each fix
+  with a golden test that fails on Windows first; write the rest up as issues; finish the Windows
+  section of `docs/INSTALL.md` with what runs, fails and never runs, with versions; then drop
+  `continue-on-error`. Until then the docs say to use WSL 2.
 - The rest of the launch plan (#17): deleting the finished branches (the film's first), the v2.0.0
   release as an ordinary merge of `develop` into `main`, and the go/no-go checks. `/nonna` ran
   headless in default and auto mode during the smoke runs; an interactive check stays on the
