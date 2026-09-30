@@ -61,8 +61,13 @@ never offered to the model, so it is not counted.
   `hooks/hooks.json`, `commands/`, `skills/`, `agents/` or `policies/`, in any letter case.
   `review-lanes.sh` sends the manifest and a root `hooks/hooks.json` to security review. The lint
   holds the manifest to what the CLI loads, and the release workflow holds its version to the tag.
+- **Copilot CLI plugin** — `.github/plugin/plugin.json` and `marketplace.json` (the plugin's
+  version; the repository is the plugin) and `hooks/copilot-hooks.json`, which runs `session-start`,
+  `guard-branch`, `secret-scan` and `stop-dod` with `NONNA_HOST=copilot`. `lib/host-copilot.sh`
+  reads Copilot's payloads as Claude Code's, an `apply_patch` a file at a time. The release workflow
+  holds both manifests to the tag, and `review-lanes.sh` sends the hooks file to security review.
 - **Docs** — this `STATUS.md`, `INSTALL.md`, `OVERVIEW.md`, `docs/benchmarks/`, `CHANGELOG.md`, the
-  `docs/adr/` index, and ADRs 0001–0013.
+  `docs/adr/` index, and ADRs 0001–0014.
 - **Launch images** — `assets/build.py` builds the scorecard, the social preview and one card per
   trap task from round 3's files; `--check` (standard library only) is run by `tests/run.sh`.
 - **CI** — `.github/workflows/ci.yml`: shellcheck (all scripts) + harness-lint + gate self-tests
