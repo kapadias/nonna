@@ -149,10 +149,10 @@ Your AI agent says "done"; Nonna makes it prove it.
   script and lets a staged key through. `session-start.sh` and `install.sh` now remove the copy
   they just made and say the gate is not enforced, where they had said they added it. A copy
   already in `.git/hooks`, which the old session start left, is named and left for you to delete:
-  session start warns, `install.sh` exits 1, and `/nonna status` shows no check mark. Her pre-push
-  script names its own path in a comment, which had made a copy of it count as a hook that chains
-  hers, so a comment no longer counts as a chain, on any platform (#30). Where `ln -s` links, as on
-  Linux and macOS, nothing else changes.
+  session start warns, `install.sh` exits 1, `/nonna status` shows no check mark, and
+  `/nonna uninstall` names it. Her pre-push script names its own path in a comment, which had made
+  a copy of it count as a hook that chains hers, so a comment no longer counts as a chain, on any
+  platform (#30). Where `ln -s` links, as on Linux and macOS, nothing else changes.
 - **CI pins every action to a commit SHA, runs with a read-only token, and runs the gate self-tests
   on a stock Mac too** (`/bin/bash` 3.2 and Apple's own tools); only the release job can write.
 - **The plugin no longer formats the files the agent edits.** It ran whatever formatter it found on

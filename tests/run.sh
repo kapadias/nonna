@@ -2403,6 +2403,15 @@ check "/nonna uninstall: leaves the user's own link named like her script" ../..
 printf '#!/bin/sh\n.claude/hooks/require-status-sync.sh "$@" || exit 1\n' > "$TMP/.git/hooks/pre-push"
 contains "/nonna uninstall: leaves a hook that chains hers to the user, and says so" "still runs her require-status-sync.sh" "$(ns "$TMP" uninstall)"
 rm -rf "$TMP"
+# A byte copy of her script (an older session start left one where ln -s copies) is not her link, so it stays. It is
+# not "not hers: left alone" either: she put it there, it prints lib/ errors on every commit or push, and it
+# enforces nothing. Uninstall names it and says to delete it, and never deletes one.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
+cp "$HOOKS/require-status-sync.sh" "$TMP/.git/hooks/pre-push"; chmod +x "$TMP/.git/hooks/pre-push"
+out="$(ns "$TMP" uninstall)"
+contains "/nonna uninstall: a copy of her pre-push is named as one that enforces nothing" "pre-push is a copy of her require-status-sync.sh that enforces nothing: delete it" "$out"
+rc=0; [ -f "$TMP/.git/hooks/pre-push" ] && [ ! -L "$TMP/.git/hooks/pre-push" ] && cmp -s "$HOOKS/require-status-sync.sh" "$TMP/.git/hooks/pre-push" || rc=1; check "/nonna uninstall: ...and leaves it where it is" 0 "$rc"
+rm -rf "$TMP"
 # Her link in .git/hooks goes even when core.hooksPath now points elsewhere.
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
 ln -s "$CLAUDE_CONFIG_DIR/plugins/cache/nonna/nonna/2.0.0/hooks/require-status-sync.sh" "$TMP/.git/hooks/pre-push"

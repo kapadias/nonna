@@ -35,9 +35,10 @@ Exercises each deterministic gate with fixed inputs and asserts the exit code:
   instead of overwriting a foreign one. When `ln -s` only copies the script (Git Bash), it
   removes the copy and says the gate is not enforced; `install.sh` does the same and exits 1. A
   byte copy of her script already in `.git/hooks` is named as a copy (session start warns,
-  `install.sh` exits 1, `/nonna status` gives it no check mark) and never deleted, and is not
-  taken for a hook that chains hers: only a line of code that runs her script is a chain, not a
-  comment that names it (her pre-push script does, in its install comment).
+  `install.sh` exits 1, `/nonna status` gives it no check mark, `/nonna uninstall` says to delete
+  it) and never deleted, and is not taken for a hook that chains hers: only a line of code that
+  runs her script is a chain, not a comment that names it (her pre-push script does, in its
+  install comment).
 - **.gitattributes**: a clone with `core.autocrlf=true` holds no CR in a script, an awk file or a
   markdown file; a file committed with CRLF keeps it and the clone stays clean; every tracked
   `*.sh` and `*.awk` resolves to `eol: lf`.

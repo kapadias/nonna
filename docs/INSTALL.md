@@ -490,7 +490,8 @@ In each repository where it ran, then once for the plugin:
 `/nonna uninstall` removes only what is hers, in every worktree, and names each thing with its
 value: her git hook links, the repository's `nonna.*` settings, `.git/nonna/`, `.git/nonna-green`
 and the branch-warning files. A git hook of yours is left alone and named, and so is one of yours
-that still runs hers. It tells you when your global git config still has `nonna.*` settings;
+that still runs hers, and a byte copy of her script (an older session start left one under Git Bash),
+which enforces nothing and is yours to delete. It tells you when your global git config still has `nonna.*` settings;
 `git config --global --remove-section nonna` removes them. The
 [commands by hand](#what-nonna-changes-on-your-machine) do the same for the main checkout.
 
