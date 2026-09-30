@@ -167,6 +167,14 @@ Your AI agent says "done"; Nonna makes it prove it.
   `README.md`'s code blocks word for word but for the words of a shell comment. A number or a
   command changed in `README.md` fails the lint until every translation follows. Each keeps the
   credit; none repeats the golden-test count, and one left behind is checked like `README.md`'s.
+- **Native Windows is measured, and it is not safe yet: use WSL 2** (#30). CI runs the gate tests
+  under Git Bash on `windows-latest` in three legs (`core.autocrlf` true, false, and false with
+  native symlinks), and `tests/windows-probe.sh` prints what Windows does to the hooks. The job reports and
+  does not block. On the latest run 1167 of the 1279 checks passed without native symlinks and 1229 with them; the rest are the suite's own
+  POSIX assumptions and the gaps below. `docs/INSTALL.md` says which hooks run, which let a blocked
+  action through and which never start, with versions. The gaps: a backslash path passes the
+  file-tool guards, the PowerShell tool and `git.exe` pass the branch guard, and with no Git for
+  Windows PowerShell cannot parse a hook's command, so none of them runs.
 - **A Codex plugin** (#25, ADR-0013). Codex reads the same marketplace and installs the same
   `.claude/`; `.codex-plugin/plugin.json` points it at `hooks/codex-hooks.json`, which runs her
   scripts with `NONNA_HOST=codex` on Codex's events: the test gate and "where's the test?" at
@@ -193,6 +201,17 @@ Your AI agent says "done"; Nonna makes it prove it.
   is not a terminal. A pack an earlier `install.sh` wrote is kept: delete it and run again.
 - **`install.sh` exits non-zero when a git hook is not wired**: a foreign hook that does not run
   hers, a hook manager's directory, or a link it could not make.
+- **Text checks out as LF whatever `core.autocrlf` says** (`.gitattributes`), and **a git hook that
+  `ln -s` copied is refused, and one already there is named.** Git for Windows sets
+  `core.autocrlf=true`: a CRLF checkout failed two data checks, and WSL's bash cannot start a CRLF
+  script. Git Bash's `ln -s` makes a copy of the hook, which cannot find the `lib/` beside her
+  script and lets a staged key through. `session-start.sh` and `install.sh` now remove the copy
+  they just made and say the gate is not enforced, where they had said they added it. A copy
+  already in `.git/hooks`, which the old session start left, is named and left for you to delete:
+  session start warns, `install.sh` exits 1, `/nonna status` shows no check mark, and
+  `/nonna uninstall` names it. Her pre-push script names its own path in a comment, which had made
+  a copy of it count as a hook that chains hers, so a comment no longer counts as a chain, on any
+  platform (#30). Where `ln -s` links, as on Linux and macOS, nothing else changes.
 - **CI pins every action to a commit SHA, runs with a read-only token, and runs the gate self-tests
   on a stock Mac too** (`/bin/bash` 3.2 and Apple's own tools); only the release job can write.
 - **The plugin no longer formats the files the agent edits.** It ran whatever formatter it found on

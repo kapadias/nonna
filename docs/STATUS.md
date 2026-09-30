@@ -66,8 +66,8 @@ never offered to the model, so it is not counted.
 - **Launch images** — `assets/build.py` builds the scorecard, the social preview and one card per
   trap task from round 3's files; `--check` (standard library only) is run by `tests/run.sh`.
 - **CI** — `.github/workflows/ci.yml`: shellcheck (all scripts) + harness-lint + gate self-tests
-  (on Linux, and again on a stock Mac) + plugin manifest (`claude plugin validate --strict`, pinned
-  CLI). Every action is pinned to a commit SHA, the token is read-only by default, and only the
+  (on Linux, again on a stock Mac, and under Git Bash on Windows, where it only reports) + plugin
+  manifest (`claude plugin validate --strict`, pinned CLI). Every action is pinned to a commit SHA, the token is read-only by default, and only the
   release job can write.
 
 ## Recently changed
@@ -81,6 +81,38 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   rows, the scorecard's own alt text, and the code blocks word for word but for the words of a
   shell comment, so no number or command goes stale in one language. The credit is allowed in each
   file by name; none repeats the golden-test count, and one left behind is checked all the same.
+
+- **2026-09-30** — Native Windows is measured, and it is not safe (#30). CI's `windows-latest` job
+  reports and does not block. It runs `tests/run.sh` under Git Bash in three legs (`core.autocrlf`
+  true, false, and false with native symlinks), prints `tests/windows-probe.sh` (what Windows does to
+  the hooks) and shows what a `hooks.json` command becomes without Git for Windows. The latest run
+  (36771120623, at 3230606) passed 1167 of 1279 checks with `core.autocrlf` true and the same 1167
+  with false (the same 112 fail, so `.gitattributes` made the two legs one), and 1229 with native
+  symlinks; the first run (36760188831) passed 1162 and 1164 of 1264, and 1193 with native symlinks
+  and no jq. What they found: Git Bash runs the hooks (CRLF scripts too; a native `jq.exe`'s CRLF is
+  harmless); a backslash path passes `guard-branch.sh` for `.git/config`, `.git/hooks` and the cwd
+  check, while `secret-scan.sh` refuses the secret paths whose directory exists, and does not exempt
+  `tests\`; the PowerShell tool and `git.exe` pass the branch guard; `ln -s` copies, and a copy of a
+  git hook cannot find its `lib/` and commits a staged key; a plugin's `D:/…` paths read as
+  relative, so session start wires no git hook; and without Git for Windows PowerShell cannot parse
+  a hook's command (exit 1), so no hook runs and Claude Code reports a non-blocking error.
+  Fixed here and measured on Windows: `.gitattributes` checks text out as LF whatever
+  `core.autocrlf` says, and `session-start.sh` and `install.sh` leave no copy (`not installed`, and
+  the note that `ln -s` made one), where they had said they added it. The price, as a copying `ln`
+  on Linux had shown, check for check: 20 existing checks that passed on an inert copy fail (13 in
+  install, 7 in session start, which assume a link), and 9 that failed on it pass. Fixed here and
+  tested on Linux with a copying `ln`, not yet measured on Windows: a byte copy of her script that
+  the old session start left counted as a hook that chains hers (her pre-push script names its own
+  path in a comment), with no warning and a check mark in `/nonna status`. A comment is no longer a
+  chain, and a copy is named (session start warns, `install.sh` exits 1, status shows
+  `a copy, not a link: not enforced`, uninstall says to delete it, each adding "unless you copied
+  its lib/ beside it") and never deleted. One check added in round 2 failed on Windows on every leg and
+  passes on Linux (a file committed with CRLF stays as committed); its cause is not known, so the
+  test now counts CRs as bytes and pins the scratch repo's `core.autocrlf`. The guard scripts wait
+  for #25, #26 and #29, which are changing them. `docs/INSTALL.md` has the measured section (use
+  WSL 2). Mirrors: `.claude/README.md` says session start names a copy, and `CLAUDE.md` is
+  considered and skipped (session start still installs both git hooks); no ADR until a follow-up
+  chooses a fix.
 
 - **2026-09-30** — A test command per directory, for monorepos (#29, ADR-0014). A monorepo's whole
   suite runs past the Stop hook's 240 seconds, so it got no verdict until the push. Now
@@ -541,6 +573,14 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
 
 ## Next / open
 
+- Native Windows (#30): the Windows CI job reports and does not block, and the docs say to use
+  WSL 2, until these are fixed; one follow-up each. The first four touch scripts that #25, #26 and #29 are
+  changing, so they wait for those: backslash paths in the guards (`guard-branch.sh:92`, `:109`;
+  `secret-scan.sh:38`, `:161`; `lib/secret-patterns.sh:11`); the PowerShell tool, which no hook
+  matches; `git.exe` (`guard-branch.sh:41`, `lib/shell-words.awk:223`); the Stop gate's `timeout`
+  and perl fallback on Windows (`lib/tests.sh:62-68`). Then git hooks as copies (a wrapper where
+  `ln -s` cannot link), the test suite's own POSIX assumptions, a WSL leg in CI, and whether a
+  PowerShell-only install, where no hook runs, is supported at all. Then drop `continue-on-error`.
 - The rest of the launch plan (#17): deleting the finished branches (the film's first), the v2.0.0
   release as an ordinary merge of `develop` into `main`, and the go/no-go checks. `/nonna` ran
   headless in default and auto mode during the smoke runs; an interactive check stays on the

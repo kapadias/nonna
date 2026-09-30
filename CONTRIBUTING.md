@@ -34,7 +34,8 @@ Three principles govern everything here:
   `skills/`, `agents/` or `policies/` in any letter case, which Gemini CLI would load, and
   `review-lanes.sh` sends a change to the manifest or to a root `hooks/hooks.json` to a security
   review.
-- **`tests/`**: `run.sh`, the gate golden tests, and `harness_lint.py`, the harness checking itself.
+- **`tests/`**: `run.sh`, the gate golden tests, and `harness_lint.py`, the harness checking itself;
+  `windows-probe.sh` reports what native Windows does to the hooks.
 - **`bench/`**: the benchmark; **`examples/`** holds one run of each trap task.
 - **`docs/`**: `STATUS.md` (the living state), `INSTALL.md`, `OVERVIEW.md`, `benchmarks/`, and `adr/`
   (numbered decisions). `CHANGELOG.md` lives at the repository root.

@@ -238,7 +238,8 @@ both). When she pays for herself: the [break-even table](bench/README.md#break-e
 **What if I need to ship without a test?** On a branch, behind a `debt:` marker that says when you
 will add it. She will remember.
 
-**Windows?** macOS, Linux and WSL. The hooks are bash; native Windows is not tested yet.
+**Windows?** Use WSL 2 (or macOS or Linux). On native Windows several gates do not stop what they
+guard, and some never start: [what was measured](docs/INSTALL.md#windows).
 
 **Why Nonna?** Because she doesn't care that it compiled.
 
@@ -255,7 +256,7 @@ the plugin.
 ## Development
 
 ```bash
-bash tests/run.sh              # every gate proven to block and to allow (1557 golden tests)
+bash tests/run.sh              # every gate proven to block and to allow (1605 golden tests)
 python3 tests/harness_lint.py  # word budgets, host files in sync, hook wiring, README numbers
 ```
 
