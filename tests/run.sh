@@ -2970,11 +2970,13 @@ pp subco "$OLDTIP"; check "pre-push: a submodule checked out behind the pushed o
 rm -rf "$PP/packages/api/lib"
 # Replace refs change what git reads, not what a push sends. A look-alike that changes only web must not
 # stand in for the pushed commit, which changes only api, nor make its working tree read as the pushed one.
+# The fixture itself reads through the replace ref, even when this suite runs as a pre-push test command,
+# which the hook runs with GIT_NO_REPLACE_OBJECTS set.
 "${GIT[@]}" -C "$PP" checkout -q -b lookalike main; printf 'x = 7\n' > "$PP/packages/web/app.py"; "${GIT[@]}" -C "$PP" commit -qam web
 "${GIT[@]}" -C "$PP" checkout -q -b replaced main; printf 'x = 7\n' > "$PP/packages/api/app.py"; "${GIT[@]}" -C "$PP" commit -qam api
-git -C "$PP" replace replaced lookalike
+env -u GIT_NO_REPLACE_OBJECTS git -C "$PP" replace replaced lookalike
 pp replaced; check "pre-push: a replace ref does not stand in for the pushed commit: its own package runs" "api" "$(cat "$CNT")"
-"${GIT[@]}" -C "$PP" reset -q --hard
+env -u GIT_NO_REPLACE_OBJECTS "${GIT[@]}" -C "$PP" reset -q --hard
 pp replaced; check "pre-push: ...nor makes the look-alike's working tree read as what is pushed" 1 "$?"
 rm -rf "$PP" "$BARE" "$PS" "$CNT" "$VERIFY"
 
