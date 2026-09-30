@@ -92,7 +92,8 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   (`disableAllHooks` turns every hook off). Golden tests from Copilot's documented payloads, one of
   them holding the adapter equal to Claude Code's goldens; no live Copilot session has run it.
   `release.yml` checks both new manifests against the tag, and `review-lanes.sh` sends a change to
-  the hooks file to security review.
+  the hooks file to security review. macOS CI caught one collision on a disk that ignores case: the
+  lint fixture now carries the root `hooks/`, so the Gemini `Hooks` cases start without it.
 
 - **2026-09-30** — Native Windows is measured, and it is not safe (#30). CI's `windows-latest` job
   reports and does not block. It runs `tests/run.sh` under Git Bash in three legs (`core.autocrlf`
