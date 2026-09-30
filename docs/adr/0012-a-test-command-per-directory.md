@@ -58,13 +58,15 @@ should have forgotten.
    `.git/nonna-green`, because the root's command may test everything.
 5. **Before a push,** the pre-push hook makes the same selection over the code the pushed range
    brings, reading each merge against each of its parents (`-m`, pinned to separate diffs). `--cc`
-   leaves out what a merge takes from one side, and lists nothing for a clean merge, so a merge could
-   push untested. The STATUS gate still reads each commit as before (`--cc`): what a merge itself
-   authors is its resolution. Both listings pin `log.showSignature` off, whoever runs the push: a
-   signer's verifier prints lines before each commit's names, which would move a package's file out
-   of its package, or hide a STATUS update. They read every submodule (`--ignore-submodules=none`,
-   which beats a committed `.gitmodules` `ignore = all` where a config pin does not), so a submodule
-   bump inside a package runs its command. And the hook reads with replace refs off
+   leaves out what a merge takes from one side, and lists nothing for a clean merge, so a merge
+   could push untested. The STATUS gate still reads each commit as before (`--cc`): what a merge
+   itself authors is its resolution. Both listings pin `log.showSignature` off, whoever runs the
+   push: a signer's verifier prints lines before each commit's names, which would move a package's
+   file out of its package, or hide a STATUS update. They read every submodule
+   (`--ignore-submodules=none`, which beats a committed `.gitmodules` `ignore = all` where a config
+   pin does not), so a submodule bump inside a package runs its command, and the check that the
+   working tree is what is pushed reads them too: a submodule checked out at another commit, or
+   edited inside, is not a clean tree. And the hook reads with replace refs off
    (`GIT_NO_REPLACE_OBJECTS`): a replace ref changes what git reads, not what a push sends, so what
    the hook lists, checks and scans is what the push sends. Each command gets the full 600 seconds,
    and the first red refuses the push, named. The hook already refuses a push whose files it cannot

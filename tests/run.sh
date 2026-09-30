@@ -2948,6 +2948,7 @@ git -C "$PP" config --unset nonna.mode
 printf '[submodule "lib"]\n\tpath = packages/api/lib\n\turl = ./lib\n\tignore = all\n' > "$PP/.gitmodules"; "${GIT[@]}" -C "$PP" add .gitmodules
 "${GIT[@]}" -C "$PP" update-index --add --cacheinfo "160000,$(git -C "$PP" rev-parse main),packages/api/lib"
 "${GIT[@]}" -C "$PP" commit -qm lib; "${GIT[@]}" -C "$PP" push -q origin sub; OLDTIP="$(git -C "$PP" rev-parse sub)"
+mkdir -p "$PP/packages/api/lib" # what a clone leaves for a submodule it has not checked out: an empty directory
 "${GIT[@]}" -C "$PP" update-index --cacheinfo "160000,$OLDTIP,packages/api/lib"; "${GIT[@]}" -C "$PP" commit -qm "bump lib"
 pp sub "$OLDTIP"; check "pre-push: a submodule bump inside a package runs its command, though .gitmodules says ignore = all" "api" "$(cat "$CNT")"
 git -C "$PP" config nonna.mode full
@@ -2956,6 +2957,17 @@ git -C "$PP" config nonna.mode full
 "${GIT[@]}" -C "$PP" update-index --cacheinfo "160000,$OLDTIP,packages/api/lib"; "${GIT[@]}" -C "$PP" commit -qm "bump lib"
 pp sub2 "$OLDTIP"; check "pre-push: ...and the STATUS gate counts that bump as code, as it would with nothing ignored" 1 "$?"
 git -C "$PP" config --unset nonna.mode
+# Nor is a submodule checked out behind the pushed gitlink a clean tree: the tests would run the old
+# submodule code while the bump is pushed. It is a repository of its own, made where the clone left it.
+"${GIT[@]}" -C "$PP" checkout -q -b subco sub; "${GIT[@]}" init -q "$PP/packages/api/lib"
+"${GIT[@]}" -C "$PP/packages/api/lib" commit -q --allow-empty -m L1; L1="$(git -C "$PP/packages/api/lib" rev-parse HEAD)"
+"${GIT[@]}" -C "$PP/packages/api/lib" commit -q --allow-empty -m L2; L2="$(git -C "$PP/packages/api/lib" rev-parse HEAD)"
+"${GIT[@]}" -C "$PP" update-index --cacheinfo "160000,$L1,packages/api/lib"; "${GIT[@]}" -C "$PP" commit -qm "lib at L1"
+"${GIT[@]}" -C "$PP" push -q origin subco; OLDTIP="$(git -C "$PP" rev-parse subco)"
+"${GIT[@]}" -C "$PP" update-index --cacheinfo "160000,$L2,packages/api/lib"; "${GIT[@]}" -C "$PP" commit -qm "bump lib to L2"
+git -C "$PP/packages/api/lib" checkout -q "$L1"
+pp subco "$OLDTIP"; check "pre-push: a submodule checked out behind the pushed one is not a clean tree, though .gitmodules says ignore = all" 1 "$?"
+rm -rf "$PP/packages/api/lib"
 # Replace refs change what git reads, not what a push sends. A look-alike that changes only web must not
 # stand in for the pushed commit, which changes only api, nor make its working tree read as the pushed one.
 "${GIT[@]}" -C "$PP" checkout -q -b lookalike main; printf 'x = 7\n' > "$PP/packages/web/app.py"; "${GIT[@]}" -C "$PP" commit -qam web
