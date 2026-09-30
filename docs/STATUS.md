@@ -75,8 +75,11 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   delete it. A file-by-file review of that branch found nothing `develop` was missing: its README
   numbers and scorecard were an earlier draft of round 3's, which the launch unit carries with
   every number checked by the lint, and its tagline change belonged to the film. The removed files
-  stay in `develop`'s history (about 5 MB), so a squash merge for the release keeps them out of
-  `main`'s.
+  stay in `develop`'s history (about 5 MB). A normal clone fetches every branch, so no way of
+  merging the release keeps them out of a clone: the release is an ordinary merge, like the
+  earlier ones (a squash would clean `main`'s own history only, and would need `main` merged back
+  into `develop` before the next release). The film's branch adds about 42 MB to every clone
+  until it is deleted.
 
 - **2026-09-29** — The launch, the fifth unit of the launch plan (#17), from round 3's numbers.
   - **README:** the plugin install first, what the first session prints, what she checks, the
@@ -445,9 +448,10 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
 
 ## Next / open
 
-- The rest of the launch plan (#17): the v2.0.0 release, by squash merge so the removed demo media
-  stays out of `main`'s history, and the go/no-go checks. `/nonna` ran headless in default and
-  auto mode during the smoke runs; an interactive check stays on the go/no-go list.
+- The rest of the launch plan (#17): deleting the finished branches (the film's first), the v2.0.0
+  release as an ordinary merge of `develop` into `main`, and the go/no-go checks. `/nonna` ran
+  headless in default and auto mode during the smoke runs; an interactive check stays on the
+  go/no-go list.
 - The branch guard should fail closed when a check cannot run. A `git` or `grep` that fails to
   start reads as "nothing found" today, so the command is allowed: the likely reason two guard
   tests allowed a blocked command, three times in all and each passing on rerun, while three or
