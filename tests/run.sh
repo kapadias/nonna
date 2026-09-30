@@ -3140,7 +3140,8 @@ while IFS="$(printf '\t')" read -r claude copilot; do
   done
 done <<<"$eq_pairs"
 check "copilot: $eq_n verdicts on Claude Code's goldens rewritten in Copilot's names are the same${eq_bad:+ (differ:$eq_bad)}" "" "$eq_bad"
-EQP=(".env" "src" ".env.example" "docs")
+# One secret file sorts before the ordinary paths and one after, so judging only some of them fails.
+EQP=(".env" "src" ".env.example" "z.pem")
 eq_one=()
 for i in 0 1 2 3; do eq_one[i]="$(eq_run secret-scan.sh "{\"tool_name\":\"Grep\",\"tool_input\":{\"pattern\":\"x\",\"path\":\"${EQP[i]}\"}}")"; done
 eq_n=0; eq_bad=""
