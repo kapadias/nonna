@@ -1,4 +1,4 @@
-# ADR 0012 — Codex runs Nonna's hooks through a payload adapter
+# ADR 0013 — Codex runs Nonna's hooks through a payload adapter
 
 - **Status:** Accepted
 - **Date:** 2026-09-30

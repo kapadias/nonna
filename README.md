@@ -164,7 +164,7 @@ For another agent, add `-s -- --host <name>`:
 | Codex, Zed, Amp, opencode, Roo Code, Jules, Junie (`AGENTS.md`) | `agents`                      |
 | Cursor                                                          | `cursor`                      |
 | GitHub Copilot                                                  | `copilot`                     |
-| Gemini CLI                                                      | `gemini`                      |
+| Gemini CLI                                                      | `gemini` · or the extension   |
 | Windsurf · Cline · Kiro                                         | `windsurf` · `cline` · `kiro` |
 | all of them                                                     | `all`                         |
 
@@ -192,6 +192,11 @@ says they do for Codex what they do for Claude Code. Codex reads files through t
 secret guard checks what a command reads. They do not see input sent to a shell already running, or
 scan what the shell writes; the git hooks are the backstop there
 ([`docs/INSTALL.md`](docs/INSTALL.md#codex-the-plugin)).
+
+From v2.0.0, Gemini CLI can also load the house rules as an extension:
+`gemini extensions install https://github.com/kapadias/nonna`. It carries the rules only, with no
+git hooks; `install.sh --host gemini` adds them
+([details](docs/INSTALL.md#gemini-cli-the-extension)).
 
 Nothing you already have is overwritten. More: [`docs/INSTALL.md`](docs/INSTALL.md).
 
@@ -248,7 +253,7 @@ the plugin.
 ## Development
 
 ```bash
-bash tests/run.sh              # every gate proven to block and to allow (1317 golden tests)
+bash tests/run.sh              # every gate proven to block and to allow (1468 golden tests)
 python3 tests/harness_lint.py  # word budgets, host files in sync, hook wiring, README numbers
 ```
 

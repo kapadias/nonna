@@ -1,0 +1,6 @@
+{
+  "name": "nonna",
+  "version": "2.0.0",
+  "description": "Nonna's house rules for Gemini CLI: run the whole test suite before saying done, never commit to main, never put a secret in a file. Rules only; install.sh --host gemini adds the git hooks that enforce them.",
+  "contextFileName": "hosts/gemini-extension/GEMINI.md"
+}

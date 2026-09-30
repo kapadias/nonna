@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Sourced helper — the apply_patch format, read by its grammar, a file at a time (ADR-0012). A host
+# Sourced helper — the apply_patch format, read by its grammar, a file at a time (ADR-0013). A host
 # that edits with such a patch (Codex does) sends several files in one call, where Nonna's gates judge
 # one file a call: the host's adapter turns each record this prints into the payload its gates read.
 # Nothing here knows which host sent the patch.

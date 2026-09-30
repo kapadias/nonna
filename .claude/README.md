@@ -67,7 +67,7 @@ discipline is **enforced by code, not prose**. Start with [`../CLAUDE.md`](../CL
   `tests.sh` — the test command, runner and failure digest; `lite.md` — lite's house
   rules; `ladder.sh` — whether another plugin already states the ladder; `patch.sh` — the
   `apply_patch` format read by its grammar, a record a file, for any host's adapter; `host-codex.sh` —
-  Codex's payloads read as Claude Code's, an `apply_patch` a file at a time, ADR-0012); plugin
+  Codex's payloads read as Claude Code's, an `apply_patch` a file at a time, ADR-0013); plugin
   wiring in `hooks.json`, asserted equivalent to `settings.json` by the linter, and Codex's in
   `codex-hooks.json` (every command sets `NONNA_HOST=codex`; its core gates are linted on their own).
 - **`settings.json`** — denies reading secrets (`.env`/`*.pem`/`*.key`/`.ssh`/`.aws`/…) and

@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Sourced helper — Codex's hook payloads, read as Claude Code's (ADR-0012). Codex runs the plugin's
+# Sourced helper — Codex's hook payloads, read as Claude Code's (ADR-0013). Codex runs the plugin's
 # hooks from hooks/codex-hooks.json with NONNA_HOST=codex, and a gate that reads a tool call passes
 # Codex's payload through nonna_codex_payload before it reads it. Most of it already has Claude
 # Code's shape: a shell command is tool_name Bash with tool_input.command, and session_id,

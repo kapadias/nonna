@@ -1614,6 +1614,26 @@ mkdir -p "$TMP/.claude/agents"; printf 'tools: Bash\n' > "$TMP/.claude/agents/x.
 out="$(cd "$TMP" && bash "$RL" main 2>/dev/null)"
 contains "review-lanes: harness markdown is never quiet" "security=yes" "$out"
 rm -rf "$TMP/.claude"
+# The Gemini CLI extension is rules only (ADR 0012). Its manifest, and a root hooks/hooks.json (the file
+# Gemini CLI and a Claude plugin run hooks from), are never ordinary: a change there always reaches the
+# security reviewer, in any letter case. The root commands/, skills/, agents/ and policies/ are ordinary
+# directories in most repositories that adopt the harness: the lint refuses them here, this does not tax them.
+printf '{}\n' > "$TMP/gemini-extension.json"
+out="$(cd "$TMP" && bash "$RL" main 2>/dev/null)"
+contains "review-lanes: the Gemini extension manifest triggers security review" "security=yes" "$out"
+rm -f "$TMP/gemini-extension.json"
+mkdir -p "$TMP/hooks"; printf '{}\n' > "$TMP/hooks/hooks.json"
+out="$(cd "$TMP" && bash "$RL" main 2>/dev/null)"
+contains "review-lanes: a root hooks/hooks.json triggers security review" "security=yes" "$out"
+rm -rf "$TMP/hooks"
+mkdir -p "$TMP/Hooks"; printf '{}\n' > "$TMP/Hooks/Hooks.json"
+out="$(cd "$TMP" && bash "$RL" main 2>/dev/null)"
+contains "review-lanes: a root Hooks/Hooks.json triggers it in any letter case" "security=yes" "$out"
+rm -rf "$TMP/Hooks"
+mkdir -p "$TMP/agents"; printf 'Plans the work.\n' > "$TMP/agents/planner.md"
+out="$(cd "$TMP" && bash "$RL" main 2>/dev/null)"
+contains "review-lanes: an ordinary root agents/ file needs no security review" "security=no" "$out"
+rm -rf "$TMP/agents"
 mkdir -p "$TMP/src/test_utils"; printf 'os.system(x)\n' > "$TMP/src/test_utils/runner.py"
 out="$(cd "$TMP" && bash "$RL" main 2>/dev/null)"
 contains "review-lanes: a test-looking directory name does not silence production code" "security=yes" "$out"
@@ -2662,6 +2682,181 @@ rm -rf "$TMP"
 
 rm -rf "$PYSTUB"; if [ -n "$OLD_PYTHONPATH" ]; then PYTHONPATH="$OLD_PYTHONPATH"; else unset PYTHONPATH; fi
 
+echo "== tests.sh (nonna_detect_test_cmd: the suite it names, and in which order) =="
+# A command is named only when its runner is there (a missing one reads as a red suite and blocks every
+# push), so these tests own PATH: a case names the runners it has installed, and detection finds those
+# and grep (which the package.json arm needs) on a PATH of their own, and nothing else. Every stand-in
+# runner, and the gradlew and vendor/bin/phpunit that fx writes, appends to DET_LOG when run, and
+# detection, which only looks, must leave that file unwritten. The python3 stand-in is one that finds pytest.
+RUNNERS="bundle mvn dotnet mix java php python3" # everything installed
+DET_STUBS="$(mktemp -d)"; DET_LOG="$DET_STUBS.log"
+for b in bundle mvn dotnet mix java php; do printf '#!/bin/sh\necho %s >> "%s"\n' "$b" "$DET_LOG" > "$DET_STUBS/$b"; done
+printf '#!/bin/sh\nexit 0\n' > "$DET_STUBS/python3"
+chmod +x "$DET_STUBS"/*
+fx() { # <repo> <name>...: the files of a fixture, empty; a name ending in / is a directory, package.json
+  # has a test script, and gradlew, mvnw, vendor/bin/pest and vendor/bin/phpunit are executable and log a run
+  local d="$1" n; shift
+  for n in "$@"; do
+    case "$n" in
+      */) mkdir -p "$d/$n" ;;
+      package.json) printf '{"scripts":{"test":"node t.js"}}\n' > "$d/$n" ;;
+      gradlew | mvnw | vendor/bin/pest | vendor/bin/phpunit)
+        mkdir -p "$d/$(dirname "$n")"
+        printf '#!/bin/sh\necho %s >> "%s"\n' "$n" "$DET_LOG" > "$d/$n"; chmod +x "$d/$n" ;;
+      *) mkdir -p "$d/$(dirname "$n")"; : > "$d/$n" ;;
+    esac
+  done
+}
+det() { # <repo> <runner>...: what detection names for <repo> when only those runners are installed (and
+  # JAVA_HOME is DET_JAVA_HOME, or unset)
+  local d="$1" bin r; shift
+  bin="$(mktemp -d)"; ln -s "$(command -v grep)" "$bin/grep"
+  for r in "$@"; do ln -s "$DET_STUBS/$r" "$bin/$r"; done
+  ( cd "$d" && . "$HOOKS/lib/tests.sh" && unset JAVA_HOME && { [ -z "${DET_JAVA_HOME-}" ] || export JAVA_HOME="$DET_JAVA_HOME"; } \
+    && PATH="$bin" nonna_detect_test_cmd )
+  rm -rf "$bin"
+}
+named() { # <runners> <name>...: what detection names for a fresh repository made of those files, with only
+  # those runners (a word list) installed
+  local runners="$1" d out; shift
+  d="$(mktemp -d)"; fx "$d" "$@"
+  # shellcheck disable=SC2086  # a word list on purpose
+  out="$(det "$d" $runners)"
+  rm -rf "$d"
+  printf '%s' "$out"
+}
+# The stand-ins and the fixtures' runners leave a mark when they run, or the last test here proves nothing.
+TMP="$(mktemp -d)"; fx "$TMP" gradlew vendor/bin/phpunit; "$TMP/gradlew"; "$TMP/vendor/bin/phpunit"; "$DET_STUBS/bundle"
+check "tests.sh: (control) a stand-in or fixture runner that runs leaves its mark" 3 "$(wc -l < "$DET_LOG" | tr -d ' ')"
+rm -rf "$TMP" "$DET_LOG"
+# Ruby: bundle exec needs a Gemfile, and .rspec or spec/spec_helper.rb says it is rspec; a bare spec/ or
+# test/ says little (Jasmine and mocha use them, and a Gemfile may only serve Danger or Jekyll).
+check "tests.sh: Ruby: a Gemfile and .rspec: bundle exec rspec" "bundle exec rspec" "$(named "$RUNNERS" Gemfile .rspec)"
+check "tests.sh: Ruby: a Gemfile and spec/spec_helper.rb: bundle exec rspec" "bundle exec rspec" "$(named "$RUNNERS" Gemfile spec/spec_helper.rb)"
+check "tests.sh: Ruby: a Gemfile, a Rakefile and test/: bundle exec rake test" "bundle exec rake test" "$(named "$RUNNERS" Gemfile Rakefile test/)"
+check "tests.sh: Ruby: rspec before rake test (a Rails app that added rspec keeps its test/)" "bundle exec rspec" "$(named "$RUNNERS" Rakefile test/ Gemfile .rspec)"
+check "tests.sh: Ruby: spec/ without a Gemfile is no Ruby app (a Node project's Jasmine specs): npm test" "npm test --silent" "$(named "$RUNNERS" spec/ package.json)"
+check "tests.sh: Ruby: a Gemfile for Danger beside a Jasmine spec/ is no rspec suite: npm test" "npm test --silent" "$(named "$RUNNERS" Gemfile spec/app.spec.js package.json)"
+check "tests.sh: Ruby: a Rakefile and test/ without a Gemfile (a mocha project) are no Ruby app: npm test" "npm test --silent" "$(named "$RUNNERS" Rakefile test/ package.json)"
+check "tests.sh: Ruby: a Gemfile alone (a Jekyll site) is no suite: npm test" "npm test --silent" "$(named "$RUNNERS" Gemfile package.json)"
+check "tests.sh: Ruby: bundle off PATH, rspec: nothing" "" "$(named "" Gemfile .rspec)"
+check "tests.sh: Ruby: bundle off PATH, rake test: nothing" "" "$(named "" Gemfile Rakefile test/)"
+# PHP: the runner is the project's own vendor/bin/pest (a Pest project, where phpunit runs nothing) or
+# vendor/bin/phpunit, a php script, so php has to be there.
+check "tests.sh: PHP: phpunit.xml and vendor/bin/phpunit: vendor/bin/phpunit" "vendor/bin/phpunit" "$(named "$RUNNERS" phpunit.xml vendor/bin/phpunit)"
+check "tests.sh: PHP: phpunit.xml.dist and vendor/bin/phpunit: vendor/bin/phpunit" "vendor/bin/phpunit" "$(named "$RUNNERS" phpunit.xml.dist vendor/bin/phpunit)"
+check "tests.sh: PHP: phpunit.dist.xml and vendor/bin/phpunit: vendor/bin/phpunit" "vendor/bin/phpunit" "$(named "$RUNNERS" phpunit.dist.xml vendor/bin/phpunit)"
+check "tests.sh: PHP: phpunit.xml but no vendor/bin/phpunit (composer install not run): nothing" "" "$(named "$RUNNERS" phpunit.xml)"
+check "tests.sh: PHP: a Pest project (vendor/bin/pest beside phpunit): vendor/bin/pest" "vendor/bin/pest" "$(named "$RUNNERS" phpunit.xml vendor/bin/phpunit vendor/bin/pest)"
+check "tests.sh: PHP: vendor/bin/pest alone: vendor/bin/pest" "vendor/bin/pest" "$(named "$RUNNERS" phpunit.xml vendor/bin/pest)"
+check "tests.sh: PHP: no php on PATH: nothing" "" "$(named "${RUNNERS/php/}" phpunit.xml vendor/bin/phpunit)"
+check "tests.sh: PHP: ...no php falls through to the package.json: npm test" "npm test --silent" "$(named "${RUNNERS/php/}" phpunit.xml vendor/bin/phpunit package.json)"
+check "tests.sh: PHP: no php, a Pest project: nothing" "" "$(named "${RUNNERS/php/}" phpunit.xml vendor/bin/pest)"
+check "tests.sh: PHP: ...no php, a Pest project keeps its package.json: npm test" "npm test --silent" "$(named "${RUNNERS/php/}" phpunit.xml vendor/bin/pest package.json)"
+TMP="$(mktemp -d)"; fx "$TMP" phpunit.xml vendor/bin/pest vendor/bin/phpunit; chmod -x "$TMP/vendor/bin/pest"
+# shellcheck disable=SC2086  # a word list on purpose
+check "tests.sh: PHP: a vendor/bin/pest that cannot run falls back to vendor/bin/phpunit" "vendor/bin/phpunit" "$(det "$TMP" $RUNNERS)"
+chmod -x "$TMP/vendor/bin/phpunit"
+# shellcheck disable=SC2086  # a word list on purpose
+check "tests.sh: PHP: ...and with neither able to run: nothing" "" "$(det "$TMP" $RUNNERS)"
+rm -rf "$TMP"
+# Java and Kotlin: the Gradle and Maven wrappers are their own marker and runner, and need a JVM the way
+# they find one: JAVA_HOME/bin/java when JAVA_HOME is set, else java on PATH. Maven without a wrapper needs mvn.
+check "tests.sh: Gradle: an executable gradlew: ./gradlew test" "./gradlew test" "$(named "$RUNNERS" gradlew)"
+TMP="$(mktemp -d)"; fx "$TMP" gradlew; chmod -x "$TMP/gradlew"
+# shellcheck disable=SC2086  # a word list on purpose
+check "tests.sh: Gradle: a gradlew that cannot run (mode lost in a zip): nothing" "" "$(det "$TMP" $RUNNERS)"
+fx "$TMP" package.json
+# shellcheck disable=SC2086  # a word list on purpose
+check "tests.sh: Gradle: ...with a package.json beside it, npm test" "npm test --silent" "$(det "$TMP" $RUNNERS)"
+rm -rf "$TMP"
+check "tests.sh: Gradle: no java anywhere: nothing" "" "$(named "${RUNNERS/java/}" gradlew)"
+check "tests.sh: Gradle: ...no java falls through to the package.json: npm test" "npm test --silent" "$(named "${RUNNERS/java/}" gradlew package.json)"
+JH="$(mktemp -d)"; mkdir "$JH/bin"; printf '#!/bin/sh\nexit 0\n' > "$JH/bin/java"; chmod +x "$JH/bin/java"
+check "tests.sh: Gradle: no java on PATH, but JAVA_HOME/bin/java: ./gradlew test" "./gradlew test" "$(DET_JAVA_HOME="$JH" named "" gradlew)"
+check "tests.sh: Gradle: JAVA_HOME without a java in it, beside a java on PATH (the wrappers look in JAVA_HOME alone): nothing" "" "$(DET_JAVA_HOME="$JH/missing" named "java" gradlew)"
+chmod -x "$JH/bin/java"
+check "tests.sh: Gradle: a JAVA_HOME/bin/java that cannot run, beside a java on PATH: nothing" "" "$(DET_JAVA_HOME="$JH" named "java" gradlew)"
+rm -rf "$JH"
+check "tests.sh: Maven wrapper: an executable mvnw and java, no mvn: ./mvnw test" "./mvnw test" "$(named "java" pom.xml mvnw)"
+check "tests.sh: Maven wrapper: a JHipster app with java: the wrapper, not its package.json" "./mvnw test" "$(named "java" pom.xml mvnw package.json)"
+check "tests.sh: Maven wrapper: before mvn" "./mvnw test" "$(named "$RUNNERS" pom.xml mvnw)"
+check "tests.sh: Maven wrapper: no java anywhere: nothing" "" "$(named "" pom.xml mvnw)"
+TMP="$(mktemp -d)"; fx "$TMP" pom.xml mvnw; chmod -x "$TMP/mvnw"
+# shellcheck disable=SC2086  # a word list on purpose
+check "tests.sh: Maven wrapper: an mvnw that cannot run (mode lost in a zip) falls back to mvn: mvn test" "mvn test" "$(det "$TMP" $RUNNERS)"
+rm -rf "$TMP"
+check "tests.sh: Maven: a pom.xml: mvn test" "mvn test" "$(named "$RUNNERS" pom.xml)"
+check "tests.sh: Maven: mvn off PATH: nothing" "" "$(named "" pom.xml)"
+check "tests.sh: Gradle before Maven" "./gradlew test" "$(named "$RUNNERS" pom.xml gradlew)"
+check "tests.sh: Gradle before the Maven wrapper" "./gradlew test" "$(named "$RUNNERS" mvnw gradlew)"
+# .NET: dotnet test in a folder with several solution or project files stops with MSB1011, a red. MSBuild's
+# own glob counts them: *.sln, *.slnx and *.*proj (.csproj, .fsproj, .vbproj, a docker-compose.dcproj).
+check "tests.sh: .NET: a .sln: dotnet test" "dotnet test" "$(named "$RUNNERS" App.sln)"
+check "tests.sh: .NET: a .slnx: dotnet test" "dotnet test" "$(named "$RUNNERS" App.slnx)"
+check "tests.sh: .NET: a .csproj: dotnet test" "dotnet test" "$(named "$RUNNERS" App.csproj)"
+check "tests.sh: .NET: a lone .fsproj: dotnet test" "dotnet test" "$(named "$RUNNERS" App.fsproj)"
+check "tests.sh: .NET: dotnet off PATH: nothing" "" "$(named "" App.sln)"
+check "tests.sh: .NET: two solutions, dotnet cannot choose: nothing" "" "$(named "$RUNNERS" App.sln Tools.sln)"
+check "tests.sh: .NET: a solution and a project of another name: nothing" "" "$(named "$RUNNERS" App.sln Tools.csproj)"
+check "tests.sh: .NET: a solution beside a docker-compose.dcproj counts two: nothing" "" "$(named "$RUNNERS" App.sln docker-compose.dcproj)"
+check "tests.sh: .NET: ...two files fall through to the package.json: npm test" "npm test --silent" "$(named "$RUNNERS" App.sln docker-compose.dcproj package.json)"
+# Elixir
+check "tests.sh: Elixir: a mix.exs: mix test" "mix test" "$(named "$RUNNERS" mix.exs)"
+check "tests.sh: Elixir: mix off PATH: nothing" "" "$(named "" mix.exs)"
+# A row whose runner is missing is skipped and the search goes on to the rows below, so a repository that
+# is gated today (by package.json, go.mod or Cargo.toml) is gated still. pytest's row keeps its own older
+# rule: a pytest config without pytest names nothing.
+check "tests.sh: fall through: a Rails app without bundle keeps its package.json: npm test" "npm test --silent" "$(named "" Gemfile .rspec package.json)"
+check "tests.sh: fall through: a Laravel app before composer install keeps its package.json: npm test" "npm test --silent" "$(named "$RUNNERS" phpunit.xml package.json)"
+check "tests.sh: fall through: a JHipster app (pom.xml, mvnw) with neither java nor mvn keeps its package.json: npm test" "npm test --silent" "$(named "" pom.xml mvnw package.json)"
+check "tests.sh: fall through: a pom.xml without mvn keeps its package.json: npm test" "npm test --silent" "$(named "java" pom.xml package.json)"
+check "tests.sh: fall through: a Phoenix app without mix keeps its go.mod: go test" "go test ./..." "$(named "" mix.exs go.mod)"
+check "tests.sh: fall through: a .NET solution without dotnet keeps its Cargo.toml: cargo test" "cargo test --quiet" "$(named "" App.sln Cargo.toml)"
+check "tests.sh: fall through: every back end without its runner: the first row below them" "go test ./..." "$(named "" Gemfile .rspec phpunit.xml pom.xml mix.exs App.sln Cargo.toml go.mod)"
+check "tests.sh: fall through: ...but pytest's row claims its repository: a pytest config without pytest, beside a Rails app, names nothing" "" "$(named "bundle" pytest.ini Gemfile .rspec package.json)"
+# The order: pytest first, then the back ends, then package.json, go.mod and Cargo.toml. The name that
+# comes later in the order is listed first where it can be, to show the listing does not decide.
+check "tests.sh: order: pytest before Ruby" "python3 -m pytest -q" "$(named "$RUNNERS" Gemfile .rspec pytest.ini)"
+check "tests.sh: order: Ruby before package.json" "bundle exec rspec" "$(named "$RUNNERS" package.json Gemfile .rspec)"
+check "tests.sh: order: PHP before package.json" "vendor/bin/phpunit" "$(named "$RUNNERS" package.json phpunit.xml vendor/bin/phpunit)"
+check "tests.sh: order: Pest before package.json" "vendor/bin/pest" "$(named "$RUNNERS" package.json phpunit.xml vendor/bin/pest)"
+check "tests.sh: order: Gradle before package.json" "./gradlew test" "$(named "$RUNNERS" package.json gradlew)"
+check "tests.sh: order: Maven before package.json" "mvn test" "$(named "$RUNNERS" package.json pom.xml)"
+check "tests.sh: order: .NET before package.json" "dotnet test" "$(named "$RUNNERS" package.json App.sln)"
+check "tests.sh: order: Elixir before package.json" "mix test" "$(named "$RUNNERS" package.json mix.exs)"
+check "tests.sh: order: Elixir before go.mod" "mix test" "$(named "$RUNNERS" go.mod mix.exs)"
+check "tests.sh: order: Ruby before Cargo.toml" "bundle exec rspec" "$(named "$RUNNERS" Cargo.toml Gemfile .rspec)"
+check "tests.sh: order: package.json before go.mod" "npm test --silent" "$(named "$RUNNERS" go.mod package.json)"
+check "tests.sh: order: go.mod before Cargo.toml" "go test ./..." "$(named "$RUNNERS" Cargo.toml go.mod)"
+# Property: for seeded random piles of marker files and installed runners, detection names what the first
+# matching row of a table says (the table, the generator and the oracle are in detect_property.py). Each of
+# the 13 rows is the target of 24 piles, at four noise densities, so later rows are reached too, and the
+# second line holds that to account: an answer no pile reaches is a row nothing tests. The third is the
+# review's rule as an invariant: a pile that develop's four rows gate is never left without a command.
+prop="$(python3 "$ROOT/tests/detect_property.py" "$HOOKS" "$DET_LOG" 2>&1)"
+check "tests.sh: property: 312 seeded piles of marker files and runners: detection names the first matching row of the table" "piles=312 mismatches=0" "$(printf '%s\n' "$prop" | sed -n 1p)"
+check "tests.sh: property: ...and the piles reach every answer, nothing included" "unreached=" "$(printf '%s\n' "$prop" | sed -n 2p)"
+check "tests.sh: property: ...and no pile is gated less than develop's four rows (pytest, npm, go, cargo) gate it" "gated_less=0" "$(printf '%s\n' "$prop" | sed -n 3p)"
+# A source that will not load says why on the property's first line, not only that the piles disagreed.
+BROKEN="$(mktemp -d)"; mkdir "$BROKEN/lib"; printf 'echo boom >&2\nreturn 7\n' > "$BROKEN/lib/tests.sh"
+check "tests.sh: property: a source that fails to load says so on its first line, with its status and its stderr" "bash rc=7: boom" "$(python3 "$ROOT/tests/detect_property.py" "$BROKEN" "$DET_LOG" 2>&1 | sed -n 1p)"
+rm -rf "$BROKEN"
+if [ -e "$DET_LOG" ]; then rc=1; else rc=0; fi; check "tests.sh: detection ran no runner, and nothing the repository ships" 0 "$rc"
+rm -rf "$DET_STUBS" "$DET_LOG"
+# /nonna setup names what it looked for when it found nothing.
+TMP="$(mktemp -d)"; PD="$CLAUDE_CONFIG_DIR/plugins/data/nonna-nonna"; mkdir -p "$PD"; "${GIT[@]}" -C "$TMP" init -q
+out="$(cd "$TMP" && env -u NONNA_MODE CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_DATA="$PD" bash "$SKILLS/nonna/scripts/nonna.sh" setup 2>&1)"
+contains "/nonna setup: finding no suite, names each one it looks for, and the missing runner" "no pytest, Ruby, PHP, Java, .NET, Elixir, npm, go or cargo suite found (or its runner is not installed)" "$out"
+rm -rf "$TMP" "$PD"
+# So does the first session, to the agent and to the user: no suite found, or a suite whose runner is missing.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
+out="$(CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$ROOT/.claude" "$HOOKS/session-start.sh")"
+um="$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("systemMessage",""))' 2>/dev/null)"
+contains "session-start: tells the agent the gate is off, and that a missing runner can be why" "no test command found here (or its runner is not installed)" "$out"
+contains "session-start: tells the user the same" "found no test command here (or its runner is not installed)" "$um"
+rm -rf "$TMP"
+
 echo "== subagent-start.sh (SubagentStart: the constitution reaches subagents) =="
 # SessionStart additionalContext is parent-only, so under a plugin install every
 # Task-spawned agent ran with no policy. Plugin mode carries 00-core.md in; a
@@ -2842,6 +3037,58 @@ bash "$RN" 2.0.0 "$TMP/CH.md" >/dev/null 2>&1; check "whitespace-only section fa
 printf '# Changelog\n\n## [1x0x0] - x\n\nwrong section\n' > "$TMP/CH2.md"
 bash "$RN" 1.0.0 "$TMP/CH2.md" >/dev/null 2>&1; check "version matches literally, not as a regex" 1 "$?"
 rm -rf "$TMP"
+
+echo "== release.yml (the tag must agree with every manifest) =="
+# The release job refuses a tag that disagrees with a manifest. `gemini extensions install` takes the
+# latest release's archive and lists the version in gemini-extension.json, so that manifest is held to
+# the tag too, and so is Codex's. The step's script is run here as GitHub runs it, on a copy of the four
+# manifests.
+REL="$ROOT/.github/workflows/release.yml"
+rel_script() { # -> the run: script of the step that checks the manifests against the tag, dedented
+  python3 - "$REL" <<'PY'
+import sys
+lines = open(sys.argv[1], encoding="utf-8").read().split("\n")
+step = next(n for n, l in enumerate(lines) if "name: Verify the manifests agree with the tag" in l)
+run = next(n for n in range(step, len(lines)) if lines[n].strip() == "run: |")
+indent = len(lines[run + 1]) - len(lines[run + 1].lstrip())
+for l in lines[run + 1:]:
+    if l.strip() and len(l) - len(l.lstrip()) < indent:
+        break
+    print(l[indent:])
+PY
+}
+rel_repo() { # -> a directory holding the four manifests, as the release job sees them
+  local d; d="$(mktemp -d)"
+  mkdir -p "$d/.claude/.claude-plugin" "$d/.claude/.codex-plugin" "$d/.claude-plugin"
+  cp "$ROOT/.claude/.claude-plugin/plugin.json" "$d/.claude/.claude-plugin/"
+  cp "$ROOT/.claude/.codex-plugin/plugin.json" "$d/.claude/.codex-plugin/"
+  cp "$ROOT/.claude-plugin/marketplace.json" "$d/.claude-plugin/"
+  cp "$ROOT/gemini-extension.json" "$d/"
+  printf '%s' "$d"
+}
+RV="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$ROOT/.claude/.claude-plugin/plugin.json" | head -n 1)"
+RS="$(mktemp)"; rel_script > "$RS"
+RD="$(rel_repo)"
+out="$(cd "$RD" && GITHUB_REF_NAME="v$RV" bash "$RS" 2>&1)"; check "release: a tag every manifest agrees with passes" 0 "$?"
+contains "release: ...and says so" "Manifests agree: $RV" "$out"
+sed_i 's/"version": "[^"]*"/"version": "9.9.9"/' "$RD/gemini-extension.json"
+out="$(cd "$RD" && GITHUB_REF_NAME="v$RV" bash "$RS" 2>&1)"; check "release: a tag the Gemini extension manifest disagrees with fails" 1 "$?"
+contains "release: ...and names that manifest" "gemini-extension.json says 9.9.9" "$out"
+rm -rf "$RD"
+RD="$(rel_repo)"
+sed_i 's/"version": "[^"]*"/"version": "9.9.9"/' "$RD/.claude/.codex-plugin/plugin.json"
+out="$(cd "$RD" && GITHUB_REF_NAME="v$RV" bash "$RS" 2>&1)"; check "release: a tag the Codex manifest disagrees with fails" 1 "$?"
+contains "release: ...and names that manifest" ".codex-plugin/plugin.json says 9.9.9" "$out"
+rm -rf "$RD"
+RD="$(rel_repo)"
+out="$(cd "$RD" && GITHUB_REF_NAME="v9.9.9" bash "$RS" 2>&1)"; check "release: a tag none of the manifests agree with fails" 1 "$?"
+contains "release: ...and names the first manifest that disagrees" "plugin.json says $RV" "$out"
+rm -rf "$RD"
+# A tree with no extension manifest must not publish: the step fails closed rather than skipping the file.
+RD="$(rel_repo)"; rm "$RD/gemini-extension.json"
+out="$(cd "$RD" && GITHUB_REF_NAME="v$RV" bash "$RS" 2>&1)"; check "release: a tree with no gemini-extension.json fails closed" 1 "$?"
+contains "release: ...and says which file is missing" "gemini-extension.json" "$out"
+rm -rf "$RD" "$RS"
 
 echo "== hook wiring (every command survives a path with a space) =="
 # Claude Code puts the plugin root or the project dir into each hook command and hands it to a
@@ -3071,6 +3318,22 @@ rc=0; [ "$cx_ran" -ge 7 ] && [ -z "$cx_bad" ] || rc=1
 check "codex-hooks.json: every command runs from a plugin root with a space (ran $cx_ran)${cx_bad:+ (not: $cx_bad)}" 0 "$rc"
 rm -rf "$(dirname "$CXSP")" "$CXR" "$CXD" "$CXO"
 
+echo "== gemini-extension.json (the rules Gemini CLI loads, and the hooks it does not) =="
+# `gemini extensions install https://github.com/kapadias/nonna` loads the lite rules from the file
+# contextFileName names, and installs no git hook. That file is generated (hosts/build.py) from the
+# source of every host's lite rules, under a header that says what is true of an extension: the hooks
+# come from `install.sh --host gemini`. The lint below holds the manifest to it.
+GX="$(cat "$ROOT/hosts/gemini-extension/GEMINI.md" 2>/dev/null)"
+check "gemini extension: the manifest is named nonna, the name the docs tell users to update and uninstall" nonna \
+  "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["name"])' "$ROOT/gemini-extension.json" 2>/dev/null)"
+contains "gemini extension: the loaded text says install.sh --host gemini adds the git hooks" "install.sh --host gemini" "$GX"
+contains "gemini extension: ...and that the extension installs none itself" "installs no git hooks" "$GX"
+contains "gemini extension: it carries lite's house rules" "whole test suite passes" "$GX"
+case "$GX" in "" | *"This repository runs Nonna"*) rc=1 ;; *) rc=0 ;; esac
+check "gemini extension: it does not claim the git hooks are already in the repository" 0 "$rc"
+case "$GX" in "" | *@*) rc=1 ;; *) rc=0 ;; esac
+check "gemini extension: it holds no @ (Gemini CLI reads @path in a context file as an import)" 0 "$rc"
+
 echo "== harness_lint.py (the linter is itself a gate) =="
 # A linter with no failing-case test is an unverified gate: it would still print
 # "OK" if a check silently stopped firing. Each case copies the real tree, breaks
@@ -3080,7 +3343,7 @@ lint_fixture() { # -> echoes a fresh copy of the harness
   local d; d="$(mktemp -d)"
   cp -R "$ROOT/.claude" "$ROOT/docs" "$ROOT/tests" "$ROOT/stacks" "$ROOT/.github" \
         "$ROOT/.claude-plugin" "$ROOT/hosts" "$ROOT/bench" "$ROOT/examples" "$ROOT/assets" "$d/" 2>/dev/null
-  cp "$ROOT"/*.md "$ROOT"/LICENSE "$d/" 2>/dev/null
+  cp "$ROOT"/*.md "$ROOT"/LICENSE "$ROOT/gemini-extension.json" "$d/" 2>/dev/null
   printf '%s' "$d"
 }
 FX="$(lint_fixture)"
@@ -3254,6 +3517,168 @@ sed_i 's/^## Never$/## Never\
 - One more never./' "$FX/.claude/rules/00-core.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks host rule files that drifted from 00-core.md" 1 "$?"
 contains "lint: names the stale host file" "hosts/AGENTS.md" "$out"
+rm -rf "$FX"
+# The Gemini CLI extension. `gemini extensions install` reads gemini-extension.json from the repository
+# root and loads the one file contextFileName names, and when that file is unusable it says nothing: a
+# missing file, an absolute path, a "..", even a directory installs cleanly and loads no rules. So the
+# lint holds the manifest to the CLI's own rules, to a real file that says what it must, and to the
+# plugin's version.
+gx_set() { # <manifest> <key> <json value, or - to drop the key>: change one key of the extension manifest
+  python3 - "$@" <<'PY'
+import json, sys
+path, key, value = sys.argv[1:4]
+cfg = json.load(open(path, encoding="utf-8"))
+if value == "-":
+    cfg.pop(key, None)
+else:
+    cfg[key] = json.loads(value)
+json.dump(cfg, open(path, "w", encoding="utf-8"), indent=2)
+PY
+}
+FX="$(lint_fixture)"
+rm -f "$FX/gemini-extension.json"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a repository with no gemini-extension.json" 1 "$?"
+contains "lint: names the missing manifest" "gemini-extension.json: missing" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+printf '{ "name": "nonna",\n' > "$FX/gemini-extension.json"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a gemini-extension.json that is not valid JSON" 1 "$?"
+contains "lint: says it is invalid JSON" "gemini-extension.json: invalid JSON" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+gx_set "$FX/gemini-extension.json" name '"nonna_rules"'
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks an extension name the CLI refuses" 1 "$?"
+contains "lint: says what a name may hold" "letters, digits and dashes" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+gx_set "$FX/gemini-extension.json" contextFileName -
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a manifest with no contextFileName" 1 "$?"
+contains "lint: says the CLI would look for a GEMINI.md at the root" "contextFileName must be one path" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+gx_set "$FX/gemini-extension.json" contextFileName '"hosts/../hosts/gemini-extension/GEMINI.md"'
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a contextFileName with .. in it, which the CLI skips" 1 "$?"
+contains "lint: says the path must stay inside the repository" "must be a relative path inside the repository" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+gx_set "$FX/gemini-extension.json" contextFileName "\"$FX/hosts/gemini-extension/GEMINI.md\""
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks an absolute contextFileName, which the CLI skips" 1 "$?"
+contains "lint: says the path must be relative" "must be a relative path inside the repository" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+gx_set "$FX/gemini-extension.json" contextFileName '"hosts/gemini-extension/NOPE.md"'
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a contextFileName that names no file" 1 "$?"
+contains "lint: says the CLI would load nothing from it" "is not a file" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+gx_set "$FX/gemini-extension.json" contextFileName '"hosts/gemini-extension"'
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a contextFileName that names a directory, which the CLI lists and loads nothing from" 1 "$?"
+contains "lint: says a directory is not a file" "is not a file" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+gx_set "$FX/gemini-extension.json" version '"9.9.9"'
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks an extension version that is not the plugin's" 1 "$?"
+contains "lint: says the version is not the plugin's" "is not the plugin's" "$out"
+rm -rf "$FX"
+# Gemini CLI loads whatever contextFileName names into every session. Any file with a relative path
+# passes the checks above, and the docs all mention install.sh --host gemini, so only the generated
+# file's own path is accepted: --check then vouches for the text that is loaded.
+FX="$(lint_fixture)"
+gx_set "$FX/gemini-extension.json" contextFileName '"README.md"'
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a contextFileName that names some other file" 1 "$?"
+contains "lint: says it must be the generated file" "must be 'hosts/gemini-extension/GEMINI.md'" "$out"
+rm -rf "$FX"
+# The extension is rules only (ADR 0012). Every other manifest key adds behavior: mcpServers runs a
+# process, excludeTools and settings change what the agent may do, migratedTo moves where it updates from.
+FX="$(lint_fixture)"
+gx_set "$FX/gemini-extension.json" mcpServers '{"x": {"command": "node", "args": ["x.js"]}}'
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a manifest key beyond name, version, description and contextFileName" 1 "$?"
+contains "lint: names the key" "key 'mcpServers' is not allowed" "$out"
+rm -rf "$FX"
+# Nor may the repository root carry what Gemini CLI loads from an extension root: hooks/hooks.json and the
+# commands, skills, agents and policies directories would run or steer the agent in every session.
+FX="$(lint_fixture)"
+mkdir "$FX/hooks"; printf '{"hooks":{"BeforeTool":[{"hooks":[{"type":"command","command":"true"}]}]}}\n' > "$FX/hooks/hooks.json"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a root hooks/hooks.json, which Gemini CLI loads as extension hooks" 1 "$?"
+contains "lint: names hooks/hooks.json" "hooks/hooks.json: Gemini CLI loads" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+mkdir "$FX/commands"; printf 'prompt = "x"\n' > "$FX/commands/x.toml"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a root commands/ directory" 1 "$?"
+contains "lint: names commands/" "commands/: Gemini CLI loads" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+mkdir -p "$FX/skills/x"; printf 'x\n' > "$FX/skills/x/SKILL.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a root skills/ directory" 1 "$?"
+contains "lint: names skills/" "skills/: Gemini CLI loads" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+mkdir "$FX/agents"; printf 'x\n' > "$FX/agents/x.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a root agents/ directory" 1 "$?"
+contains "lint: names agents/" "agents/: Gemini CLI loads" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+mkdir "$FX/policies"; printf '[[rule]]\n' > "$FX/policies/x.toml"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a root policies/ directory" 1 "$?"
+contains "lint: names policies/" "policies/: Gemini CLI loads" "$out"
+rm -rf "$FX"
+# Only Gemini's own hooks file is refused: Copilot keeps hooks/copilot-hooks.json at the root.
+FX="$(lint_fixture)"
+mkdir "$FX/hooks"; printf '{}\n' > "$FX/hooks/copilot-hooks.json"
+NONNA_LINT_ROOT="$FX" python3 "$LINT" >/dev/null 2>&1; check "lint: a root hooks/copilot-hooks.json is not Gemini's hooks file" 0 "$?"
+rm -rf "$FX"
+# Gemini CLI reads these on macOS's default disk, which ignores letter case: Skills/ is skills/, and a
+# Hooks symlink to a directory holding hooks.json is hooks/hooks.json. The lint compares every root entry
+# case-folded, whatever its type, because CI's disk does not fold and the check must not depend on it.
+FX="$(lint_fixture)"
+ln -s .claude/hooks "$FX/Hooks"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a root Hooks symlink to a directory holding hooks.json" 1 "$?"
+contains "lint: names the hooks file it would load" "Hooks/hooks.json: Gemini CLI loads hooks/hooks.json" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+mkdir "$FX/Skills"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a root Skills directory, which a disk that ignores case reads as skills/" 1 "$?"
+contains "lint: names Skills/" "Skills/: Gemini CLI loads skills/" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+mkdir "$FX/Hooks"; printf '{}\n' > "$FX/Hooks/hooks.json"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a root Hooks/hooks.json" 1 "$?"
+contains "lint: names it" "Hooks/hooks.json: Gemini CLI loads hooks/hooks.json" "$out"
+rm -rf "$FX"
+# Case-folded, not lowercased: a disk that ignores case folds more than ASCII (the long s is an s).
+FX="$(lint_fixture)"
+mkdir "$FX/$(printf '\305\277kills')"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a root directory whose name only case-folds to skills" 1 "$?"
+contains "lint: names it" "kills/: Gemini CLI loads skills/" "$out"
+rm -rf "$FX"
+# A manifest that is a directory, and a context file that is not UTF-8, are named, not a traceback.
+FX="$(lint_fixture)"
+rm "$FX/gemini-extension.json"; mkdir "$FX/gemini-extension.json"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a gemini-extension.json it cannot read" 1 "$?"
+contains "lint: names the manifest it cannot read" "gemini-extension.json: cannot read" "$out"
+case "$out" in *Traceback*) rc=1 ;; *) rc=0 ;; esac; check "lint: ...and does not crash on it" 0 "$rc"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+printf '\377\376 not UTF-8\n' > "$FX/hosts/gemini-extension/GEMINI.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a context file that is not UTF-8" 1 "$?"
+contains "lint: names the context file it cannot read" "hosts/gemini-extension/GEMINI.md: cannot read" "$out"
+case "$out" in *Traceback*) rc=1 ;; *) rc=0 ;; esac; check "lint: ...and does not crash on it either" 0 "$rc"
+rm -rf "$FX"
+# The text is generated, so --check vouches for it; but a header edited to drop the sentence and then
+# regenerated passes --check, and the agent would be told nothing about where the git hooks come from.
+FX="$(lint_fixture)"
+sed_i 's/`install\.sh --host gemini`; the hooks then/the installer; the hooks then/' "$FX/hosts/build.py"
+python3 "$FX/hosts/build.py"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a context file that does not say install.sh --host gemini adds the git hooks" 1 "$?"
+contains "lint: says what the loaded text must say" "must say that install.sh --host gemini" "$out"
+rm -rf "$FX"
+# The context file is generated like every host's rules file: a hand edit is drift, and writing it again fixes it.
+FX="$(lint_fixture)"
+printf 'A line nobody generated.\n' >> "$FX/hosts/gemini-extension/GEMINI.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a hand-edited extension context file" 1 "$?"
+contains "lint: names the drifted context file" "hosts/gemini-extension/GEMINI.md: out of date" "$out"
+python3 "$FX/hosts/build.py"
+python3 "$FX/hosts/build.py" --check >/dev/null 2>&1; check "build: writing the extension's context file again makes --check pass" 0 "$?"
 rm -rf "$FX"
 # Proportional review is only proportional if /review asks the script, not the model.
 FX="$(lint_fixture)"
