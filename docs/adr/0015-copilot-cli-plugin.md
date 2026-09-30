@@ -58,9 +58,10 @@ while a file in `.github/hooks/` adds hooks of its own.
    and `secret-scan.sh` on `Bash`, on `write_bash|write_powershell` (input sent to a running shell)
    and on `Edit|Write`, and `secret-scan.sh` on `Read|Grep`; `Stop` runs `stop-dod.sh`. Timeouts are
    no shorter than Claude Code's (60 seconds, 300 for the stop gate): Copilot lets a tool call through
-   when its hook times out. The guards on `Edit|Write` wait 600 seconds, as Codex's do: they judge a
-   patch a file at a time, and at the reader's limit of 200 files the secret guard took 28 seconds in
-   the stock-Mac simulation (9 on bash 5), too close to 60.
+   when its hook times out. The guards on `Edit|Write` and `Read|Grep` wait 600 seconds, as Codex's
+   do: they judge a patch a file at a time and a grep path by path (up to 32, each finding the files a
+   glob picks), and at the reader's limit of 200 files the secret guard took 28 seconds in the
+   stock-Mac simulation (9 on bash 5), too close to 60.
 3. **The hooks file names the host.** Each entry's `env` sets `NONNA_HOST=copilot`, and a script that
    needs it sources `.claude/hooks/lib/host-copilot.sh` in one block,
    `if [ "${NONNA_HOST:-}" = copilot ]; then …; fi`. `nonna_copilot_payload` renames the arguments;

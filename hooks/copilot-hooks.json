@@ -57,7 +57,7 @@
         "matcher": "Read|Grep",
         "bash": "\"${CLAUDE_PLUGIN_ROOT}\"/.claude/hooks/secret-scan.sh",
         "env": { "NONNA_HOST": "copilot" },
-        "timeoutSec": 60
+        "timeoutSec": 600
       }
     ],
     "Stop": [

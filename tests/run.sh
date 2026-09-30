@@ -4050,12 +4050,14 @@ for ev, entries in cfg.get("hooks", {}).items():
 if got != want: bad.append("wiring %s" % sorted(got.items()))
 print("; ".join(bad))' "$ROOT")"
 check "copilot hooks: version 1, PascalCase events, the core gates, NONNA_HOST=copilot, timeouts no shorter than Claude Code's${out:+ ($out)}" "" "$out"
-# A patch is judged a file at a time, up to 200 files, and Copilot lets a call through when its hook
-# times out: the file tools' guards wait as long as Codex's do (600 seconds).
+# A patch is judged a file at a time, up to 200 files, and a grep path by path, up to 32, each finding
+# the files a glob picks; Copilot lets a call through when its hook times out. So the guards on the
+# file and read tools wait as long as Codex's do (600 seconds).
 out="$(python3 -c 'import json, sys
 entries = json.load(open(sys.argv[1]))["hooks"]["PreToolUse"]
-print(" ".join(e["bash"].split("/")[-1] for e in entries if e.get("matcher") == "Edit|Write" and e.get("timeoutSec", 30) < 600))' "$CPH" 2>&1)"
-check "copilot hooks: the file tools' guards wait 600 seconds, for a patch of up to 200 files${out:+ (not: $out)}" "" "$out"
+print(" ".join(e["matcher"] + ":" + e["bash"].split("/")[-1] for e in entries
+               if e.get("matcher") in ("Edit|Write", "Read|Grep") and e.get("timeoutSec", 30) < 600))' "$CPH" 2>&1)"
+check "copilot hooks: the file and read tools' guards wait 600 seconds, for a patch of 200 files or a grep of 32 paths${out:+ (not: $out)}" "" "$out"
 out="$(python3 -c 'import json, os, sys
 root = sys.argv[1]
 bad = []
