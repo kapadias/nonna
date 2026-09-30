@@ -680,9 +680,14 @@ for jf in (plugin_manifest, marketplace, plugin_hooks):
 # a directory installs cleanly and loads no rules (`gemini extensions validate` catches the first
 # three). So the manifest is held to the CLI's own rules, to the one file hosts/build.py
 # generates (whatever it names is loaded into every session, and --check vouches only for that
-# file), and to the plugin's version, which `gemini extensions list` shows.
+# file), and to the plugin's version, which `gemini extensions list` shows. The extension is rules
+# only (ADR 0012): no other manifest key, and nothing else the CLI loads from an extension root.
 EXT_MANIFEST = "gemini-extension.json"
 EXT_CONTEXT = "hosts/gemini-extension/GEMINI.md"  # hosts/build.py writes it
+EXT_KEYS = ("name", "version", "description", "contextFileName")
+# What Gemini CLI 0.62.0 loads from an extension root besides the manifest and its context file.
+# Only hooks/hooks.json, not hooks/: the Codex plugin keeps hooks/codex-hooks.json at the root.
+EXT_ROOT_PATHS = ("hooks/hooks.json", "commands/", "skills/", "agents/", "policies/")
 try:
     with open(f"{ROOT}/{EXT_MANIFEST}", encoding="utf-8") as fh:
         ext = json.load(fh)
@@ -695,6 +700,12 @@ except OSError as exc:
 except ValueError as exc:  # JSONDecodeError is one
     bad(f"{EXT_MANIFEST}: invalid JSON: {exc}")
 else:
+    for key in sorted(ext):
+        if key not in EXT_KEYS:
+            bad(
+                f"{EXT_MANIFEST}: key {key!r} is not allowed: the extension is rules only (ADR 0012), "
+                f"and any other key adds behavior (mcpServers runs a process, migratedTo moves where it updates from)"
+            )
     ext_name = ext.get("name")
     if not (isinstance(ext_name, str) and re.fullmatch(r"[A-Za-z0-9-]+", ext_name)):
         bad(
@@ -741,6 +752,12 @@ else:
                 bad(
                     f"{ctx}: must say that install.sh --host gemini adds the git hooks, which the extension does not install"
                 )
+for rel in EXT_ROOT_PATHS:
+    if os.path.lexists(os.path.join(ROOT, rel)):
+        bad(
+            f"{rel}: Gemini CLI loads this from an extension root, so the extension would carry it; "
+            f"it is rules only (ADR 0012)"
+        )
 
 
 # --- hook wiring equivalence: two files declare the same gates, with no shared source ---
