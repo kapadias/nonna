@@ -164,7 +164,7 @@ For another agent, add `-s -- --host <name>`:
 | Codex, Zed, Amp, opencode, Roo Code, Jules, Junie (`AGENTS.md`) | `agents`                      |
 | Cursor                                                          | `cursor`                      |
 | GitHub Copilot                                                  | `copilot`                     |
-| Gemini CLI                                                      | `gemini`                      |
+| Gemini CLI                                                      | `gemini` · or the extension   |
 | Windsurf · Cline · Kiro                                         | `windsurf` · `cline` · `kiro` |
 | all of them                                                     | `all`                         |
 
@@ -172,15 +172,31 @@ For another agent, add `-s -- --host <name>`:
 `--mode full` for the whole harness: the full rules, agents, workflows and `docs/STATUS.md`.
 Running it again keeps the mode a repository already has.
 
+Codex can also take her as a plugin, which adds her hooks: run
+`codex plugin marketplace add kapadias/nonna`, install Nonna from `/plugins`, and trust her hooks in
+`/hooks` ([`docs/INSTALL.md`](docs/INSTALL.md#codex-the-plugin)).
+
 What each agent gets:
 
-|                                                                          | Claude Code | Every other agent |
-| ------------------------------------------------------------------------ | :---------: | :---------------: |
-| Nonna's house rules                                                      |     yes     |        yes        |
-| Git hooks: no commit on `main`, no staged secret                         |     yes     |        yes        |
-| Git hooks: no push with red tests or a secret                            |     yes     |        yes        |
-| Can't end its turn on a red suite; "where's the test?"                   |     yes     |        no         |
-| Secret guard on every file write and read, branch guard on every command |     yes     |        no         |
+|                                                                          | Claude Code | Codex (plugin) | Every other agent |
+| ------------------------------------------------------------------------ | :---------: | :------------: | :---------------: |
+| Nonna's house rules                                                      |     yes     |      yes       |        yes        |
+| Git hooks: no commit on `main`, no staged secret                         |     yes     |      yes       |        yes        |
+| Git hooks: no push with red tests or a secret                            |     yes     |      yes       |        yes        |
+| Can't end its turn on a red suite; "where's the test?"                   |     yes     |     wired¹     |        no         |
+| Secret guard on every file write and read, branch guard on every command |     yes     |     wired¹     |        no         |
+
+¹ The same scripts, run on Codex's events and tested against the hook payloads Codex documents. They
+have not yet run in a Codex session end to end, and the benchmark has no Codex arm, so nothing here
+says they do for Codex what they do for Claude Code. Codex reads files through the shell, where the
+secret guard checks what a command reads. They do not see input sent to a shell already running, or
+scan what the shell writes; the git hooks are the backstop there
+([`docs/INSTALL.md`](docs/INSTALL.md#codex-the-plugin)).
+
+From v2.0.0, Gemini CLI can also load the house rules as an extension:
+`gemini extensions install https://github.com/kapadias/nonna`. It carries the rules only, with no
+git hooks; `install.sh --host gemini` adds them
+([details](docs/INSTALL.md#gemini-cli-the-extension)).
 
 Nothing you already have is overwritten. More: [`docs/INSTALL.md`](docs/INSTALL.md).
 
@@ -238,7 +254,7 @@ the plugin.
 ## Development
 
 ```bash
-bash tests/run.sh              # every gate proven to block and to allow (1312 golden tests)
+bash tests/run.sh              # every gate proven to block and to allow (1583 golden tests)
 python3 tests/harness_lint.py  # word budgets, host files in sync, hook wiring, README numbers
 ```
 

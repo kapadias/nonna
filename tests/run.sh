@@ -558,6 +558,10 @@ check "blocks cp --target-directory=.git/hooks" 2 "$(gb 'cp --target-directory=.
 check "blocks a >| write into .git/config" 2 "$(gb 'echo x >| .git/config')"
 check "blocks a >& write into .git/config" 2 "$(gb 'echo x >& .git/config')"
 check "blocks unsetting a Nonna key" 2 "$(gb 'git config --unset nonna.mode')"
+# A directory's own test command (nonna.<dir>.testCmd, ADR-0014) is hers too.
+check "blocks the agent setting a directory's test command" 2 "$(gb 'git config nonna.packages/api.testCmd true')"
+check "blocks the agent removing a directory's test command" 2 "$(gb 'git config --remove-section nonna.packages/api')"
+check "allows reading a directory's test command" 0 "$(gb 'git config --get nonna.packages/api.testCmd')"
 check "blocks a hooks path set after --" 2 "$(gb 'git config core.hooksPath -- -hooks')"
 # One key alone reads it; anything after the key is a value, an empty one included, and an
 # abbreviated action is still an action.
@@ -1653,6 +1657,26 @@ mkdir -p "$TMP/.claude/agents"; printf 'tools: Bash\n' > "$TMP/.claude/agents/x.
 out="$(cd "$TMP" && bash "$RL" main 2>/dev/null)"
 contains "review-lanes: harness markdown is never quiet" "security=yes" "$out"
 rm -rf "$TMP/.claude"
+# The Gemini CLI extension is rules only (ADR 0012). Its manifest, and a root hooks/hooks.json (the file
+# Gemini CLI and a Claude plugin run hooks from), are never ordinary: a change there always reaches the
+# security reviewer, in any letter case. The root commands/, skills/, agents/ and policies/ are ordinary
+# directories in most repositories that adopt the harness: the lint refuses them here, this does not tax them.
+printf '{}\n' > "$TMP/gemini-extension.json"
+out="$(cd "$TMP" && bash "$RL" main 2>/dev/null)"
+contains "review-lanes: the Gemini extension manifest triggers security review" "security=yes" "$out"
+rm -f "$TMP/gemini-extension.json"
+mkdir -p "$TMP/hooks"; printf '{}\n' > "$TMP/hooks/hooks.json"
+out="$(cd "$TMP" && bash "$RL" main 2>/dev/null)"
+contains "review-lanes: a root hooks/hooks.json triggers security review" "security=yes" "$out"
+rm -rf "$TMP/hooks"
+mkdir -p "$TMP/Hooks"; printf '{}\n' > "$TMP/Hooks/Hooks.json"
+out="$(cd "$TMP" && bash "$RL" main 2>/dev/null)"
+contains "review-lanes: a root Hooks/Hooks.json triggers it in any letter case" "security=yes" "$out"
+rm -rf "$TMP/Hooks"
+mkdir -p "$TMP/agents"; printf 'Plans the work.\n' > "$TMP/agents/planner.md"
+out="$(cd "$TMP" && bash "$RL" main 2>/dev/null)"
+contains "review-lanes: an ordinary root agents/ file needs no security review" "security=no" "$out"
+rm -rf "$TMP/agents"
 mkdir -p "$TMP/src/test_utils"; printf 'os.system(x)\n' > "$TMP/src/test_utils/runner.py"
 out="$(cd "$TMP" && bash "$RL" main 2>/dev/null)"
 contains "review-lanes: a test-looking directory name does not silence production code" "security=yes" "$out"
@@ -2333,6 +2357,19 @@ contains "/nonna test: says when NONNA_TEST_CMD still overrides it here" "NONNA_
 ns "$TMP" test off >/dev/null; check "/nonna test off: turns the gate off" "" "$(git -C "$TMP" config --get nonna.testCmd)"
 git -C "$TMP" config --get nonna.testCmd >/dev/null; check "/nonna test off: recorded as empty, so nothing re-detects it" 0 "$?"
 contains "/nonna: a gate turned off says so, not that there is no command" "as you set it" "$(ns "$TMP")"
+# A directory's own command (ADR-0014): named from the repository's top, and only a directory in it.
+mkdir -p "$TMP/packages/api"
+out="$(ns "$TMP" test --dir ./packages/api/ pytest -q)"
+check "/nonna test --dir: records the directory's command under its name from the top" "pytest -q" "$(git -C "$TMP" config --get nonna.packages/api.testCmd)"
+contains "/nonna test --dir: says what runs, and where" "in packages/api" "$out"
+contains "/nonna: lists each directory's command" "packages/api: pytest -q" "$(ns "$TMP")"
+contains "/nonna: with directories of their own, only the repository's own command is off" "the repository's own is off" "$(ns "$TMP")"
+contains "/nonna test off: says each directory's own command still runs" "still runs" "$(ns "$TMP" test off)"
+contains "/nonna test --dir: refuses what is not a directory of this repository" "not a directory" "$(ns "$TMP" test --dir packages/nope pytest)"
+ns "$TMP" test --dir .. pytest >/dev/null
+check "/nonna test --dir: ...nor records one outside it" 1 "$(git -C "$TMP" config --get-regexp '^nonna\..+\.testcmd$' | grep -c .)"
+ns "$TMP" test --dir packages/api off >/dev/null
+git -C "$TMP" config --get nonna.packages/api.testCmd >/dev/null; check "/nonna test --dir off: takes the directory's command out" 1 "$?"
 contains "/nonna: an unknown word says what she knows" "Nonna does not know 'spicy'" "$(ns "$TMP" spicy)"
 mkdir -p "$TMP/.claude"; printf '{"disableAllHooks": true}\n' > "$TMP/.claude/settings.local.json"
 contains "/nonna: says the guards are off when Claude Code runs no hooks" "disableAllHooks" "$(ns "$TMP")"
@@ -2393,6 +2430,19 @@ TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; "${GIT[@]}" -C "$TMP" commit 
 : > "$(gp "$TMP/wt" nonna-green)"
 ns "$TMP" uninstall >/dev/null
 if [ -e "$(gp "$TMP/wt" nonna-green)" ]; then rc=1; else rc=0; fi; check "/nonna uninstall: takes her state from every worktree" 0 "$rc"
+rm -rf "$TMP"
+# Every nonna section goes, each directory's own included, and each setting is named (ADR-0014).
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
+git -C "$TMP" config nonna.testCmd "make check"; git -C "$TMP" config nonna.packages/api.testCmd "pytest -q"
+git -C "$TMP" config "nonna.packages/web ui.testCmd" "npm test"
+out="$(ns "$TMP" uninstall)"
+grep -q '^\[nonna' "$TMP/.git/config"; check "/nonna uninstall: leaves no nonna section or subsection" 1 "$?"
+contains "/nonna uninstall: names each directory's command it removes" "git config nonna.packages/api.testCmd=pytest -q" "$out"
+contains "/nonna uninstall: ...a name with a space in it whole" "git config nonna.packages/web ui.testCmd=npm test" "$out"
+git -C "$TMP" config nonna.packages/api.testCmd "pytest -q"
+out="$(ns "$TMP" uninstall)"
+git -C "$TMP" config --get-regexp '^nonna\.' >/dev/null; check "/nonna uninstall: takes a directory's command that is her only setting" 1 "$?"
+printf '%s' "$out" | grep -q 'could not remove'; check "/nonna uninstall: ...and nothing failed" 1 "$?"
 rm -rf "$TMP"
 # A hook that is not hers stays, named; so does the user's own link named like her script, and a
 # hook of the user's that chains hers is left for the user to edit.
@@ -2759,7 +2809,7 @@ printf 'def test_x():\n    pass\n' > "$TMP/tests/test_x.py"
 printf '#!/bin/sh\nexit 1\n' > "$STUB/python3"; chmod +x "$STUB/python3"
 got="$(cd "$TMP" && unset NONNA_TEST_CMD && . .claude/hooks/lib/tests.sh && nonna_test_cmd)"; contains "tests.sh: detects pytest in a copy-in install" "pytest" "$got"
 got="$(cd "$TMP" && unset NONNA_TEST_CMD && . "$HOOKS/lib/tests.sh" && nonna_test_cmd)"; check "tests.sh: the same repo, from a harness elsewhere (a plugin), detects nothing" "" "$got"
-# shellcheck disable=SC2031
+# shellcheck disable=SC2030,SC2031  # PATH is meant to change only inside the subshell
 got="$(cd "$TMP" && unset NONNA_TEST_CMD && PATH="$STUB:$PATH" && . .claude/hooks/lib/tests.sh && nonna_test_cmd)"; check "tests.sh: no pytest installed, no pytest command" 0 "${#got}"
 rm -rf "$TMP" "$STUB"
 # The test command: NONNA_TEST_CMD > git config nonna.testCmd > detection (copy-in only); empty is off.
@@ -2775,6 +2825,470 @@ got="$(cd "$TMP" && unset NONNA_TEST_CMD && . .claude/hooks/lib/tests.sh && nonn
 rm -rf "$TMP"
 
 rm -rf "$PYSTUB"; if [ -n "$OLD_PYTHONPATH" ]; then PYTHONPATH="$OLD_PYTHONPATH"; else unset PYTHONPATH; fi
+
+echo "== per-directory test commands (monorepos: ownership, Stop, pre-push) =="
+# A directory can have its own test command, git config nonna.<dir>.testCmd (ADR-0014). A changed file
+# belongs to the longest configured directory that is its path or above it, on a / boundary; a file in
+# none, to the repository's command. Both hooks run each owning command once, in its directory.
+SD="$HOOKS/stop-dod.sh"; RS="$HOOKS/require-status-sync.sh"
+# shellcheck disable=SC2031  # NONNA_OWNER and NONNA_PKG_DIRS are set by lib/tests.sh in the same subshell
+own() { # <repo> <path>: the directory that owns the path there, or (root)
+  (cd "$1" || exit; . "$HOOKS/lib/tests.sh"; nonna_read_pkgs; nonna_test_owner "$2"
+    if [ -n "$NONNA_OWNER" ]; then printf '%s' "${NONNA_PKG_DIRS[NONNA_OWNER]}"; else printf '(root)'; fi)
+}
+MONO="$(mktemp -d)"; "${GIT[@]}" -C "$MONO" init -q
+git -C "$MONO" config nonna.packages/api.testCmd "pytest -q"
+git -C "$MONO" config nonna.packages/api/v2.testCmd "pytest -q v2"
+git -C "$MONO" config "nonna.packages/web ui.testCmd" "npm test"
+git -C "$MONO" config nonna.packages/empty.testCmd ""
+check "owner: a file in a directory with a command is that directory's" "packages/api" "$(own "$MONO" packages/api/app.py)"
+check "owner: the longest directory wins" "packages/api/v2" "$(own "$MONO" packages/api/v2/app.py)"
+check "owner: only on a / boundary" "(root)" "$(own "$MONO" packages/apix/app.py)"
+check "owner: a path that is the directory is its own (a submodule)" "packages/api" "$(own "$MONO" packages/api)"
+check "owner: a space in a directory's name" "packages/web ui" "$(own "$MONO" "packages/web ui/a.ts")"
+check "owner: an empty command is none, so the file goes to the next owner" "(root)" "$(own "$MONO" packages/empty/a.py)"
+check "owner: a file in no directory is the repository's" "(root)" "$(own "$MONO" README.md)"
+GC="$(mktemp)"; git config --file "$GC" nonna.packages/web.testCmd "npm test"
+check "owner: a directory's command comes from the repository's own config, never the global one" "(root)" "$(GIT_CONFIG_GLOBAL="$GC" own "$MONO" packages/web/a.ts)"
+check "owner: ...nor a git -c flag's (a push's own command cannot swap one in)" "(root)" "$(GIT_CONFIG_PARAMETERS="'nonna.packages/web.testcmd'='true'" own "$MONO" packages/web/a.ts)"
+rm -rf "$MONO" "$GC"
+# Property: for seeded, generated directories and paths, the owner is the longest directory that is the
+# path or above it on a / boundary, as python3 reads the rule (not her code), whatever order the keys
+# were set in: sorted, then reversed. Directories nest, and the names share prefixes, dots, spaces,
+# case and glob characters; a path is a directory, one under it, a near miss (its name run on) or any.
+# A failure replays from the seed.
+PROP="$(mktemp -d)"
+python3 - "$PROP" <<'PY'
+import random, sys
+rng, out = random.Random(20260930), sys.argv[1]
+parts = ["a", "ab", "a.b", "a b", "A", "a*", "[a]"]
+def path(n):
+    return "/".join(rng.choice(parts) for _ in range(n))
+for case in range(25):
+    dirs = {path(rng.randint(1, 2))}
+    for _ in range(rng.randint(1, 4)):
+        dirs.add(rng.choice(sorted(dirs)) + "/" + path(rng.randint(1, 2)))
+    dirs = sorted(dirs)
+    with open(f"{out}/{case}.sorted", "w") as f:
+        f.write("".join(d + "\n" for d in dirs))
+    with open(f"{out}/{case}.reversed", "w") as f:
+        f.write("".join(d + "\n" for d in reversed(dirs)))
+    with open(f"{out}/{case}.paths", "w") as f:
+        for _ in range(9):
+            d = rng.choice(dirs)
+            p = rng.choice([d, d + "/" + path(rng.randint(1, 2)), d + rng.choice(parts), path(rng.randint(1, 4))])
+            owners = [d for d in dirs if p == d or p.startswith(d + "/")]
+            f.write(p + "\t" + (max(owners, key=len) if owners else "(root)") + "\n")
+PY
+# shellcheck disable=SC2031  # NONNA_OWNER and NONNA_PKG_DIRS are set by lib/tests.sh in the same subshell
+res="$(n=0; bad=0; . "$HOOKS/lib/tests.sh"
+  for c in "$PROP"/*.paths; do
+    for order in sorted reversed; do
+      R="$(mktemp -d)"; git init -q "$R"
+      while IFS= read -r d; do git -C "$R" config "nonna.$d.testCmd" "run $d"; done < "${c%.paths}.$order"
+      cd "$R" && nonna_read_pkgs
+      while IFS=$'\t' read -r p want; do
+        nonna_test_owner "$p"; got="(root)"
+        [ -z "$NONNA_OWNER" ] || got="${NONNA_PKG_DIRS[NONNA_OWNER]}"
+        n=$((n + 1)); [ "$got" = "$want" ] || { bad=$((bad + 1)); echo "wrong: [$p] -> [$got], want [$want] ($order)" >&2; }
+      done < "$c"
+      cd / && rm -rf "$R"
+    done
+  done
+  echo "$n cases, $bad wrong")"
+check "property: the owner is the longest directory at or above a path, whatever order its keys were set in" "450 cases, 0 wrong" "$res"
+rm -rf "$PROP"
+# The Stop hook: a change in one package runs that package's command, in its directory, and nothing
+# else; a green package that no later change touched is not run again; a file in no package runs the
+# repository's command. Runs are counted in a file outside the repository, which they would change.
+MONO="$(mktemp -d)"; "${GIT[@]}" -C "$MONO" init -q; mkdir -p "$MONO/packages/api" "$MONO/packages/web"
+printf 'x = 1\n' > "$MONO/packages/api/app.py"; printf 'x = 1\n' > "$MONO/packages/api/lib.py"
+printf 'x = 1\n' > "$MONO/packages/web/app.py"; printf 'x = 1\n' > "$MONO/packages/web/ü x.py"; printf 'x = 1\n' > "$MONO/tool.py"
+"${GIT[@]}" -C "$MONO" add -A; "${GIT[@]}" -C "$MONO" commit -qm init
+CNT="$(mktemp)"
+git -C "$MONO" config nonna.testCmd "echo root >> $CNT"
+git -C "$MONO" config nonna.packages/web.testCmd "echo web >> $CNT"
+git -C "$MONO" config nonna.packages/api.testCmd "echo api >> $CNT; test -f app.py"
+printf 'x = 2\n' > "$MONO/packages/api/app.py"
+out="$(printf '{}' | CLAUDE_PROJECT_DIR="$MONO" "$SD")"
+check "stop: a change in one package runs its command" 1 "$(grep -c api "$CNT")"
+check "stop: ...and not the other package's, nor the repository's" 0 "$(grep -c -e web -e root "$CNT")"
+printf '%s' "$out" | grep -q 'the tests say no'; check "stop: ...in the package's own directory" 1 "$?"
+printf '{}' | CLAUDE_PROJECT_DIR="$MONO" "$SD" >/dev/null
+check "stop: an unchanged green package is not run again" 1 "$(grep -c api "$CNT")"
+printf 'x = 2\n' > "$MONO/packages/web/app.py"
+printf '{}' | CLAUDE_PROJECT_DIR="$MONO" "$SD" >/dev/null
+check "stop: a change in the other package runs that one" 1 "$(grep -c web "$CNT")"
+check "stop: ...and not the green package it did not touch" 1 "$(grep -c api "$CNT")"
+printf 'x = 2\n' > "$MONO/tool.py"
+printf '{}' | CLAUDE_PROJECT_DIR="$MONO" "$SD" >/dev/null
+check "stop: a file in no package runs the repository's command" 1 "$(grep -c root "$CNT")"
+# Names git would quote, and a file moved from one package to another, are read exactly: each reaches
+# its package's command.
+"${GIT[@]}" -C "$MONO" commit -qam one; : > "$CNT"
+printf 'x = 2\n' > "$MONO/packages/web/ü x.py"
+printf '{}' | CLAUDE_PROJECT_DIR="$MONO" "$SD" >/dev/null
+check "stop: a name git would quote still runs its package's command" "web" "$(cat "$CNT")"
+"${GIT[@]}" -C "$MONO" commit -qam two; : > "$CNT"
+"${GIT[@]}" -C "$MONO" mv packages/api/lib.py packages/web/lib.py
+printf '{}' | CLAUDE_PROJECT_DIR="$MONO" "$SD" >/dev/null
+check "stop: a file moved from one package to another runs both" 2 "$(grep -c -e api -e web "$CNT")"
+# In the order git config lists them (web was set first), the first red blocks, named with its directory,
+# and nothing after it runs. NONNA_TEST_CMD is one command for everything.
+"${GIT[@]}" -C "$MONO" commit -qm three; : > "$CNT"
+git -C "$MONO" config nonna.packages/web.testCmd "echo web >> $CNT; false"
+git -C "$MONO" config nonna.packages/api.testCmd "echo api >> $CNT; false"
+printf 'x = 3\n' > "$MONO/packages/api/app.py"; printf 'x = 3\n' > "$MONO/packages/web/app.py"
+out="$(printf '{}' | CLAUDE_PROJECT_DIR="$MONO" "$SD")"
+contains "stop: the first red blocks, named with its command and directory" '(stop: `echo web' "$(printf '%s' "$out" | jq -r .reason)"
+contains "stop: ...in the order git config lists them" 'failed in packages/web)' "$(printf '%s' "$out" | jq -r .reason)"
+check "stop: ...and nothing after it runs" 0 "$(grep -c api "$CNT")"
+: > "$CNT"; out="$(printf '{}' | NONNA_TEST_CMD="echo override >> $CNT" CLAUDE_PROJECT_DIR="$MONO" "$SD")"
+check "stop: NONNA_TEST_CMD is one command for everything" "override" "$(cat "$CNT")"
+# The commands share the Stop budget: each gets what the ones before it left, and running out is not red.
+: > "$CNT"
+git -C "$MONO" config nonna.packages/web.testCmd "sleep 2"
+git -C "$MONO" config nonna.packages/api.testCmd "sleep 3; echo late >> $CNT"
+out="$(printf '{}' | NONNA_TEST_TIMEOUT=4 CLAUDE_PROJECT_DIR="$MONO" "$SD")"
+check "stop: the commands share the budget: the second gets what the first left" 0 "$(grep -c late "$CNT")"
+printf '%s' "$out" | grep -q 'the tests say no'; check "stop: ...and running out of it is not red" 1 "$?"
+# A listing that fails runs every directory's command, and the repository's: never none.
+FG="$(mktemp -d)"; printf '#!/bin/sh\ncase " $* " in *" ls-files "*) exit 128 ;; esac\nexec "%s" "$@"\n' "$(command -v git)" > "$FG/git"
+chmod +x "$FG/git"
+git -C "$MONO" config nonna.packages/web.testCmd "echo web >> $CNT"
+git -C "$MONO" config nonna.packages/api.testCmd "echo api >> $CNT"
+: > "$CNT"
+# shellcheck disable=SC2031  # the suite's own PATH: the earlier changes stayed in their subshells
+printf '{}' | PATH="$FG:$PATH" CLAUDE_PROJECT_DIR="$MONO" "$SD" >/dev/null
+check "stop: a listing that fails runs every command, the repository's too" 3 "$(grep -c -e api -e web -e root "$CNT")"
+rm -rf "$FG"
+# A directory's command runs only inside the repository: one whose directory now leads out of it is red.
+OUT="$(mktemp -d)"; printf 'x = 1\n' > "$OUT/app.py"; rm -rf "$MONO/packages/api"; ln -s "$OUT" "$MONO/packages/api"
+out="$(printf '{}' | CLAUDE_PROJECT_DIR="$MONO" "$SD")"
+contains "stop: a package directory that leads out of the repository reads red" "failed in packages/api" "$(printf '%s' "$out" | jq -r .reason)"
+rm -rf "$MONO" "$OUT"
+# A directory's green run is keyed by the whole tree but the other directories' own: a shared file
+# outside every package (a root lockfile, a shared config) runs it again.
+SH="$(mktemp -d)"; "${GIT[@]}" -C "$SH" init -q; mkdir -p "$SH/packages/api" "$SH/packages/web"
+printf 'ok\n' > "$SH/shared.cfg"; printf 'x = 1\n' > "$SH/packages/api/app.py"; printf 'x = 1\n' > "$SH/packages/web/app.py"
+"${GIT[@]}" -C "$SH" add -A; "${GIT[@]}" -C "$SH" commit -qm init
+git -C "$SH" config nonna.packages/api.testCmd "grep -qx ok ../../shared.cfg"
+git -C "$SH" config nonna.packages/web.testCmd true
+printf 'x = 2\n' > "$SH/packages/api/app.py"; printf '{}' | CLAUDE_PROJECT_DIR="$SH" "$SD" >/dev/null
+printf 'broken\n' > "$SH/shared.cfg"
+out="$(printf '{}' | CLAUDE_PROJECT_DIR="$SH" "$SD")"
+contains "stop: a shared file outside every package runs a green package again" "failed in packages/api" "$(printf '%s' "$out" | jq -r .reason)"
+# A new file git does not ignore counts toward its package too: a new failing test in one package,
+# beside a tracked edit in another, blocks.
+"${GIT[@]}" -C "$SH" checkout -q -- .
+git -C "$SH" config nonna.packages/api.testCmd 'for t in test_*.py; do [ ! -e "$t" ] || python3 "$t" || exit 1; done'
+printf 'raise SystemExit("test_mod fails")\n' > "$SH/packages/api/test_mod.py"; printf 'x = 2\n' > "$SH/packages/web/app.py"
+out="$(printf '{}' | CLAUDE_PROJECT_DIR="$SH" "$SD")"
+contains "stop: a new test file in one package, beside an edit in another, runs its package" "failed in packages/api" "$(printf '%s' "$out" | jq -r .reason)"
+rm -rf "$SH"
+# A package inside another counts toward the one around it, whose command runs over it too: a change
+# there runs the outer package again, though it was cached green.
+NEST="$(mktemp -d)"; "${GIT[@]}" -C "$NEST" init -q; mkdir -p "$NEST/packages/api/v2"
+printf 'x = 1\n' > "$NEST/packages/api/a.py"; printf 'ok\n' > "$NEST/packages/api/v2/b.py"
+"${GIT[@]}" -C "$NEST" add -A; "${GIT[@]}" -C "$NEST" commit -qm init
+git -C "$NEST" config nonna.packages/api.testCmd "grep -qx ok v2/b.py"
+git -C "$NEST" config nonna.packages/api/v2.testCmd true
+printf 'x = 2\n' > "$NEST/packages/api/a.py"; printf '{}' | CLAUDE_PROJECT_DIR="$NEST" "$SD" >/dev/null
+printf 'broken\n' > "$NEST/packages/api/v2/b.py"
+out="$(printf '{}' | CLAUDE_PROJECT_DIR="$NEST" "$SD")"
+contains "stop: a change in a package inside another runs the outer one again, though it was green" "failed in packages/api)" "$(printf '%s' "$out" | jq -r .reason)"
+rm -rf "$NEST"
+# Pre-push: the same selection over the range git names on stdin, each command in its directory; the
+# first red refuses the push, named with its directory and the setting that holds it.
+PP="$(mktemp -d)"; BARE="$(mktemp -d)"; PS="$(mktemp)"; ZERO=0000000000000000000000000000000000000000
+"${GIT[@]}" init -q --bare "$BARE"; "${GIT[@]}" -C "$PP" init -q; "${GIT[@]}" -C "$PP" remote add origin "$BARE"
+mkdir -p "$PP/packages/api" "$PP/packages/web"
+printf 'x = 1\n' > "$PP/packages/api/app.py"; printf 'x = 1\n' > "$PP/packages/api/old.py"
+printf 'x = 1\n' > "$PP/packages/web/app.py"; printf 'x = 1\n' > "$PP/tool.py"
+"${GIT[@]}" -C "$PP" add -A; "${GIT[@]}" -C "$PP" commit -qm init; "${GIT[@]}" -C "$PP" push -q origin main
+git -C "$PP" config nonna.testCmd "echo root >> $CNT"
+git -C "$PP" config nonna.packages/web.testCmd "echo web >> $CNT"
+git -C "$PP" config nonna.packages/api.testCmd "echo api >> $CNT; test -f app.py"
+pp() { # <branch> [<what the remote has of it>]: git's stdin line for pushing the branch checked out; the hook's exit status
+  : > "$CNT"
+  printf 'refs/heads/%s %s refs/heads/%s %s\n' "$1" "$("${GIT[@]}" -C "$PP" rev-parse "$1")" "$1" "${2:-$ZERO}" > "$PS"
+  (cd "$PP" && "$RS" origin "$BARE" < "$PS") 2>/dev/null
+}
+"${GIT[@]}" -C "$PP" checkout -q -b api main; printf 'x = 2\n' > "$PP/packages/api/app.py"; "${GIT[@]}" -C "$PP" commit -qam api
+pp api; check "pre-push: a push that changes one package runs its command, in its directory" 0 "$?"
+check "pre-push: ...and no other" "api" "$(cat "$CNT")"
+"${GIT[@]}" -C "$PP" checkout -q -b root main; printf 'x = 2\n' > "$PP/tool.py"; "${GIT[@]}" -C "$PP" commit -qam root
+pp root; check "pre-push: a file in no package runs the repository's command" "root" "$(cat "$CNT")"
+"${GIT[@]}" -C "$PP" checkout -q -b move main; "${GIT[@]}" -C "$PP" mv packages/api/old.py packages/web/old.py
+"${GIT[@]}" -C "$PP" commit -qm move
+pp move; check "pre-push: a file moved from one package to another runs both, in the order git config lists them" "$(printf 'web\napi')" "$(cat "$CNT")"
+"${GIT[@]}" -C "$PP" checkout -q -b gone main; "${GIT[@]}" -C "$PP" rm -q packages/api/old.py; "${GIT[@]}" -C "$PP" commit -qm gone
+pp gone; check "pre-push: a file deleted from a package runs its command" "api" "$(cat "$CNT")"
+# A git hook takes nothing from the environment: NONNA_TEST_CMD there drops no directory's command.
+"${GIT[@]}" -C "$PP" checkout -q api; : > "$CNT"
+printf 'refs/heads/api %s refs/heads/api %s\n' "$("${GIT[@]}" -C "$PP" rev-parse api)" "$ZERO" > "$PS"
+(cd "$PP" && NONNA_TEST_CMD=true "$RS" origin "$BARE" < "$PS") 2>/dev/null
+check "pre-push: NONNA_TEST_CMD in the push's environment still runs the directory's command" "api" "$(cat "$CNT")"
+git -C "$PP" config nonna.packages/api.testCmd "sleep 5"
+out="$(cd "$PP" && NONNA_TEST_TIMEOUT=1 "$RS" origin "$BARE" < "$PS" 2>&1)"; check "pre-push: a directory's command that times out refuses the push" 1 "$?"
+contains "pre-push: ...and says so, named" "timed out after 1s in packages/api" "$out"
+git -C "$PP" config nonna.packages/api.testCmd false
+out="$(cd "$PP" && "$RS" origin "$BARE" < "$PS" 2>&1)"; check "pre-push: a red package refuses the push" 1 "$?"
+contains "pre-push: ...named with its directory" '`false` failed in packages/api.' "$out"
+contains "pre-push: ...and the setting that holds it" "git config nonna.packages/api.testCmd" "$out"
+git -C "$PP" config nonna.packages/api.testCmd "echo api >> $CNT; test -f app.py"
+# A merge is tested against each parent, not only for what its resolution changed: what it takes from
+# one side is new beside the other. Both sides were pushed green; the merge's conflict was in web.
+"${GIT[@]}" -C "$PP" checkout -q -b base main; printf 'a\n' > "$PP/packages/api/a.py"; printf 'base\n' > "$PP/packages/web/x.py"
+"${GIT[@]}" -C "$PP" add -A; "${GIT[@]}" -C "$PP" commit -qm base
+"${GIT[@]}" -C "$PP" checkout -q -b feat main; printf 'b\n' > "$PP/packages/api/b.py"; printf 'feat\n' > "$PP/packages/web/x.py"
+"${GIT[@]}" -C "$PP" add -A; "${GIT[@]}" -C "$PP" commit -qm feat; "${GIT[@]}" -C "$PP" push -q origin base feat
+OLDTIP="$("${GIT[@]}" -C "$PP" rev-parse feat)"
+"${GIT[@]}" -C "$PP" merge -q base >/dev/null 2>&1; printf 'resolved\n' > "$PP/packages/web/x.py"
+"${GIT[@]}" -C "$PP" add -A; "${GIT[@]}" -C "$PP" commit -q --no-edit
+pp feat "$OLDTIP"; check "pre-push: a merge runs the package it takes from one side, not only the one its resolution changed" "$(printf 'web\napi')" "$(cat "$CNT")"
+# A clean merge, whose resolution changes nothing, is tested all the same.
+"${GIT[@]}" -C "$PP" checkout -q -b c1 main; printf 'c\n' > "$PP/packages/api/c.py"; "${GIT[@]}" -C "$PP" add -A; "${GIT[@]}" -C "$PP" commit -qm c1
+"${GIT[@]}" -C "$PP" checkout -q -b c2 main; printf 'x = 3\n' > "$PP/tool.py"; "${GIT[@]}" -C "$PP" commit -qam c2
+"${GIT[@]}" -C "$PP" push -q origin c1 c2; OLDTIP="$("${GIT[@]}" -C "$PP" rev-parse c2)"; "${GIT[@]}" -C "$PP" merge -q --no-edit c1
+pp c2 "$OLDTIP"; check "pre-push: a clean merge, whose resolution changes nothing, still runs the tests" "$(printf 'api\nroot')" "$(cat "$CNT")"
+# A signer's git config for the push: with log.showSignature, git log prints the verifier's lines before
+# each commit's names. They must not turn a package's file into one in no package (with no repository
+# command, a misread runs nothing), nor hide a STATUS update from its gate. The signature and the
+# verifier are stand-ins; the verifier prints a line to stderr, as gpg does.
+VERIFY="$(mktemp)"; printf '#!/bin/sh\necho "gpg: Signature made by nobody" >&2\nexit 1\n' > "$VERIFY"; chmod +x "$VERIFY"
+sign() { # <repo>: HEAD's commit again, signed with a stand-in signature
+  local c
+  c="$(git -C "$1" cat-file commit HEAD | awk '{ print } /^committer / { print "gpgsig -----BEGIN PGP SIGNATURE-----"
+    print " "; print " iQEzBAABCAAdFiEEastandinsignature"; print " -----END PGP SIGNATURE-----" }' | git -C "$1" hash-object -t commit -w --stdin)"
+  "${GIT[@]}" -C "$1" reset -q --hard "$c"
+}
+signed_push() { # <branch>: push it from PP with a signer's log.showSignature and the stand-in verifier
+  : > "$CNT"; printf 'refs/heads/%s %s refs/heads/%s %s\n' "$1" "$(git -C "$PP" rev-parse "$1")" "$1" "$ZERO" > "$PS"
+  (cd "$PP" && GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=log.showSignature GIT_CONFIG_VALUE_0=true \
+    GIT_CONFIG_KEY_1=gpg.program GIT_CONFIG_VALUE_1="$VERIFY" "$RS" origin "$BARE" < "$PS") 2>/dev/null
+}
+git -C "$PP" config --unset nonna.testCmd
+"${GIT[@]}" -C "$PP" checkout -q -b signed main; printf 'x = 5\n' > "$PP/packages/api/app.py"; "${GIT[@]}" -C "$PP" commit -qam signed
+sign "$PP"; signed_push signed; check "pre-push: a signer's log.showSignature in the push's environment still runs the package's command" "api" "$(cat "$CNT")"
+git -C "$PP" config nonna.mode full
+"${GIT[@]}" -C "$PP" checkout -q -b record main; mkdir -p "$PP/docs"; printf 's\n' > "$PP/docs/STATUS.md"; printf 'x = 6\n' > "$PP/packages/api/app.py"
+"${GIT[@]}" -C "$PP" add -A; "${GIT[@]}" -C "$PP" commit -qm record
+sign "$PP"; signed_push record; check "pre-push: ...nor hides a STATUS update from the STATUS gate" 0 "$?"
+git -C "$PP" config --unset nonna.mode
+# A submodule bump inside a package runs that package's command, whatever git is told to ignore: a
+# committed .gitmodules can say ignore = all. The gitlinks point at commits of this repository.
+"${GIT[@]}" -C "$PP" checkout -q -b sub main
+printf '[submodule "lib"]\n\tpath = packages/api/lib\n\turl = ./lib\n\tignore = all\n' > "$PP/.gitmodules"; "${GIT[@]}" -C "$PP" add .gitmodules
+"${GIT[@]}" -C "$PP" update-index --add --cacheinfo "160000,$(git -C "$PP" rev-parse main),packages/api/lib"
+"${GIT[@]}" -C "$PP" commit -qm lib; "${GIT[@]}" -C "$PP" push -q origin sub; OLDTIP="$(git -C "$PP" rev-parse sub)"
+mkdir -p "$PP/packages/api/lib" # what a clone leaves for a submodule it has not checked out: an empty directory
+"${GIT[@]}" -C "$PP" update-index --cacheinfo "160000,$OLDTIP,packages/api/lib"; "${GIT[@]}" -C "$PP" commit -qm "bump lib"
+pp sub "$OLDTIP"; check "pre-push: a submodule bump inside a package runs its command, though .gitmodules says ignore = all" "api" "$(cat "$CNT")"
+git -C "$PP" config nonna.mode full
+"${GIT[@]}" -C "$PP" checkout -q -b sub2 sub; mkdir -p "$PP/docs"; printf 's\n' > "$PP/docs/STATUS.md"; "${GIT[@]}" -C "$PP" add docs/STATUS.md
+"${GIT[@]}" -C "$PP" commit -qm record; "${GIT[@]}" -C "$PP" push -q origin sub2; OLDTIP="$(git -C "$PP" rev-parse sub2)"
+"${GIT[@]}" -C "$PP" update-index --cacheinfo "160000,$OLDTIP,packages/api/lib"; "${GIT[@]}" -C "$PP" commit -qm "bump lib"
+pp sub2 "$OLDTIP"; check "pre-push: ...and the STATUS gate counts that bump as code, as it would with nothing ignored" 1 "$?"
+git -C "$PP" config --unset nonna.mode
+# Nor is a submodule checked out behind the pushed gitlink a clean tree: the tests would run the old
+# submodule code while the bump is pushed. It is a repository of its own, made where the clone left it.
+"${GIT[@]}" -C "$PP" checkout -q -b subco sub; "${GIT[@]}" init -q "$PP/packages/api/lib"
+"${GIT[@]}" -C "$PP/packages/api/lib" commit -q --allow-empty -m L1; L1="$(git -C "$PP/packages/api/lib" rev-parse HEAD)"
+"${GIT[@]}" -C "$PP/packages/api/lib" commit -q --allow-empty -m L2; L2="$(git -C "$PP/packages/api/lib" rev-parse HEAD)"
+"${GIT[@]}" -C "$PP" update-index --cacheinfo "160000,$L1,packages/api/lib"; "${GIT[@]}" -C "$PP" commit -qm "lib at L1"
+"${GIT[@]}" -C "$PP" push -q origin subco; OLDTIP="$(git -C "$PP" rev-parse subco)"
+"${GIT[@]}" -C "$PP" update-index --cacheinfo "160000,$L2,packages/api/lib"; "${GIT[@]}" -C "$PP" commit -qm "bump lib to L2"
+git -C "$PP/packages/api/lib" checkout -q "$L1"
+pp subco "$OLDTIP"; check "pre-push: a submodule checked out behind the pushed one is not a clean tree, though .gitmodules says ignore = all" 1 "$?"
+contains "pre-push: ...and the refusal says what to do about a submodule" "a submodule counts too" "$(cd "$PP" && "$RS" origin "$BARE" < "$PS" 2>&1)"
+rm -rf "$PP/packages/api/lib"
+# Replace refs change what git reads, not what a push sends. A look-alike that changes only web must not
+# stand in for the pushed commit, which changes only api, nor make its working tree read as the pushed one.
+# The fixture itself reads through the replace ref, even when this suite runs as a pre-push test command,
+# which the hook runs with GIT_NO_REPLACE_OBJECTS set.
+"${GIT[@]}" -C "$PP" checkout -q -b lookalike main; printf 'x = 7\n' > "$PP/packages/web/app.py"; "${GIT[@]}" -C "$PP" commit -qam web
+"${GIT[@]}" -C "$PP" checkout -q -b replaced main; printf 'x = 7\n' > "$PP/packages/api/app.py"; "${GIT[@]}" -C "$PP" commit -qam api
+env -u GIT_NO_REPLACE_OBJECTS git -C "$PP" replace replaced lookalike
+pp replaced; check "pre-push: a replace ref does not stand in for the pushed commit: its own package runs" "api" "$(cat "$CNT")"
+env -u GIT_NO_REPLACE_OBJECTS "${GIT[@]}" -C "$PP" reset -q --hard
+pp replaced; check "pre-push: ...nor makes the look-alike's working tree read as what is pushed" 1 "$?"
+rm -rf "$PP" "$BARE" "$PS" "$CNT" "$VERIFY"
+
+echo "== tests.sh (nonna_detect_test_cmd: the suite it names, and in which order) =="
+# A command is named only when its runner is there (a missing one reads as a red suite and blocks every
+# push), so these tests own PATH: a case names the runners it has installed, and detection finds those
+# and grep (which the package.json arm needs) on a PATH of their own, and nothing else. Every stand-in
+# runner, and the gradlew and vendor/bin/phpunit that fx writes, appends to DET_LOG when run, and
+# detection, which only looks, must leave that file unwritten. The python3 stand-in is one that finds pytest.
+RUNNERS="bundle mvn dotnet mix java php python3" # everything installed
+DET_STUBS="$(mktemp -d)"; DET_LOG="$DET_STUBS.log"
+for b in bundle mvn dotnet mix java php; do printf '#!/bin/sh\necho %s >> "%s"\n' "$b" "$DET_LOG" > "$DET_STUBS/$b"; done
+printf '#!/bin/sh\nexit 0\n' > "$DET_STUBS/python3"
+chmod +x "$DET_STUBS"/*
+fx() { # <repo> <name>...: the files of a fixture, empty; a name ending in / is a directory, package.json
+  # has a test script, and gradlew, mvnw, vendor/bin/pest and vendor/bin/phpunit are executable and log a run
+  local d="$1" n; shift
+  for n in "$@"; do
+    case "$n" in
+      */) mkdir -p "$d/$n" ;;
+      package.json) printf '{"scripts":{"test":"node t.js"}}\n' > "$d/$n" ;;
+      gradlew | mvnw | vendor/bin/pest | vendor/bin/phpunit)
+        mkdir -p "$d/$(dirname "$n")"
+        printf '#!/bin/sh\necho %s >> "%s"\n' "$n" "$DET_LOG" > "$d/$n"; chmod +x "$d/$n" ;;
+      *) mkdir -p "$d/$(dirname "$n")"; : > "$d/$n" ;;
+    esac
+  done
+}
+det() { # <repo> <runner>...: what detection names for <repo> when only those runners are installed (and
+  # JAVA_HOME is DET_JAVA_HOME, or unset)
+  local d="$1" bin r; shift
+  bin="$(mktemp -d)"; ln -s "$(command -v grep)" "$bin/grep"
+  for r in "$@"; do ln -s "$DET_STUBS/$r" "$bin/$r"; done
+  ( cd "$d" && . "$HOOKS/lib/tests.sh" && unset JAVA_HOME && { [ -z "${DET_JAVA_HOME-}" ] || export JAVA_HOME="$DET_JAVA_HOME"; } \
+    && PATH="$bin" nonna_detect_test_cmd )
+  rm -rf "$bin"
+}
+named() { # <runners> <name>...: what detection names for a fresh repository made of those files, with only
+  # those runners (a word list) installed
+  local runners="$1" d out; shift
+  d="$(mktemp -d)"; fx "$d" "$@"
+  # shellcheck disable=SC2086  # a word list on purpose
+  out="$(det "$d" $runners)"
+  rm -rf "$d"
+  printf '%s' "$out"
+}
+# The stand-ins and the fixtures' runners leave a mark when they run, or the last test here proves nothing.
+TMP="$(mktemp -d)"; fx "$TMP" gradlew vendor/bin/phpunit; "$TMP/gradlew"; "$TMP/vendor/bin/phpunit"; "$DET_STUBS/bundle"
+check "tests.sh: (control) a stand-in or fixture runner that runs leaves its mark" 3 "$(wc -l < "$DET_LOG" | tr -d ' ')"
+rm -rf "$TMP" "$DET_LOG"
+# Ruby: bundle exec needs a Gemfile, and .rspec or spec/spec_helper.rb says it is rspec; a bare spec/ or
+# test/ says little (Jasmine and mocha use them, and a Gemfile may only serve Danger or Jekyll).
+check "tests.sh: Ruby: a Gemfile and .rspec: bundle exec rspec" "bundle exec rspec" "$(named "$RUNNERS" Gemfile .rspec)"
+check "tests.sh: Ruby: a Gemfile and spec/spec_helper.rb: bundle exec rspec" "bundle exec rspec" "$(named "$RUNNERS" Gemfile spec/spec_helper.rb)"
+check "tests.sh: Ruby: a Gemfile, a Rakefile and test/: bundle exec rake test" "bundle exec rake test" "$(named "$RUNNERS" Gemfile Rakefile test/)"
+check "tests.sh: Ruby: rspec before rake test (a Rails app that added rspec keeps its test/)" "bundle exec rspec" "$(named "$RUNNERS" Rakefile test/ Gemfile .rspec)"
+check "tests.sh: Ruby: spec/ without a Gemfile is no Ruby app (a Node project's Jasmine specs): npm test" "npm test --silent" "$(named "$RUNNERS" spec/ package.json)"
+check "tests.sh: Ruby: a Gemfile for Danger beside a Jasmine spec/ is no rspec suite: npm test" "npm test --silent" "$(named "$RUNNERS" Gemfile spec/app.spec.js package.json)"
+check "tests.sh: Ruby: a Rakefile and test/ without a Gemfile (a mocha project) are no Ruby app: npm test" "npm test --silent" "$(named "$RUNNERS" Rakefile test/ package.json)"
+check "tests.sh: Ruby: a Gemfile alone (a Jekyll site) is no suite: npm test" "npm test --silent" "$(named "$RUNNERS" Gemfile package.json)"
+check "tests.sh: Ruby: bundle off PATH, rspec: nothing" "" "$(named "" Gemfile .rspec)"
+check "tests.sh: Ruby: bundle off PATH, rake test: nothing" "" "$(named "" Gemfile Rakefile test/)"
+# PHP: the runner is the project's own vendor/bin/pest (a Pest project, where phpunit runs nothing) or
+# vendor/bin/phpunit, a php script, so php has to be there.
+check "tests.sh: PHP: phpunit.xml and vendor/bin/phpunit: vendor/bin/phpunit" "vendor/bin/phpunit" "$(named "$RUNNERS" phpunit.xml vendor/bin/phpunit)"
+check "tests.sh: PHP: phpunit.xml.dist and vendor/bin/phpunit: vendor/bin/phpunit" "vendor/bin/phpunit" "$(named "$RUNNERS" phpunit.xml.dist vendor/bin/phpunit)"
+check "tests.sh: PHP: phpunit.dist.xml and vendor/bin/phpunit: vendor/bin/phpunit" "vendor/bin/phpunit" "$(named "$RUNNERS" phpunit.dist.xml vendor/bin/phpunit)"
+check "tests.sh: PHP: phpunit.xml but no vendor/bin/phpunit (composer install not run): nothing" "" "$(named "$RUNNERS" phpunit.xml)"
+check "tests.sh: PHP: a Pest project (vendor/bin/pest beside phpunit): vendor/bin/pest" "vendor/bin/pest" "$(named "$RUNNERS" phpunit.xml vendor/bin/phpunit vendor/bin/pest)"
+check "tests.sh: PHP: vendor/bin/pest alone: vendor/bin/pest" "vendor/bin/pest" "$(named "$RUNNERS" phpunit.xml vendor/bin/pest)"
+check "tests.sh: PHP: no php on PATH: nothing" "" "$(named "${RUNNERS/php/}" phpunit.xml vendor/bin/phpunit)"
+check "tests.sh: PHP: ...no php falls through to the package.json: npm test" "npm test --silent" "$(named "${RUNNERS/php/}" phpunit.xml vendor/bin/phpunit package.json)"
+check "tests.sh: PHP: no php, a Pest project: nothing" "" "$(named "${RUNNERS/php/}" phpunit.xml vendor/bin/pest)"
+check "tests.sh: PHP: ...no php, a Pest project keeps its package.json: npm test" "npm test --silent" "$(named "${RUNNERS/php/}" phpunit.xml vendor/bin/pest package.json)"
+TMP="$(mktemp -d)"; fx "$TMP" phpunit.xml vendor/bin/pest vendor/bin/phpunit; chmod -x "$TMP/vendor/bin/pest"
+# shellcheck disable=SC2086  # a word list on purpose
+check "tests.sh: PHP: a vendor/bin/pest that cannot run falls back to vendor/bin/phpunit" "vendor/bin/phpunit" "$(det "$TMP" $RUNNERS)"
+chmod -x "$TMP/vendor/bin/phpunit"
+# shellcheck disable=SC2086  # a word list on purpose
+check "tests.sh: PHP: ...and with neither able to run: nothing" "" "$(det "$TMP" $RUNNERS)"
+rm -rf "$TMP"
+# Java and Kotlin: the Gradle and Maven wrappers are their own marker and runner, and need a JVM the way
+# they find one: JAVA_HOME/bin/java when JAVA_HOME is set, else java on PATH. Maven without a wrapper needs mvn.
+check "tests.sh: Gradle: an executable gradlew: ./gradlew test" "./gradlew test" "$(named "$RUNNERS" gradlew)"
+TMP="$(mktemp -d)"; fx "$TMP" gradlew; chmod -x "$TMP/gradlew"
+# shellcheck disable=SC2086  # a word list on purpose
+check "tests.sh: Gradle: a gradlew that cannot run (mode lost in a zip): nothing" "" "$(det "$TMP" $RUNNERS)"
+fx "$TMP" package.json
+# shellcheck disable=SC2086  # a word list on purpose
+check "tests.sh: Gradle: ...with a package.json beside it, npm test" "npm test --silent" "$(det "$TMP" $RUNNERS)"
+rm -rf "$TMP"
+check "tests.sh: Gradle: no java anywhere: nothing" "" "$(named "${RUNNERS/java/}" gradlew)"
+check "tests.sh: Gradle: ...no java falls through to the package.json: npm test" "npm test --silent" "$(named "${RUNNERS/java/}" gradlew package.json)"
+JH="$(mktemp -d)"; mkdir "$JH/bin"; printf '#!/bin/sh\nexit 0\n' > "$JH/bin/java"; chmod +x "$JH/bin/java"
+check "tests.sh: Gradle: no java on PATH, but JAVA_HOME/bin/java: ./gradlew test" "./gradlew test" "$(DET_JAVA_HOME="$JH" named "" gradlew)"
+check "tests.sh: Gradle: JAVA_HOME without a java in it, beside a java on PATH (the wrappers look in JAVA_HOME alone): nothing" "" "$(DET_JAVA_HOME="$JH/missing" named "java" gradlew)"
+chmod -x "$JH/bin/java"
+check "tests.sh: Gradle: a JAVA_HOME/bin/java that cannot run, beside a java on PATH: nothing" "" "$(DET_JAVA_HOME="$JH" named "java" gradlew)"
+rm -rf "$JH"
+check "tests.sh: Maven wrapper: an executable mvnw and java, no mvn: ./mvnw test" "./mvnw test" "$(named "java" pom.xml mvnw)"
+check "tests.sh: Maven wrapper: a JHipster app with java: the wrapper, not its package.json" "./mvnw test" "$(named "java" pom.xml mvnw package.json)"
+check "tests.sh: Maven wrapper: before mvn" "./mvnw test" "$(named "$RUNNERS" pom.xml mvnw)"
+check "tests.sh: Maven wrapper: no java anywhere: nothing" "" "$(named "" pom.xml mvnw)"
+TMP="$(mktemp -d)"; fx "$TMP" pom.xml mvnw; chmod -x "$TMP/mvnw"
+# shellcheck disable=SC2086  # a word list on purpose
+check "tests.sh: Maven wrapper: an mvnw that cannot run (mode lost in a zip) falls back to mvn: mvn test" "mvn test" "$(det "$TMP" $RUNNERS)"
+rm -rf "$TMP"
+check "tests.sh: Maven: a pom.xml: mvn test" "mvn test" "$(named "$RUNNERS" pom.xml)"
+check "tests.sh: Maven: mvn off PATH: nothing" "" "$(named "" pom.xml)"
+check "tests.sh: Gradle before Maven" "./gradlew test" "$(named "$RUNNERS" pom.xml gradlew)"
+check "tests.sh: Gradle before the Maven wrapper" "./gradlew test" "$(named "$RUNNERS" mvnw gradlew)"
+# .NET: dotnet test in a folder with several solution or project files stops with MSB1011, a red. MSBuild's
+# own glob counts them: *.sln, *.slnx and *.*proj (.csproj, .fsproj, .vbproj, a docker-compose.dcproj).
+check "tests.sh: .NET: a .sln: dotnet test" "dotnet test" "$(named "$RUNNERS" App.sln)"
+check "tests.sh: .NET: a .slnx: dotnet test" "dotnet test" "$(named "$RUNNERS" App.slnx)"
+check "tests.sh: .NET: a .csproj: dotnet test" "dotnet test" "$(named "$RUNNERS" App.csproj)"
+check "tests.sh: .NET: a lone .fsproj: dotnet test" "dotnet test" "$(named "$RUNNERS" App.fsproj)"
+check "tests.sh: .NET: dotnet off PATH: nothing" "" "$(named "" App.sln)"
+check "tests.sh: .NET: two solutions, dotnet cannot choose: nothing" "" "$(named "$RUNNERS" App.sln Tools.sln)"
+check "tests.sh: .NET: a solution and a project of another name: nothing" "" "$(named "$RUNNERS" App.sln Tools.csproj)"
+check "tests.sh: .NET: a solution beside a docker-compose.dcproj counts two: nothing" "" "$(named "$RUNNERS" App.sln docker-compose.dcproj)"
+check "tests.sh: .NET: ...two files fall through to the package.json: npm test" "npm test --silent" "$(named "$RUNNERS" App.sln docker-compose.dcproj package.json)"
+# Elixir
+check "tests.sh: Elixir: a mix.exs: mix test" "mix test" "$(named "$RUNNERS" mix.exs)"
+check "tests.sh: Elixir: mix off PATH: nothing" "" "$(named "" mix.exs)"
+# A row whose runner is missing is skipped and the search goes on to the rows below, so a repository that
+# is gated today (by package.json, go.mod or Cargo.toml) is gated still. pytest's row keeps its own older
+# rule: a pytest config without pytest names nothing.
+check "tests.sh: fall through: a Rails app without bundle keeps its package.json: npm test" "npm test --silent" "$(named "" Gemfile .rspec package.json)"
+check "tests.sh: fall through: a Laravel app before composer install keeps its package.json: npm test" "npm test --silent" "$(named "$RUNNERS" phpunit.xml package.json)"
+check "tests.sh: fall through: a JHipster app (pom.xml, mvnw) with neither java nor mvn keeps its package.json: npm test" "npm test --silent" "$(named "" pom.xml mvnw package.json)"
+check "tests.sh: fall through: a pom.xml without mvn keeps its package.json: npm test" "npm test --silent" "$(named "java" pom.xml package.json)"
+check "tests.sh: fall through: a Phoenix app without mix keeps its go.mod: go test" "go test ./..." "$(named "" mix.exs go.mod)"
+check "tests.sh: fall through: a .NET solution without dotnet keeps its Cargo.toml: cargo test" "cargo test --quiet" "$(named "" App.sln Cargo.toml)"
+check "tests.sh: fall through: every back end without its runner: the first row below them" "go test ./..." "$(named "" Gemfile .rspec phpunit.xml pom.xml mix.exs App.sln Cargo.toml go.mod)"
+check "tests.sh: fall through: ...but pytest's row claims its repository: a pytest config without pytest, beside a Rails app, names nothing" "" "$(named "bundle" pytest.ini Gemfile .rspec package.json)"
+# The order: pytest first, then the back ends, then package.json, go.mod and Cargo.toml. The name that
+# comes later in the order is listed first where it can be, to show the listing does not decide.
+check "tests.sh: order: pytest before Ruby" "python3 -m pytest -q" "$(named "$RUNNERS" Gemfile .rspec pytest.ini)"
+check "tests.sh: order: Ruby before package.json" "bundle exec rspec" "$(named "$RUNNERS" package.json Gemfile .rspec)"
+check "tests.sh: order: PHP before package.json" "vendor/bin/phpunit" "$(named "$RUNNERS" package.json phpunit.xml vendor/bin/phpunit)"
+check "tests.sh: order: Pest before package.json" "vendor/bin/pest" "$(named "$RUNNERS" package.json phpunit.xml vendor/bin/pest)"
+check "tests.sh: order: Gradle before package.json" "./gradlew test" "$(named "$RUNNERS" package.json gradlew)"
+check "tests.sh: order: Maven before package.json" "mvn test" "$(named "$RUNNERS" package.json pom.xml)"
+check "tests.sh: order: .NET before package.json" "dotnet test" "$(named "$RUNNERS" package.json App.sln)"
+check "tests.sh: order: Elixir before package.json" "mix test" "$(named "$RUNNERS" package.json mix.exs)"
+check "tests.sh: order: Elixir before go.mod" "mix test" "$(named "$RUNNERS" go.mod mix.exs)"
+check "tests.sh: order: Ruby before Cargo.toml" "bundle exec rspec" "$(named "$RUNNERS" Cargo.toml Gemfile .rspec)"
+check "tests.sh: order: package.json before go.mod" "npm test --silent" "$(named "$RUNNERS" go.mod package.json)"
+check "tests.sh: order: go.mod before Cargo.toml" "go test ./..." "$(named "$RUNNERS" Cargo.toml go.mod)"
+# Property: for seeded random piles of marker files and installed runners, detection names what the first
+# matching row of a table says (the table, the generator and the oracle are in detect_property.py). Each of
+# the 13 rows is the target of 24 piles, at four noise densities, so later rows are reached too, and the
+# second line holds that to account: an answer no pile reaches is a row nothing tests. The third is the
+# review's rule as an invariant: a pile that develop's four rows gate is never left without a command.
+prop="$(python3 "$ROOT/tests/detect_property.py" "$HOOKS" "$DET_LOG" 2>&1)"
+check "tests.sh: property: 312 seeded piles of marker files and runners: detection names the first matching row of the table" "piles=312 mismatches=0" "$(printf '%s\n' "$prop" | sed -n 1p)"
+check "tests.sh: property: ...and the piles reach every answer, nothing included" "unreached=" "$(printf '%s\n' "$prop" | sed -n 2p)"
+check "tests.sh: property: ...and no pile is gated less than develop's four rows (pytest, npm, go, cargo) gate it" "gated_less=0" "$(printf '%s\n' "$prop" | sed -n 3p)"
+# A source that will not load says why on the property's first line, not only that the piles disagreed.
+BROKEN="$(mktemp -d)"; mkdir "$BROKEN/lib"; printf 'echo boom >&2\nreturn 7\n' > "$BROKEN/lib/tests.sh"
+check "tests.sh: property: a source that fails to load says so on its first line, with its status and its stderr" "bash rc=7: boom" "$(python3 "$ROOT/tests/detect_property.py" "$BROKEN" "$DET_LOG" 2>&1 | sed -n 1p)"
+rm -rf "$BROKEN"
+if [ -e "$DET_LOG" ]; then rc=1; else rc=0; fi; check "tests.sh: detection ran no runner, and nothing the repository ships" 0 "$rc"
+rm -rf "$DET_STUBS" "$DET_LOG"
+# /nonna setup names what it looked for when it found nothing.
+TMP="$(mktemp -d)"; PD="$CLAUDE_CONFIG_DIR/plugins/data/nonna-nonna"; mkdir -p "$PD"; "${GIT[@]}" -C "$TMP" init -q
+out="$(cd "$TMP" && env -u NONNA_MODE CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_DATA="$PD" bash "$SKILLS/nonna/scripts/nonna.sh" setup 2>&1)"
+contains "/nonna setup: finding no suite, names each one it looks for, and the missing runner" "no pytest, Ruby, PHP, Java, .NET, Elixir, npm, go or cargo suite found (or its runner is not installed)" "$out"
+rm -rf "$TMP" "$PD"
+# So does the first session, to the agent and to the user: no suite found, or a suite whose runner is missing.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
+out="$(CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$ROOT/.claude" "$HOOKS/session-start.sh")"
+um="$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("systemMessage",""))' 2>/dev/null)"
+contains "session-start: tells the agent the gate is off, and that a missing runner can be why" "no test command found here (or its runner is not installed)" "$out"
+contains "session-start: tells the user the same" "found no test command here (or its runner is not installed)" "$um"
+rm -rf "$TMP"
 
 echo "== subagent-start.sh (SubagentStart: the constitution reaches subagents) =="
 # SessionStart additionalContext is parent-only, so under a plugin install every
@@ -2957,6 +3471,58 @@ printf '# Changelog\n\n## [1x0x0] - x\n\nwrong section\n' > "$TMP/CH2.md"
 bash "$RN" 1.0.0 "$TMP/CH2.md" >/dev/null 2>&1; check "version matches literally, not as a regex" 1 "$?"
 rm -rf "$TMP"
 
+echo "== release.yml (the tag must agree with every manifest) =="
+# The release job refuses a tag that disagrees with a manifest. `gemini extensions install` takes the
+# latest release's archive and lists the version in gemini-extension.json, so that manifest is held to
+# the tag too, and so is Codex's. The step's script is run here as GitHub runs it, on a copy of the four
+# manifests.
+REL="$ROOT/.github/workflows/release.yml"
+rel_script() { # -> the run: script of the step that checks the manifests against the tag, dedented
+  python3 - "$REL" <<'PY'
+import sys
+lines = open(sys.argv[1], encoding="utf-8").read().split("\n")
+step = next(n for n, l in enumerate(lines) if "name: Verify the manifests agree with the tag" in l)
+run = next(n for n in range(step, len(lines)) if lines[n].strip() == "run: |")
+indent = len(lines[run + 1]) - len(lines[run + 1].lstrip())
+for l in lines[run + 1:]:
+    if l.strip() and len(l) - len(l.lstrip()) < indent:
+        break
+    print(l[indent:])
+PY
+}
+rel_repo() { # -> a directory holding the four manifests, as the release job sees them
+  local d; d="$(mktemp -d)"
+  mkdir -p "$d/.claude/.claude-plugin" "$d/.claude/.codex-plugin" "$d/.claude-plugin"
+  cp "$ROOT/.claude/.claude-plugin/plugin.json" "$d/.claude/.claude-plugin/"
+  cp "$ROOT/.claude/.codex-plugin/plugin.json" "$d/.claude/.codex-plugin/"
+  cp "$ROOT/.claude-plugin/marketplace.json" "$d/.claude-plugin/"
+  cp "$ROOT/gemini-extension.json" "$d/"
+  printf '%s' "$d"
+}
+RV="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$ROOT/.claude/.claude-plugin/plugin.json" | head -n 1)"
+RS="$(mktemp)"; rel_script > "$RS"
+RD="$(rel_repo)"
+out="$(cd "$RD" && GITHUB_REF_NAME="v$RV" bash "$RS" 2>&1)"; check "release: a tag every manifest agrees with passes" 0 "$?"
+contains "release: ...and says so" "Manifests agree: $RV" "$out"
+sed_i 's/"version": "[^"]*"/"version": "9.9.9"/' "$RD/gemini-extension.json"
+out="$(cd "$RD" && GITHUB_REF_NAME="v$RV" bash "$RS" 2>&1)"; check "release: a tag the Gemini extension manifest disagrees with fails" 1 "$?"
+contains "release: ...and names that manifest" "gemini-extension.json says 9.9.9" "$out"
+rm -rf "$RD"
+RD="$(rel_repo)"
+sed_i 's/"version": "[^"]*"/"version": "9.9.9"/' "$RD/.claude/.codex-plugin/plugin.json"
+out="$(cd "$RD" && GITHUB_REF_NAME="v$RV" bash "$RS" 2>&1)"; check "release: a tag the Codex manifest disagrees with fails" 1 "$?"
+contains "release: ...and names that manifest" ".codex-plugin/plugin.json says 9.9.9" "$out"
+rm -rf "$RD"
+RD="$(rel_repo)"
+out="$(cd "$RD" && GITHUB_REF_NAME="v9.9.9" bash "$RS" 2>&1)"; check "release: a tag none of the manifests agree with fails" 1 "$?"
+contains "release: ...and names the first manifest that disagrees" "plugin.json says $RV" "$out"
+rm -rf "$RD"
+# A tree with no extension manifest must not publish: the step fails closed rather than skipping the file.
+RD="$(rel_repo)"; rm "$RD/gemini-extension.json"
+out="$(cd "$RD" && GITHUB_REF_NAME="v$RV" bash "$RS" 2>&1)"; check "release: a tree with no gemini-extension.json fails closed" 1 "$?"
+contains "release: ...and says which file is missing" "gemini-extension.json" "$out"
+rm -rf "$RD" "$RS"
+
 echo "== hook wiring (every command survives a path with a space) =="
 # Claude Code puts the plugin root or the project dir into each hook command and hands it to a
 # shell. Under an unquoted root, "/Users/a b/..." splits into words: the shell reports "not
@@ -3015,6 +3581,223 @@ else
   echo "  (skip: this is not a git checkout, so there is no list of tracked files to check)"
 fi
 
+echo "== lib/patch.sh (the apply_patch format, read by its grammar, a record a file) =="
+# A host that edits with one patch over several files (Codex) has its adapter turn each record into
+# the payload a gate reads, so what this reads is what the gates judge. The shapes below are as
+# Codex 0.159.2's own parser (codex --codex-run-as-apply-patch) reads them.
+pf() { # <patch line>...: the records nonna_patch_files prints for those lines, then its status
+  printf '%s\n' "$@" | bash -c '. "$1"; nonna_patch_files' _ "$HOOKS/lib/patch.sh"; printf 'rc=%s' "$?"
+}
+check "patch: a record a file, for Add, Update, a move and Delete" "$(printf 'Add\ta.py\t\tk = 1\\nm = \\"q\\"\nUpdate\tb.py\t\tnew\nUpdate\tc.py\td.py\tz\nDelete\te.py\t\t\nrc=0')" \
+  "$(pf '*** Begin Patch' '*** Add File: a.py' '+k = 1' '+m = "q"' '*** Update File: b.py' '@@ def f():' ' ctx' '-old' '+new' '*** Update File: c.py' '*** Move to: d.py' '@@' '+z' '*** Delete File: e.py' '*** End Patch')"
+check "patch: a header led by another blank, after an Add hunk, is refused" "rc=1" "$(pf '*** Begin Patch' '*** Add File: a.py' '+x = 1' "$(printf '\v*** Update File: .git/config')" '+[core]' '*** End Patch')"
+check "patch: space-led Move to and Update File lines in an Update hunk are context" "$(printf 'Update\tconfig.py\t\tk = 1\nrc=0')" "$(pf '*** Begin Patch' '*** Update File: config.py' ' *** Move to: tests/x.py' ' *** Update File: tests/y.py' '+k = 1' '*** End Patch')"
+# A patch is checked a file at a time, and a hook that outruns its timeout does not block: one over
+# 256 KB, or one that touches over 200 files, is refused. At each limit it is still read.
+check "patch: a patch of 256 KB is read" "rc=0" "$(pf '*** Begin Patch' '*** Add File: n' "+$(printf '%0262096d' 0)" '*** End Patch' | tail -n 1)"
+check "patch: a patch over 256 KB is refused" "rc=3" "$(pf '*** Begin Patch' '*** Add File: n' "+$(printf '%0262097d' 0)" '*** End Patch')"
+check "patch: a patch that touches 200 files is read" "rc=0" "$(pf '*** Begin Patch' "$(python3 -c 'print("\n".join("*** Delete File: f%d" % i for i in range(200)))')" '*** End Patch' | tail -n 1)"
+check "patch: a patch that touches over 200 files is refused" "rc=4" "$(pf '*** Begin Patch' "$(python3 -c 'print("\n".join("*** Delete File: f%d" % i for i in range(201)))')" '*** End Patch')"
+
+echo "== Codex plugin (hooks/codex-hooks.json: Codex's own payloads, read by the same gates) =="
+# Codex loads the plugin's hooks from hooks/codex-hooks.json, which .codex-plugin/plugin.json names, and
+# runs each command with NONNA_HOST=codex; a gate that reads a tool call passes Codex's payload through
+# lib/host-codex.sh first. The payloads are Codex's own: every field its hooks reference documents
+# (learn.chatgpt.com/docs/hooks) and the schemas in @openai/codex 0.159.2 require (pre-tool-use, stop,
+# session-start and subagent-start .command.input). An edit is an apply_patch, the patch in
+# tool_input.command in Codex's grammar. No Codex runs here: each hook starts as Codex starts a plugin's,
+# its command from the file, in the session's directory, the plugin root in PLUGIN_ROOT and
+# CLAUDE_PLUGIN_ROOT and its data directory in PLUGIN_DATA and CLAUDE_PLUGIN_DATA.
+CXH="$ROOT/.claude/hooks/codex-hooks.json"
+CXS="019a7f3c-5d2e-7b10-9c4e-2f6a8b1d3e57" # a session id, as Codex writes one
+CXR="$(mktemp -d)"; CXD="$(mktemp -d)"; CXO="$(mktemp)"
+"${GIT[@]}" -C "$CXR" init -q; printf 'x = 1\n' > "$CXR/app.py"; "${GIT[@]}" -C "$CXR" add -A >/dev/null
+"${GIT[@]}" -C "$CXR" commit -qm init; "${GIT[@]}" -C "$CXR" checkout -q -b feature/x
+cx_event() { # <event> <its own fields, as JSON>: Codex's payload for that event, the common fields filled in
+  python3 -c 'import json, sys
+p = {"session_id": sys.argv[3], "transcript_path": None, "cwd": sys.argv[4], "hook_event_name": sys.argv[1],
+     "model": "test-model", "permission_mode": "default"}
+p.update(json.loads(sys.argv[2]))
+print(json.dumps(p))' "$1" "$2" "$CXS" "$CXR"
+}
+cx_tool() { # <tool_name> <command>: Codex's PreToolUse payload (Bash and apply_patch both carry tool_input.command)
+  cx_event PreToolUse "$(python3 -c 'import json, sys; print(json.dumps({"turn_id": "turn-1", "tool_name": sys.argv[1], "tool_use_id": "call-1", "tool_input": {"command": sys.argv[2]}}))' "$1" "$2")"
+}
+cx_patch() { # <patch line>...: Codex's PreToolUse payload for an apply_patch of those lines
+  cx_tool apply_patch "$(printf '*** Begin Patch\n'; printf '%s\n' "$@"; printf '*** End Patch')"
+}
+cx_run() { # <event> <matcher, or *> <payload>: each hook codex-hooks.json wires there, started as Codex starts
+  # it, their stdout in $CXO. Prints 2 if one blocked, else the first other failure, else 0; none if none ran.
+  local cmd rc worst=none
+  : > "$CXO"
+  while IFS= read -r cmd; do
+    rc=0
+    (cd "$CXR" && printf '%s' "$3" | PLUGIN_ROOT="$ROOT/.claude" CLAUDE_PLUGIN_ROOT="$ROOT/.claude" \
+      PLUGIN_DATA="$CXD" CLAUDE_PLUGIN_DATA="$CXD" bash -c "$cmd" >>"$CXO" 2>/dev/null) || rc=$?
+    if [ "$rc" = 2 ] || [ "$worst" = none ] || [ "$worst" = 0 ]; then worst="$rc"; fi
+  done < <(python3 -c 'import json, sys
+for e in json.load(open(sys.argv[1]))["hooks"].get(sys.argv[2], []):
+    if e.get("matcher", "*") == sys.argv[3]:
+        for h in e["hooks"]: print(h["command"])' "$CXH" "$1" "$2" 2>/dev/null)
+  printf '%s' "$worst"
+}
+cx_gate() { # <PATH> <gate script> <payload>: that gate alone, as Codex runs it, with that PATH; prints its status
+  printf '%s' "$3" | (cd "$CXR" && PATH="$1" NONNA_HOST=codex "$2" >/dev/null 2>&1); printf '%s' "$?"
+}
+# Edits: an apply_patch reaches both guards, a file at a time, as Claude Code's Write and Edit would.
+check "codex: a patch that adds a key is refused" 2 "$(cx_run PreToolUse '^apply_patch$' "$(cx_patch '*** Add File: config.py' "+aws_id = \"$FAKE_AWS\"")")"
+check "codex: a patch that edits .git/config is refused" 2 "$(cx_run PreToolUse '^apply_patch$' "$(cx_patch '*** Update File: .git/config' '@@' ' [core]' '+editor = vi')")"
+check "codex: a clean patch passes" 0 "$(cx_run PreToolUse '^apply_patch$' "$(cx_patch '*** Update File: app.py' '@@' '-x = 1' '+x = 2')")"
+out="$(cx_patch '*** Add File: config.py' "+aws_id = \"$FAKE_AWS\"" | (cd "$CXR" && NONNA_HOST=codex "$HOOKS/secret-scan.sh" 2>&1))"
+contains "codex: the refusal says what it found, in her voice" "looks like an AWS access key id" "$out"
+check "codex: a key in the second file of a patch is refused" 2 "$(cx_run PreToolUse '^apply_patch$' "$(cx_patch '*** Update File: app.py' '@@' '-x = 1' '+x = 2' '*** Add File: settings.py' "+aws_id = \"$FAKE_AWS\"")")"
+check "codex: .git/config as the second file of a patch is refused" 2 "$(cx_run PreToolUse '^apply_patch$' "$(cx_patch '*** Update File: app.py' '@@' '-x = 1' '+x = 2' '*** Update File: .git/config' '@@' '+[core]')")"
+check "codex: deleting a git hook by patch is refused" 2 "$(cx_run PreToolUse '^apply_patch$' "$(cx_patch '*** Delete File: .git/hooks/pre-push')")"
+check "codex: moving a file over a git hook is refused" 2 "$(cx_run PreToolUse '^apply_patch$' "$(cx_patch '*** Update File: tools/hook.sh' '*** Move to: .git/hooks/pre-commit' '@@' '+exit 0')")"
+check "codex: a sample key under a test fixture path passes, as in a Write" 0 "$(cx_run PreToolUse '^apply_patch$' "$(cx_patch '*** Add File: tests/fixtures/keys.py' "+aws_id = \"$FAKE_AWS\"")")"
+check "codex: a patch that takes a key out passes (only what it adds is written)" 0 "$(cx_run PreToolUse '^apply_patch$' "$(cx_patch '*** Update File: settings.py' '@@' "-aws_id = \"$FAKE_AWS\"" '+aws_id = os.environ["AWS_ID"]')")"
+# The patch is read by Codex's grammar, and what is not certain is refused. Codex 0.159.2's own parser
+# (codex --codex-run-as-apply-patch) takes a header led by a blank other than a space or a tab, after an
+# Add hunk, as a header, and a line in an Update hunk that starts with a space as context.
+check "codex: a header led by another blank, after an Add hunk, is refused" 2 "$(cx_run PreToolUse '^apply_patch$' "$(cx_patch '*** Add File: a.py' '+x = 1' "$(printf '\v*** Update File: .git/config')" '+[core]')")"
+check "codex: a space-led Move to line is context, so the key after it is the updated file's" 2 "$(cx_run PreToolUse '^apply_patch$' "$(cx_patch '*** Update File: config.py' ' *** Move to: tests/fixtures/keys.py' "+aws_id = \"$FAKE_AWS\"")")"
+check "codex: a space-led Update File line is context, so the key after it is the updated file's" 2 "$(cx_run PreToolUse '^apply_patch$' "$(cx_patch '*** Update File: config.py' ' *** Update File: tests/fixtures/keys.py' "+aws_id = \"$FAKE_AWS\"")")"
+# Codex strips some blanks from a path's edges, so the branch guard would judge a path Codex does not
+# write: a path that starts or ends with one is refused.
+check "codex: a move to .git/config with a trailing space is refused by the branch guard" 2 "$(cx_patch '*** Update File: app.txt' '*** Move to: .git/config ' '@@' '-a' '+x' | (cd "$CXR" && NONNA_HOST=codex "$HOOKS/guard-branch.sh" >/dev/null 2>&1); printf '%s' "$?")"
+check "codex: a move to .git/config with a trailing no-break space is refused by the branch guard" 2 "$(cx_patch '*** Update File: app.txt' "$(printf '*** Move to: .git/config\302\240')" '@@' '-a' '+x' | (cd "$CXR" && NONNA_HOST=codex "$HOOKS/guard-branch.sh" >/dev/null 2>&1); printf '%s' "$?")"
+check "codex: an Add File path led by a tab is refused by the branch guard" 2 "$(cx_patch "$(printf '*** Add File: \t.git/hooks/pre-push')" '+x' | (cd "$CXR" && NONNA_HOST=codex "$HOOKS/guard-branch.sh" >/dev/null 2>&1); printf '%s' "$?")"
+# What the gates read, exactly: a Write of each file the patch adds and an Edit of each it updates, with the
+# lines it adds; an Edit with nothing added of each file it deletes or moves away. A stand-in gate records them.
+REC="$(mktemp -d)"; printf 'cat >> "%s/seen"; echo >> "%s/seen"\n' "$REC" "$REC" > "$REC/gate.sh"
+cx_patch '*** Add File: a.py' '+k = 1' '+m = "q\tt" # café' "$(printf '+t = 1\t# a tab')" '*** Update File: b.py' '@@ def f():' ' ctx' '-old' '+new' \
+  '*** Update File: c.py' '*** Move to: d.py' '@@' '+z' '*** Delete File: e.py' \
+  | (cd "$CXR" && bash -c '. "$1"; nonna_codex_payload "$2"' _ "$HOOKS/lib/host-codex.sh" "$REC/gate.sh" >/dev/null 2>&1)
+got="$(python3 - "$REC/seen" <<'PY'
+import json, sys
+seen = [json.loads(l) for l in open(sys.argv[1], encoding="utf-8") if l.strip()]
+want = [
+    {"tool_name": "Write", "tool_input": {"file_path": "a.py", "content": 'k = 1\nm = "q\\tt" # café\nt = 1\t# a tab'}},
+    {"tool_name": "Edit", "tool_input": {"file_path": "b.py", "new_string": "new"}},
+    {"tool_name": "Edit", "tool_input": {"file_path": "c.py", "new_string": ""}},
+    {"tool_name": "Edit", "tool_input": {"file_path": "d.py", "new_string": "z"}},
+    {"tool_name": "Edit", "tool_input": {"file_path": "e.py", "new_string": ""}},
+]
+print("same" if seen == want else json.dumps(seen))
+PY
+)"
+check "codex: a patch reaches the gates as Claude Code's Write and Edit, a file each, with the lines it adds" same "$got"
+rm -rf "$REC"
+WP='{"tool_name":"Write","tool_input":{"file_path":"config.py","content":"k = 1"}}'
+check "codex: a payload that is not an apply_patch passes through unchanged" "$WP" "$(printf '%s' "$WP" | bash -c '. "$1"; nonna_codex_payload "$2"' _ "$HOOKS/lib/host-codex.sh" "$HOOKS/secret-scan.sh")"
+# Shell commands: Codex's Bash call already has Claude Code's shape, and both guards read it as it is.
+check "codex: a force push through Bash is refused" 2 "$(cx_run PreToolUse '^Bash$' "$(cx_tool Bash 'git push --force origin feature/x')")"
+check "codex: reading .env through Bash is refused" 2 "$(cx_run PreToolUse '^Bash$' "$(cx_tool Bash 'cat .env')")"
+check "codex: an ordinary command passes" 0 "$(cx_run PreToolUse '^Bash$' "$(cx_tool Bash 'git status')")"
+# Without jq the patch is read by lib/json.sh's own decoder; a reader that fails refuses it, never guesses.
+NJX="$(mktemp -d)"
+for b in bash sh env cat grep sed head tail tr cut awk dirname basename git mktemp; do
+  p="$(command -v "$b" 2>/dev/null || true)"; if [ -n "$p" ]; then ln -s "$p" "$NJX/$b" 2>/dev/null || true; fi
+done
+check "codex: without jq, a patch that adds a key is refused" 2 "$(cx_gate "$NJX" "$HOOKS/secret-scan.sh" "$(cx_patch '*** Add File: config.py' "+aws_id = \"$FAKE_AWS\"")")"
+check "codex: without jq, a patch that edits .git/config is refused" 2 "$(cx_gate "$NJX" "$HOOKS/guard-branch.sh" "$(cx_patch '*** Update File: .git/config' '@@' '+[core]')")"
+check "codex: without jq, a clean patch passes" 0 "$(cx_gate "$NJX" "$HOOKS/secret-scan.sh" "$(cx_patch '*** Update File: app.py' '@@' '-x = 1' '+x = 2')")"
+BADJQX="$(mktemp -d)"; printf '#!/bin/sh\nexit 1\n' > "$BADJQX/jq"; chmod +x "$BADJQX/jq"
+check "codex: a patch the reader cannot read (jq fails) is refused, not passed" 2 "$(cx_gate "$BADJQX:$NJX" "$HOOKS/guard-branch.sh" "$(cx_patch '*** Update File: .git/config' '@@' '+[core]')")"
+BADAWKX="$(mktemp -d)"; printf '#!/bin/sh\nexit 1\n' > "$BADAWKX/awk"; chmod +x "$BADAWKX/awk"
+p="$(command -v jq 2>/dev/null || true)"; if [ -n "$p" ]; then ln -s "$p" "$BADAWKX/jq"; fi
+check "codex: a patch the reader cannot read (awk fails) is refused, not passed" 2 "$(cx_gate "$BADAWKX:$NJX" "$HOOKS/secret-scan.sh" "$(cx_patch '*** Update File: app.py' '@@' '+x = 2')")"
+rm -rf "$NJX" "$BADJQX" "$BADAWKX"
+# Codex's grammar puts a file in every patch, so one in which no file is read was not understood.
+check "codex: a patch in which no file is read is refused, not passed" 2 "$(cx_run PreToolUse '^apply_patch$' "$(cx_patch 'x = 1')")"
+# A patch too large to check before the hook times out is refused, as the branch guard refuses a
+# command over 256 KB: a hook that outruns its timeout does not block.
+BIGX="$(python3 -c 'import json, sys
+print(json.dumps({"session_id": sys.argv[1], "transcript_path": None, "cwd": sys.argv[2], "hook_event_name": "PreToolUse",
+  "model": "test-model", "permission_mode": "default", "turn_id": "turn-1", "tool_name": "apply_patch", "tool_use_id": "call-1",
+  "tool_input": {"command": "*** Begin Patch\n*** Add File: notes.md\n+" + "x" * 270000 + "\n*** End Patch"}}))' "$CXS" "$CXR")"
+check "codex: a patch over 256 KB is refused, not read past the timeout" 2 "$(cx_run PreToolUse '^apply_patch$' "$BIGX")"
+MANYX="$(cx_tool apply_patch "$(printf '*** Begin Patch\n'; python3 -c 'print("\n".join("*** Delete File: f%d.py" % i for i in range(201)))'; printf '*** End Patch')")"
+check "codex: a patch over 200 files is refused, not checked past the timeout" 2 "$(cx_run PreToolUse '^apply_patch$' "$MANYX")"
+# SessionStart: Codex's session id marks where the session began, the git hooks are linked through the
+# plugin's data directory, and the answer has the shape Codex's SessionStart reads.
+cx_run SessionStart '*' "$(cx_event SessionStart '{"source": "startup"}')" >/dev/null
+got="$(python3 - "$CXO" <<'PY'
+import json, sys
+o = json.loads(open(sys.argv[1], encoding="utf-8").read())
+h = o.get("hookSpecificOutput") or {}
+ok = (set(o) <= {"continue", "hookSpecificOutput", "stopReason", "suppressOutput", "systemMessage"}
+      and set(h) <= {"hookEventName", "additionalContext"} and h.get("hookEventName") == "SessionStart"
+      and "Nonna is on" in h.get("additionalContext", ""))
+print("ok" if ok else o)
+PY
+)"
+check "codex: SessionStart answers in the shape Codex reads (session-start.command.output)" ok "$got"
+check "codex: SessionStart links the git hooks through the plugin's data directory" "$CXD/current/hooks/require-status-sync.sh" "$(readlink "$CXR/.git/hooks/pre-push")"
+rc=0; [ -f "$CXR/.git/nonna/base-$CXS" ] || rc=1; check "codex: SessionStart reads Codex's session id, to mark where the session began" 0 "$rc"
+cx_run SubagentStart '*' "$(cx_event SubagentStart '{"turn_id": "turn-1", "agent_id": "agent-1", "agent_type": "default"}')" >/dev/null
+got="$(python3 - "$CXO" <<'PY'
+import json, sys
+o = json.loads(open(sys.argv[1], encoding="utf-8").read())
+h = o.get("hookSpecificOutput") or {}
+ok = set(o) <= {"hookSpecificOutput", "systemMessage"} and set(h) == {"hookEventName", "additionalContext"} and h["hookEventName"] == "SubagentStart"
+print("ok" if ok else o)
+PY
+)"
+check "codex: SubagentStart carries the house rules in the shape Codex reads" ok "$got"
+# Stop: a red suite sends Codex back. Codex's payload carries stop_hook_active and session_id under Claude
+# Code's names, and Codex reads the same answer: {"decision":"block","reason":...} on stdout, and exit 0.
+git -C "$CXR" config nonna.testCmd 'printf "FAILED tests/test_app.py::test_x - assert 2 == 1\n1 failed\n"; exit 1'
+printf 'x = 2\n' > "$CXR/app.py"
+cx_stop() { # <true|false>: Codex's Stop payload, with stop_hook_active as given
+  cx_event Stop "{\"turn_id\": \"turn-1\", \"stop_hook_active\": $1, \"last_assistant_message\": \"Done: the tests pass.\"}"
+}
+check "codex: the Stop hook answers with exit 0" 0 "$(cx_run Stop '*' "$(cx_stop false)")"
+contains "codex: a red suite sends Codex back" "the tests say no" "$(cat "$CXO")"
+got="$(python3 - "$CXO" <<'PY'
+import json, sys
+o = json.loads(open(sys.argv[1], encoding="utf-8").read())
+print("ok" if set(o) == {"decision", "reason"} and o["decision"] == "block" and o["reason"].strip() else o)
+PY
+)"
+check "codex: the answer is what Codex's Stop reads to go on (decision block, a reason)" ok "$got"
+cx_run Stop '*' "$(cx_stop true)" >/dev/null
+check "codex: sent back once, the next stop ends the turn (stop_hook_active)" "" "$(cat "$CXO")"
+# Every command in the file starts from a plugin root with a space: Codex writes the root into it.
+CXSP="$(mktemp -d)/with space"; mkdir -p "$CXSP"; cp -R "$ROOT/.claude" "$CXSP/.claude"
+cx_unrunnable() { # prints "ran:" per command started, and each command the shell could not start
+  python3 -c 'import json, sys
+for es in json.load(open(sys.argv[1]))["hooks"].values():
+    for e in es:
+        for h in e["hooks"]: print(h["command"])' "$CXH" 2>/dev/null | while IFS= read -r cmd; do
+    printf 'ran:\n'
+    (cd "$CXR" && printf '{}' | PLUGIN_ROOT="$CXSP/.claude" CLAUDE_PLUGIN_ROOT="$CXSP/.claude" \
+      PLUGIN_DATA="$CXD" CLAUDE_PLUGIN_DATA="$CXD" bash -c "$cmd" >/dev/null 2>&1)
+    case $? in 126 | 127) printf '%s\n' "$cmd" ;; esac
+  done
+}
+cx_bad="$(cx_unrunnable)"
+cx_ran="$(printf '%s\n' "$cx_bad" | grep -c '^ran:$')"; cx_bad="$(printf '%s\n' "$cx_bad" | grep -v '^ran:$' | grep . || true)"
+rc=0; [ "$cx_ran" -ge 7 ] && [ -z "$cx_bad" ] || rc=1
+check "codex-hooks.json: every command runs from a plugin root with a space (ran $cx_ran)${cx_bad:+ (not: $cx_bad)}" 0 "$rc"
+rm -rf "$(dirname "$CXSP")" "$CXR" "$CXD" "$CXO"
+
+echo "== gemini-extension.json (the rules Gemini CLI loads, and the hooks it does not) =="
+# `gemini extensions install https://github.com/kapadias/nonna` loads the lite rules from the file
+# contextFileName names, and installs no git hook. That file is generated (hosts/build.py) from the
+# source of every host's lite rules, under a header that says what is true of an extension: the hooks
+# come from `install.sh --host gemini`. The lint below holds the manifest to it.
+GX="$(cat "$ROOT/hosts/gemini-extension/GEMINI.md" 2>/dev/null)"
+check "gemini extension: the manifest is named nonna, the name the docs tell users to update and uninstall" nonna \
+  "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["name"])' "$ROOT/gemini-extension.json" 2>/dev/null)"
+contains "gemini extension: the loaded text says install.sh --host gemini adds the git hooks" "install.sh --host gemini" "$GX"
+contains "gemini extension: ...and that the extension installs none itself" "installs no git hooks" "$GX"
+contains "gemini extension: it carries lite's house rules" "whole test suite passes" "$GX"
+case "$GX" in "" | *"This repository runs Nonna"*) rc=1 ;; *) rc=0 ;; esac
+check "gemini extension: it does not claim the git hooks are already in the repository" 0 "$rc"
+case "$GX" in "" | *@*) rc=1 ;; *) rc=0 ;; esac
+check "gemini extension: it holds no @ (Gemini CLI reads @path in a context file as an import)" 0 "$rc"
+
 echo "== harness_lint.py (the linter is itself a gate) =="
 # A linter with no failing-case test is an unverified gate: it would still print
 # "OK" if a check silently stopped firing. Each case copies the real tree, breaks
@@ -3024,7 +3807,7 @@ lint_fixture() { # -> echoes a fresh copy of the harness
   local d; d="$(mktemp -d)"
   cp -R "$ROOT/.claude" "$ROOT/docs" "$ROOT/tests" "$ROOT/stacks" "$ROOT/.github" \
         "$ROOT/.claude-plugin" "$ROOT/hosts" "$ROOT/bench" "$ROOT/examples" "$ROOT/assets" "$d/" 2>/dev/null
-  cp "$ROOT"/*.md "$ROOT"/LICENSE "$d/" 2>/dev/null
+  cp "$ROOT"/*.md "$ROOT"/LICENSE "$ROOT/gemini-extension.json" "$d/" 2>/dev/null
   printf '%s' "$d"
 }
 FX="$(lint_fixture)"
@@ -3198,6 +3981,168 @@ sed_i 's/^## Never$/## Never\
 - One more never./' "$FX/.claude/rules/00-core.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks host rule files that drifted from 00-core.md" 1 "$?"
 contains "lint: names the stale host file" "hosts/AGENTS.md" "$out"
+rm -rf "$FX"
+# The Gemini CLI extension. `gemini extensions install` reads gemini-extension.json from the repository
+# root and loads the one file contextFileName names, and when that file is unusable it says nothing: a
+# missing file, an absolute path, a "..", even a directory installs cleanly and loads no rules. So the
+# lint holds the manifest to the CLI's own rules, to a real file that says what it must, and to the
+# plugin's version.
+gx_set() { # <manifest> <key> <json value, or - to drop the key>: change one key of the extension manifest
+  python3 - "$@" <<'PY'
+import json, sys
+path, key, value = sys.argv[1:4]
+cfg = json.load(open(path, encoding="utf-8"))
+if value == "-":
+    cfg.pop(key, None)
+else:
+    cfg[key] = json.loads(value)
+json.dump(cfg, open(path, "w", encoding="utf-8"), indent=2)
+PY
+}
+FX="$(lint_fixture)"
+rm -f "$FX/gemini-extension.json"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a repository with no gemini-extension.json" 1 "$?"
+contains "lint: names the missing manifest" "gemini-extension.json: missing" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+printf '{ "name": "nonna",\n' > "$FX/gemini-extension.json"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a gemini-extension.json that is not valid JSON" 1 "$?"
+contains "lint: says it is invalid JSON" "gemini-extension.json: invalid JSON" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+gx_set "$FX/gemini-extension.json" name '"nonna_rules"'
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks an extension name the CLI refuses" 1 "$?"
+contains "lint: says what a name may hold" "letters, digits and dashes" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+gx_set "$FX/gemini-extension.json" contextFileName -
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a manifest with no contextFileName" 1 "$?"
+contains "lint: says the CLI would look for a GEMINI.md at the root" "contextFileName must be one path" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+gx_set "$FX/gemini-extension.json" contextFileName '"hosts/../hosts/gemini-extension/GEMINI.md"'
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a contextFileName with .. in it, which the CLI skips" 1 "$?"
+contains "lint: says the path must stay inside the repository" "must be a relative path inside the repository" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+gx_set "$FX/gemini-extension.json" contextFileName "\"$FX/hosts/gemini-extension/GEMINI.md\""
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks an absolute contextFileName, which the CLI skips" 1 "$?"
+contains "lint: says the path must be relative" "must be a relative path inside the repository" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+gx_set "$FX/gemini-extension.json" contextFileName '"hosts/gemini-extension/NOPE.md"'
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a contextFileName that names no file" 1 "$?"
+contains "lint: says the CLI would load nothing from it" "is not a file" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+gx_set "$FX/gemini-extension.json" contextFileName '"hosts/gemini-extension"'
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a contextFileName that names a directory, which the CLI lists and loads nothing from" 1 "$?"
+contains "lint: says a directory is not a file" "is not a file" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+gx_set "$FX/gemini-extension.json" version '"9.9.9"'
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks an extension version that is not the plugin's" 1 "$?"
+contains "lint: says the version is not the plugin's" "is not the plugin's" "$out"
+rm -rf "$FX"
+# Gemini CLI loads whatever contextFileName names into every session. Any file with a relative path
+# passes the checks above, and the docs all mention install.sh --host gemini, so only the generated
+# file's own path is accepted: --check then vouches for the text that is loaded.
+FX="$(lint_fixture)"
+gx_set "$FX/gemini-extension.json" contextFileName '"README.md"'
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a contextFileName that names some other file" 1 "$?"
+contains "lint: says it must be the generated file" "must be 'hosts/gemini-extension/GEMINI.md'" "$out"
+rm -rf "$FX"
+# The extension is rules only (ADR 0012). Every other manifest key adds behavior: mcpServers runs a
+# process, excludeTools and settings change what the agent may do, migratedTo moves where it updates from.
+FX="$(lint_fixture)"
+gx_set "$FX/gemini-extension.json" mcpServers '{"x": {"command": "node", "args": ["x.js"]}}'
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a manifest key beyond name, version, description and contextFileName" 1 "$?"
+contains "lint: names the key" "key 'mcpServers' is not allowed" "$out"
+rm -rf "$FX"
+# Nor may the repository root carry what Gemini CLI loads from an extension root: hooks/hooks.json and the
+# commands, skills, agents and policies directories would run or steer the agent in every session.
+FX="$(lint_fixture)"
+mkdir "$FX/hooks"; printf '{"hooks":{"BeforeTool":[{"hooks":[{"type":"command","command":"true"}]}]}}\n' > "$FX/hooks/hooks.json"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a root hooks/hooks.json, which Gemini CLI loads as extension hooks" 1 "$?"
+contains "lint: names hooks/hooks.json" "hooks/hooks.json: Gemini CLI loads" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+mkdir "$FX/commands"; printf 'prompt = "x"\n' > "$FX/commands/x.toml"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a root commands/ directory" 1 "$?"
+contains "lint: names commands/" "commands/: Gemini CLI loads" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+mkdir -p "$FX/skills/x"; printf 'x\n' > "$FX/skills/x/SKILL.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a root skills/ directory" 1 "$?"
+contains "lint: names skills/" "skills/: Gemini CLI loads" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+mkdir "$FX/agents"; printf 'x\n' > "$FX/agents/x.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a root agents/ directory" 1 "$?"
+contains "lint: names agents/" "agents/: Gemini CLI loads" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+mkdir "$FX/policies"; printf '[[rule]]\n' > "$FX/policies/x.toml"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a root policies/ directory" 1 "$?"
+contains "lint: names policies/" "policies/: Gemini CLI loads" "$out"
+rm -rf "$FX"
+# Only Gemini's own hooks file is refused: Copilot keeps hooks/copilot-hooks.json at the root.
+FX="$(lint_fixture)"
+mkdir "$FX/hooks"; printf '{}\n' > "$FX/hooks/copilot-hooks.json"
+NONNA_LINT_ROOT="$FX" python3 "$LINT" >/dev/null 2>&1; check "lint: a root hooks/copilot-hooks.json is not Gemini's hooks file" 0 "$?"
+rm -rf "$FX"
+# Gemini CLI reads these on macOS's default disk, which ignores letter case: Skills/ is skills/, and a
+# Hooks symlink to a directory holding hooks.json is hooks/hooks.json. The lint compares every root entry
+# case-folded, whatever its type, because CI's disk does not fold and the check must not depend on it.
+FX="$(lint_fixture)"
+ln -s .claude/hooks "$FX/Hooks"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a root Hooks symlink to a directory holding hooks.json" 1 "$?"
+contains "lint: names the hooks file it would load" "Hooks/hooks.json: Gemini CLI loads hooks/hooks.json" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+mkdir "$FX/Skills"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a root Skills directory, which a disk that ignores case reads as skills/" 1 "$?"
+contains "lint: names Skills/" "Skills/: Gemini CLI loads skills/" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+mkdir "$FX/Hooks"; printf '{}\n' > "$FX/Hooks/hooks.json"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a root Hooks/hooks.json" 1 "$?"
+contains "lint: names it" "Hooks/hooks.json: Gemini CLI loads hooks/hooks.json" "$out"
+rm -rf "$FX"
+# Case-folded, not lowercased: a disk that ignores case folds more than ASCII (the long s is an s).
+FX="$(lint_fixture)"
+mkdir "$FX/$(printf '\305\277kills')"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a root directory whose name only case-folds to skills" 1 "$?"
+contains "lint: names it" "kills/: Gemini CLI loads skills/" "$out"
+rm -rf "$FX"
+# A manifest that is a directory, and a context file that is not UTF-8, are named, not a traceback.
+FX="$(lint_fixture)"
+rm "$FX/gemini-extension.json"; mkdir "$FX/gemini-extension.json"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a gemini-extension.json it cannot read" 1 "$?"
+contains "lint: names the manifest it cannot read" "gemini-extension.json: cannot read" "$out"
+case "$out" in *Traceback*) rc=1 ;; *) rc=0 ;; esac; check "lint: ...and does not crash on it" 0 "$rc"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+printf '\377\376 not UTF-8\n' > "$FX/hosts/gemini-extension/GEMINI.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a context file that is not UTF-8" 1 "$?"
+contains "lint: names the context file it cannot read" "hosts/gemini-extension/GEMINI.md: cannot read" "$out"
+case "$out" in *Traceback*) rc=1 ;; *) rc=0 ;; esac; check "lint: ...and does not crash on it either" 0 "$rc"
+rm -rf "$FX"
+# The text is generated, so --check vouches for it; but a header edited to drop the sentence and then
+# regenerated passes --check, and the agent would be told nothing about where the git hooks come from.
+FX="$(lint_fixture)"
+sed_i 's/`install\.sh --host gemini`; the hooks then/the installer; the hooks then/' "$FX/hosts/build.py"
+python3 "$FX/hosts/build.py"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a context file that does not say install.sh --host gemini adds the git hooks" 1 "$?"
+contains "lint: says what the loaded text must say" "must say that install.sh --host gemini" "$out"
+rm -rf "$FX"
+# The context file is generated like every host's rules file: a hand edit is drift, and writing it again fixes it.
+FX="$(lint_fixture)"
+printf 'A line nobody generated.\n' >> "$FX/hosts/gemini-extension/GEMINI.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a hand-edited extension context file" 1 "$?"
+contains "lint: names the drifted context file" "hosts/gemini-extension/GEMINI.md: out of date" "$out"
+python3 "$FX/hosts/build.py"
+python3 "$FX/hosts/build.py" --check >/dev/null 2>&1; check "build: writing the extension's context file again makes --check pass" 0 "$?"
 rm -rf "$FX"
 # Proportional review is only proportional if /review asks the script, not the model.
 FX="$(lint_fixture)"
@@ -3382,6 +4327,29 @@ FX="$(lint_fixture)"
 python3 -c 'import json,sys; p=sys.argv[1]; c=json.load(open(p)); c["disableAllHooks"]=True; json.dump(c,open(p,"w"),indent=2)' "$FX/.claude/settings.json"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks disableAllHooks in settings.json" 1 "$?"
 contains "lint: names the kill switch" "disableAllHooks is set" "$out"
+rm -rf "$FX"
+# Codex loads hooks/codex-hooks.json in place of hooks.json. It is held to its own form (the host named,
+# the quoted plugin root, the script, nothing after), its core gates are pinned, and the Codex manifest
+# must point at it, on the plugin's own version.
+FX="$(lint_fixture)"
+set_hook_cmd "$FX/.claude/hooks/codex-hooks.json" PreToolUse '"${PLUGIN_ROOT}"/hooks/guard-branch.sh'
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a Codex hook that does not tell the gate it runs under Codex" 1 "$?"
+contains "lint: says the Codex form" 'must be exactly NONNA_HOST=codex "${PLUGIN_ROOT}"/hooks/<script>.sh' "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+python3 -c 'import json,sys; p=sys.argv[1]; c=json.load(open(p)); e=[x for x in c["hooks"]["PreToolUse"] if x["matcher"]=="^apply_patch$"][0]; e["hooks"]=[h for h in e["hooks"] if "secret-scan" not in h["command"]]; json.dump(c,open(p,"w"),indent=2)' "$FX/.claude/hooks/codex-hooks.json"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a Codex wiring without the secret guard on its edits" 1 "$?"
+contains "lint: names the missing Codex gate" "codex-hooks.json: PreToolUse '^apply_patch\$' must run hooks/secret-scan.sh" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+python3 -c 'import json,sys; p=sys.argv[1]; c=json.load(open(p)); c.pop("hooks"); json.dump(c,open(p,"w"),indent=2)' "$FX/.claude/.codex-plugin/plugin.json"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a Codex manifest that would load Claude Code's hooks.json" 1 "$?"
+contains "lint: says which hooks file Codex must load" 'hooks must be "./hooks/codex-hooks.json"' "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+python3 -c 'import json,sys; p=sys.argv[1]; c=json.load(open(p)); c["version"]="0.0.1"; json.dump(c,open(p,"w"),indent=2)' "$FX/.claude/.codex-plugin/plugin.json"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a Codex manifest on another version than the plugin's" 1 "$?"
+contains "lint: names the Codex manifest's version" "version 0.0.1" "$out"
 rm -rf "$FX"
 # Arguments after the script (SessionStart gets the plugin data dir) are not part of the gate's identity.
 FX="$(lint_fixture)"

@@ -59,6 +59,7 @@ if [ "$mode" = off ]; then
 else
   why="$(unhooked)"
   cmd="$(nonna_test_cmd)"
+  nonna_read_pkgs git-hook # each directory's own (ADR-0014), whatever NONNA_TEST_CMD says: pre-push runs them
   if [ -n "$cmd" ]; then
     if [ "${NONNA_TEST_CMD+set}" = set ]; then src="NONNA_TEST_CMD"
     elif nonna_config nonna.testCmd >/dev/null; then src="git config nonna.testCmd"
@@ -74,10 +75,24 @@ else
   elif [ "${NONNA_TEST_CMD+set}" = set ]; then
     row "test gate" off "NONNA_TEST_CMD is set empty where Claude Code runs"
   elif nonna_config nonna.testCmd >/dev/null; then
-    row "test gate" off "as you set it: /nonna test '<command>' turns it on"
+    if [ "${#NONNA_PKG_DIRS[@]}" -gt 0 ]; then
+      row "test gate" on "each directory's own, below; the repository's own is off, as you set it"
+    else
+      row "test gate" off "as you set it: /nonna test '<command>' turns it on"
+    fi
+  elif [ "${#NONNA_PKG_DIRS[@]}" -gt 0 ]; then
+    row "test gate" on "in the directories below; none for the rest: /nonna test '<command>'"
   else
     row "test gate" off "no test command here: /nonna test '<command>'"
   fi
+  # At push only when Claude Code runs none of her hooks, or when NONNA_TEST_CMD runs instead at turn end.
+  at=""
+  if [ -n "$why" ] || [ "${NONNA_TEST_CMD+set}" = set ]; then at="; at push only"; fi
+  i=0
+  while [ "$i" -lt "${#NONNA_PKG_DIRS[@]}" ]; do
+    row "" on "${NONNA_PKG_DIRS[i]}: $(nonna_shown_cmd "${NONNA_PKG_CMDS[i]}")$at"
+    i=$((i + 1))
+  done
   if [ -n "$why" ]; then
     row "branch guard" off "($why)"
     row "secret guard" off "($why)"

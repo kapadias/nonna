@@ -55,7 +55,8 @@ discipline is **enforced by code, not prose**. Start with [`../CLAUDE.md`](../CL
   hers that is not a link — records the plugin's
   test command and mode in git config, carries the mode's rules into plugin installs, and tells the
   user once what it did), `stop-dod.sh` (**Stop** — code changed since the session began: runs the
-  suite, asks "where's the test?", and in full mode blocks on a stale `docs/STATUS.md`),
+  suite, or in a monorepo each changed directory's own command (ADR-0014), asks "where's the test?",
+  and in full mode blocks on a stale `docs/STATUS.md`),
   `subagent-verdict.sh` (**SubagentStop** — runs `check-review.sh` on the reviewer's own
   output, so ADR-0005 binds where the verdict is produced), `post-compact.sh` (**PostCompact** —
   restates branch, STATUS state, and review verdicts after a summary), `subagent-start.sh`
@@ -65,13 +66,18 @@ discipline is **enforced by code, not prose**. Start with [`../CLAUDE.md`](../CL
   `lib/` (`json.sh`, `secret-patterns.sh`, `core.sh` — harness root, the mode, the carrier, the
   context emitter; `shell-words.awk` — how the shell will read a command, for the branch guard;
   `expand.awk` — its brace lists and globs, as the shell expands them;
-  `tests.sh` — the test command, runner and failure digest; `lite.md` — lite's house
-  rules; `ladder.sh` — whether another plugin already states the ladder); plugin wiring in
-  `hooks.json`, asserted equivalent to `settings.json` by the linter.
+  `tests.sh` — the test command and each directory's own, runner and failure digest; `lite.md` — lite's house
+  rules; `ladder.sh` — whether another plugin already states the ladder; `patch.sh` — the
+  `apply_patch` format read by its grammar, a record a file, for any host's adapter; `host-codex.sh` —
+  Codex's payloads read as Claude Code's, an `apply_patch` a file at a time, ADR-0013); plugin
+  wiring in `hooks.json`, asserted equivalent to `settings.json` by the linter, and Codex's in
+  `codex-hooks.json` (every command sets `NONNA_HOST=codex`; its core gates are linted on their own).
 - **`settings.json`** — denies reading secrets (`.env`/`*.pem`/`*.key`/`.ssh`/`.aws`/…) and
   `git push --force`, which the hooks also refuse, because a plugin cannot carry this file; wires the
   hooks (PreToolUse, PostToolUse, SessionStart, SubagentStart, Stop, SubagentStop, PostCompact).
 - **`.claude-plugin/`** — `plugin.json`, so Nonna installs as a Claude Code plugin.
+- **`.codex-plugin/`** — `plugin.json`, so Codex installs the same plugin and loads
+  `hooks/codex-hooks.json` in place of `hooks/hooks.json`.
 
 Companion top-level surfaces: [`../docs/OVERVIEW.md`](../docs/OVERVIEW.md) (how the pieces
 fit — token economy, crew, gates, layout), [`../tests/`](../tests/) (the harness's own gate golden tests +

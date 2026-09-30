@@ -34,26 +34,36 @@ for pair in pre-push:require-status-sync.sh pre-commit:pre-commit.sh; do
 done
 
 # Her settings in this repository's config, each named with its value (a test command shown only
-# when it carries no secret).
-settings=()
-while IFS= read -r line; do
-  [ -n "$line" ] || continue
-  k="${line%% *}"
+# when it carries no secret): the nonna section and each directory's own, nonna.<dir>.* (ADR-0014).
+# Read NUL-separated, "<key>\n<value>": a directory's name may hold a space.
+secs=()             # each section once: nonna, nonna.<dir>
+settings=() sec_of=() # each setting as named, and its section
+while IFS= read -r -d '' kv; do
+  k="${kv%%$'\n'*}"
   v=""
-  [ "$k" = "$line" ] || v="${line#* }"
-  case "$k" in
-    nonna.testcmd) k=nonna.testCmd; v="$(nonna_shown_cmd "$v")" ;;
-    nonna.defaultmode) k=nonna.defaultMode ;;
+  [ "$k" = "$kv" ] || v="${kv#*$'\n'}"
+  sec=nonna
+  case "${k#nonna.}" in *.*) sec="${k%.*}" ;; esac
+  case "${k##*.}" in
+    testcmd) k="${k%.*}.testCmd"; v="$(nonna_shown_cmd "$v")" ;;
+    defaultmode) k="${k%.*}.defaultMode" ;;
   esac
-  settings+=("git config $k=$v")
-done < <(git config --local --get-regexp '^nonna\.' 2>/dev/null)
-if [ "${#settings[@]}" -gt 0 ]; then
-  if git config --local --remove-section nonna 2>/dev/null; then
-    removed+=("${settings[@]}")
+  settings+=("git config $k=$v") sec_of+=("$sec")
+  new=1
+  for s in ${secs[@]+"${secs[@]}"}; do [ "$s" != "$sec" ] || new=""; done
+  [ -z "$new" ] || secs+=("$sec")
+done < <(git config --local -z --get-regexp '^nonna\.' 2>/dev/null)
+for s in ${secs[@]+"${secs[@]}"}; do
+  if git config --local --remove-section "$s" 2>/dev/null; then
+    j=0
+    while [ "$j" -lt "${#settings[@]}" ]; do
+      [ "${sec_of[j]}" != "$s" ] || removed+=("${settings[j]}")
+      j=$((j + 1))
+    done
   else
-    left+=("could not remove the nonna section from this repository's git config")
+    left+=("could not remove the $s section from this repository's git config")
   fi
-fi
+done
 
 # Her state, in every worktree: where each session began, the last green tree, the branch warnings.
 while IFS= read -r wt; do

@@ -17,6 +17,9 @@ rather than edit.
 | 0009 | [Proportional review, sized by script](0009-proportional-review.md)                                 | Accepted                                     | 2026-09-24 |
 | 0010 | [The harness is Nonna](0010-the-harness-is-nonna.md)                                                | Accepted                                     | 2026-09-24 |
 | 0011 | [Lite mode and plugin defaults](0011-lite-mode-and-plugin-defaults.md)                              | Accepted; amends 0007 and 0008               | 2026-09-25 |
+| 0012 | [The Gemini CLI extension carries the rules only](0012-gemini-extension-carries-the-rules-only.md)  | Accepted                                     | 2026-09-30 |
+| 0013 | [Codex runs Nonna's hooks through a payload adapter](0013-codex-hooks-through-a-payload-adapter.md) | Accepted                                     | 2026-09-30 |
+| 0014 | [A test command per directory](0014-a-test-command-per-directory.md)                                | Accepted                                     | 2026-09-30 |
 
 New ADRs are added with the **`/adr`** skill, which scaffolds the next number from the Nonna template
 and updates this index.
