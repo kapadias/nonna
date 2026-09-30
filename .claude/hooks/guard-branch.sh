@@ -249,13 +249,13 @@ case "$tool" in
     # settings (.github/hooks, .github/copilot/settings*.json), as the target of a write. Reading them
     # (cat, grep, sed -n, awk, cp from) is fine. A copy's target is its last word once redirections
     # are set aside, or the directory given to -t / --target-directory.
-    GITF='(^|[^A-Za-z0-9_.-])\.git(/(hooks([/[:space:]]|$)|config([[:space:]]|$))|hub/(hooks([/[:space:]]|$)|copilot/settings[^/[:space:]]*([[:space:]]|$)))'
-    if printf '%s\n' "$segs" | grep -qiE '>[[:space:]]*[^[:space:]]*\.git(/(hooks|config)|hub/(hooks|copilot/settings))' \
+    GITF='(^|[^A-Za-z0-9_.-])\.git(/(hooks([/[:space:]]|$)|config([[:space:]]|$))|hub/(hooks([/[:space:]]|$)|copilot/settings[^/[:space:]]*\.json([[:space:]]|$)))'
+    if printf '%s\n' "$segs" | grep -qiE '>[[:space:]]*[^[:space:]]*\.git(/(hooks|config)|hub/(hooks([/[:space:]]|$)|copilot/settings[^/[:space:]]*\.json))' \
       || printf '%s\n' "$segs" | grep -iE "$GITF" \
       | grep -qiE '(^|[[:space:]])(rm|unlink|chmod|chown|truncate|touch|shred|patch|ed|ex|vi|vim|nano|emacs|python3?|ruby|node|perl|tee|dd)([[:space:]]|$)|(^|[[:space:]])(sed|awk|gawk)[[:space:]](.*[[:space:]])?(-[A-Za-z]*i|--in-place)' \
       || printf '%s\n' "$segs" | grep -iE '(^|[[:space:]])(cp|mv|ln|install|rsync)[[:space:]]' \
       | sed -E "s/[[:space:]]+${RD}[0-9]*[<>]+([[:space:]]+${RD}[<>]+)*[[:space:]]+[^[:space:]]+//g" \
-      | grep -qiE '(^|[^A-Za-z0-9_.-])\.git(/(hooks(/[^[:space:]]*)?|config)|hub/(hooks(/[^[:space:]]*)?|copilot/?|copilot/settings[^/[:space:]]*))[[:space:]]*$|(^|[[:space:]])(-[A-Za-z]*t[[:space:]]*|--ta[a-z-]*[=[:space:]]+)[^[:space:]]*\.git(/(hooks|config)|hub/(hooks|copilot))'; then
+      | grep -qiE '(^|[^A-Za-z0-9_.-])\.git(/(hooks(/[^[:space:]]*)?|config)|hub/(hooks(/[^[:space:]]*)?|copilot/?|copilot/settings[^/[:space:]]*\.json))[[:space:]]*$|(^|[[:space:]])(-[A-Za-z]*t[[:space:]]*|--ta[a-z-]*[=[:space:]]+)[^[:space:]]*\.git(/(hooks|config)|hub/(hooks|copilot)([/[:space:]]|$))'; then
       recipe "refusing to change .git/config, the git hooks, or Copilot's hooks and settings by hand."
     fi
 

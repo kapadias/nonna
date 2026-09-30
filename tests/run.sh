@@ -3003,6 +3003,16 @@ check "a shell write of Copilot's settings (echo >) exits 2" 2 "$(cpgb "echo '{\
 check "a copy into .github/hooks/ exits 2" 2 "$(cpgb 'cp quiet.json .github/hooks/')"
 check "an in-place edit under .github/hooks/ exits 2" 2 "$(cpgb "sed -i 's/a/b/' .github/hooks/nonna.json")"
 check "reading .github/hooks/ exits 0" 0 "$(cpgb 'cat .github/hooks/nonna.json')"
+check "a shell write into .github/hooks/ (echo >) exits 2" 2 "$(cpgb 'echo x > .github/hooks/nonna.json')"
+check "tee onto .github/copilot/settings.json exits 2" 2 "$(cpgb 'echo x | tee .github/copilot/settings.json')"
+check "a copy onto .github/copilot/settings.json exits 2" 2 "$(cpgb 'cp quiet.json .github/copilot/settings.json')"
+check "a copy into -t .github/hooks exits 2" 2 "$(cpgb 'cp -t .github/hooks quiet.json')"
+# Only those names: a file beside them whose name merely starts the same is an ordinary file.
+check "a shell write of .github/hooks-notes.md exits 0" 0 "$(cpgb 'echo x > .github/hooks-notes.md')"
+check "a shell write of .github/copilot/settings-notes.md exits 0" 0 "$(cpgb 'echo x > .github/copilot/settings-notes.md')"
+check "tee onto .github/copilot/settings-notes.md exits 0" 0 "$(cpgb 'echo x | tee .github/copilot/settings-notes.md')"
+check "a copy onto .github/copilot/settings-notes.md exits 0" 0 "$(cpgb 'cp notes.md .github/copilot/settings-notes.md')"
+check "a copy into -t .github/hooks-notes exits 0" 0 "$(cpgb 'cp -t .github/hooks-notes notes.md')"
 # The host is whatever the hooks file says, never guessed from the payload; Claude Code's own payloads
 # go through the adapter byte for byte.
 printf '%s' "$(pre Write '{"path":"a.py","file_text":"aws_id = \"'"$FAKE_AWS"'\""}')" | CLAUDE_PROJECT_DIR="$CPR" "$HOOKS/secret-scan.sh" 2>/dev/null
