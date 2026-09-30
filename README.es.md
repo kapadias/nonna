@@ -1,4 +1,4 @@
-<!-- Translated from README.md at 20dc9ff. -->
+<!-- Translated from README.md at c9d0c6c. -->
 <div align="center">
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [한국어](README.ko.md) · [日本語](README.ja.md) · **Español**
@@ -189,15 +189,23 @@ Codex también puede instalarla como plugin, lo que añade sus hooks: ejecuta
 `codex plugin marketplace add kapadias/nonna`, instala Nonna desde `/plugins` y confía en sus hooks
 desde `/hooks` ([`docs/INSTALL.md`](docs/INSTALL.md#codex-the-plugin)).
 
+GitHub Copilot CLI también puede instalarla como plugin, lo que ejecuta sus controles en los propios
+hooks del agente:
+
+```bash
+copilot plugin marketplace add kapadias/nonna
+copilot plugin install nonna@nonna
+```
+
 Qué recibe cada agente:
 
-|                                                                                                 | Claude Code | Codex (plugin) | Cualquier otro agente |
-| ----------------------------------------------------------------------------------------------- | :---------: | :------------: | :-------------------: |
-| Las reglas de la casa de Nonna                                                                  |     sí      |       sí       |          sí           |
-| Hooks de git: ningún commit en `main` ni con un secreto en staging                              |     sí      |       sí       |          sí           |
-| Hooks de git: ningún push con pruebas en rojo o con un secreto                                  |     sí      |       sí       |          sí           |
-| No puede terminar su turno con la suite en rojo; "where's the test?"                            |     sí      |   conectado¹   |          no           |
-| Guardián de secretos en cada escritura y lectura de archivos, guardián de ramas en cada comando |     sí      |   conectado¹   |          no           |
+|                                                                                                 | Claude Code | Codex (plugin) | Copilot CLI (plugin) | Cualquier otro agente |
+| ----------------------------------------------------------------------------------------------- | :---------: | :------------: | :------------------: | :-------------------: |
+| Las reglas de la casa de Nonna                                                                  |     sí      |       sí       |          sí          |          sí           |
+| Hooks de git: ningún commit en `main` ni con un secreto en staging                              |     sí      |       sí       |          sí          |          sí           |
+| Hooks de git: ningún push con pruebas en rojo o con un secreto                                  |     sí      |       sí       |          sí          |          sí           |
+| No puede terminar su turno con la suite en rojo; "where's the test?"                            |     sí      |   conectado¹   |      conectado²      |          no³          |
+| Guardián de secretos en cada escritura y lectura de archivos, guardián de ramas en cada comando |     sí      |   conectado¹   |      conectado²      |          no³          |
 
 ¹ Los mismos scripts, ejecutados en los eventos de Codex y probados con los payloads de hooks que
 Codex documenta. Todavía no se han ejecutado de principio a fin en una sesión de Codex, y el
@@ -206,6 +214,16 @@ Codex lee archivos a través de la shell, donde el guardián de secretos comprue
 comando. No ven la entrada enviada a una shell que ya está en marcha, ni escanean lo que escribe la
 shell; ahí la red de seguridad son los hooks de git
 ([`docs/INSTALL.md`](docs/INSTALL.md#codex-the-plugin)).
+
+² A través de los hooks `sessionStart`, `preToolUse` y `agentStop` de Copilot, que Copilot CLI
+documenta para plugins (1.0.72 o posterior). Probados con golden tests frente a los payloads de hooks
+que documenta Copilot; todavía no se han ejecutado en una sesión real de Copilot. Un `apply_patch`
+se juzga archivo por archivo, como el de Codex.
+[`docs/INSTALL.md`](docs/INSTALL.md#github-copilot-cli-the-plugin) explica qué cambia.
+
+³ Copilot CLI también ejecuta, sin traducir, los hooks que `install.sh` escribe en
+`.claude/settings.json`: leen sus comandos pero no sus herramientas de archivos, y junto al plugin
+cada control se ejecuta dos veces. Con Copilot, usa el plugin.
 
 A partir de la v2.0.0, Gemini CLI también puede cargar las reglas de la casa como extensión:
 `gemini extensions install https://github.com/kapadias/nonna`. Solo lleva las reglas, sin hooks de
