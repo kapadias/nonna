@@ -219,13 +219,30 @@ rm -rf "$CNTG"
 # The sample-word test reads bytes, as the patterns do, whatever the user's locale: a Latin-1 byte in a
 # <placeholder> leaves it a placeholder under a UTF-8 locale too.
 u8="$(locale -a 2>/dev/null | grep -i -m1 -E 'utf-?8$' || true)"
-printf 'password = "<mot de passe sp\351cial ici>"' | LC_ALL="${u8:-C}" scan; check "a Latin-1 byte in a <placeholder> leaves it one under a UTF-8 locale" 1 "$?"
+if [ -n "$u8" ]; then
+  printf 'password = "<mot de passe sp\351cial ici>"' | LC_ALL="$u8" scan; check "a Latin-1 byte in a <placeholder> leaves it one under a UTF-8 locale" 1 "$?"
+else
+  echo "  (skip: no UTF-8 locale here, so the Latin-1 placeholder test cannot run)"
+fi
 # ...and in one pass: a long quoted value full of "<" is read in bounded time (a regex that tries <[^>]+>
 # from every "<" took minutes on a few hundred KB, past a hook's timeout, and a hook that times out does
 # not block).
 big="$(head -c 60000 /dev/zero | LC_ALL=C tr '\0' '<')"
-start=$SECONDS; printf 'token = "%s fake"' "$big" | scan
+start=$SECONDS; printf 'token = "%s fake"' "$big" | scan; rc=$?
 check "a long quoted value full of < is read in bounded time" 1 "$(( SECONDS - start < 4 ))"
+check "...and read as the sample it is" 1 "$rc"
+# A value over 512 characters is read in that one pass, and what it says holds: a long secret is still a
+# secret, and a long sample still a sample.
+long="$KEY_TAIL$KEY_TAIL$KEY_TAIL$KEY_TAIL$KEY_TAIL$KEY_TAIL$KEY_TAIL"
+printf 'token = "%s"' "${long:0:600}" | scan; check "a 600-character quoted secret is a secret" 0 "$?"
+printf 'token = "example%s"' "${long:0:600}" | scan; check "a 600-character quoted value with a sample word is a sample" 1 "$?"
+printf 'token = "<%s>"' "${long:0:600}" | scan; check "a 600-character <placeholder> is a sample" 1 "$?"
+# The same for a key after many subscripts: ${a[0]-key} starts a token, and a subscript that never
+# closes must not make grep read to the end of the line from every one of them.
+subs='{a['; for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do subs="$subs$subs"; done # 98 KB
+start=$SECONDS; printf '%s x=%s' "$subs" "$FAKE_OAI" | scan; rc=$?
+check "a key after 98 KB of unclosed subscripts is read in bounded time" 1 "$(( SECONDS - start < 4 ))"
+check "...and found" 0 "$rc"
 # macOS's grep reads its input in the user's locale and gives up on bytes that are not text there; a scan
 # that gave up would pass the key. The patterns are ASCII, so the scan reads bytes (LC_ALL=C).
 BSDGREP="$(mktemp -d)"; REALGREP="$(command -v grep)"
