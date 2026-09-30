@@ -53,11 +53,19 @@ file), to the plugin's version and to the sentence that says where the hooks com
 the CLI stays silent. It accepts only the generated file as `contextFileName`, because whatever that
 names is loaded into every session and `--check` vouches for one file.
 
-"Rules only" is enforced, not just stated. The lint refuses a manifest key beyond those four and a
-root `hooks/hooks.json`, `commands/`, `skills/`, `agents/` or `policies/`; other files under
-`hooks/` stay allowed, since another host keeps its own hooks file there. `review-lanes.sh` treats
-the manifest and those root paths as risky, so a change to them always reaches the security
-reviewer.
+"Rules only" is enforced, not just stated. The lint refuses a manifest key beyond those four, and
+what Gemini CLI loads from an extension root: `hooks/hooks.json` and the `commands/`, `skills/`,
+`agents/` and `policies/` directories. It reads every root entry case-folded and of any type,
+because macOS's default disk ignores letter case (a `Skills/` directory, or a `Hooks` symlink to a
+directory holding `hooks.json`, is loaded there) and CI's disk does not. Other files under `hooks/`
+stay allowed, since Copilot keeps `hooks/copilot-hooks.json` there.
+
+`review-lanes.sh` treats the manifest and a root `hooks/hooks.json` as risky paths: one decides what
+is loaded and the other runs code, wherever they appear, so a change to either always reaches the
+security reviewer. It does not treat the root `commands/`, `skills/`, `agents/` and `policies/` the
+same way. A `RISKY_PATH` pattern applies to every repository that adopts the harness, where those
+are ordinary directories, and every change to one would go to the security reviewer for nothing.
+Here the lint already refuses them. (Rejected: flagging them in `review-lanes.sh` too.)
 
 ## Consequences
 
