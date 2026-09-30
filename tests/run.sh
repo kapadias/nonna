@@ -1298,6 +1298,7 @@ cp "$TMP/.claude/hooks/require-status-sync.sh" "$TMP/.git/hooks/pre-push"; cp "$
 out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a copy of her hooks in .git/hooks is a failure, since it enforces nothing" 1 "$?"
 contains "install: ...and names the pre-push copy, which is not a link" "pre-push: .git/hooks/pre-push is a copy of .claude/hooks/require-status-sync.sh, not a link" "$out"
 contains "install: ...and the pre-commit copy" "pre-commit: .git/hooks/pre-commit is a copy of .claude/hooks/pre-commit.sh, not a link" "$out"
+contains "install: ...unless its lib/ was copied beside it" "(unless you copied its lib/ beside it)" "$out"
 rc=0; [ -f "$TMP/.git/hooks/pre-push" ] && [ ! -L "$TMP/.git/hooks/pre-push" ] && [ -f "$TMP/.git/hooks/pre-commit" ] && [ ! -L "$TMP/.git/hooks/pre-commit" ] || rc=1; check "install: ...and deletes neither" 0 "$rc"
 rm -f "$TMP/.git/hooks/pre-commit" # linked again by the runs below, so only pre-push is in question there
 printf '# an older version\n' >> "$TMP/.git/hooks/pre-push"
@@ -2119,6 +2120,7 @@ out="$(CLAUDE_PROJECT_DIR="$TMP" "$TMP/.claude/hooks/session-start.sh")"; check 
 contains "copy-in: ...names the pre-push copy, which is not a link" ".git/hooks/pre-push is a copy of her require-status-sync.sh, not a link" "$out"
 contains "copy-in: ...and the pre-commit copy" ".git/hooks/pre-commit is a copy of her pre-commit.sh, not a link" "$out"
 contains "copy-in: ...and says her gate is NOT enforced" "her pre-push gate is NOT enforced" "$out"
+contains "copy-in: ...unless its lib/ was copied beside it" "(unless you copied its lib/ beside it)" "$out"
 rc=0; cmp -s "$HOOKS/require-status-sync.sh" "$TMP/.git/hooks/pre-push" && [ ! -L "$TMP/.git/hooks/pre-push" ] || rc=1; check "copy-in: ...and leaves the copy where it is, for the user to delete" 0 "$rc"
 printf '# an older version\n' >> "$TMP/.git/hooks/pre-push"
 out="$(CLAUDE_PROJECT_DIR="$TMP" "$TMP/.claude/hooks/session-start.sh")"
@@ -2298,6 +2300,7 @@ cp "$HOOKS/require-status-sync.sh" "$TMP/.git/hooks/pre-push"; cp "$HOOKS/pre-co
 out="$(ns "$TMP")"
 contains "/nonna: a copy of her pre-push in .git/hooks is shown as a copy, not enforced" "pre-push a copy, not a link: not enforced" "$out"
 contains "/nonna: ...and her pre-commit" "pre-commit a copy, not a link: not enforced" "$out"
+contains "/nonna: ...unless its lib/ was copied beside it" "(unless you copied its lib/ beside it)" "$out"
 printf '%s' "$out" | grep -q "✓"; check "/nonna: ...with no check mark for either" 1 "$?"
 printf '# an older version\n' >> "$TMP/.git/hooks/pre-push"
 contains "/nonna: a copy of an older version of her pre-push is not hers" "pre-push not hers" "$(ns "$TMP")"
@@ -2409,7 +2412,7 @@ rm -rf "$TMP"
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
 cp "$HOOKS/require-status-sync.sh" "$TMP/.git/hooks/pre-push"; chmod +x "$TMP/.git/hooks/pre-push"
 out="$(ns "$TMP" uninstall)"
-contains "/nonna uninstall: a copy of her pre-push is named as one that enforces nothing" "pre-push is a copy of her require-status-sync.sh that enforces nothing: delete it" "$out"
+contains "/nonna uninstall: a copy of her pre-push is named as one that enforces nothing" "pre-push is a copy of her require-status-sync.sh that enforces nothing (unless you copied its lib/ beside it): delete it" "$out"
 rc=0; [ -f "$TMP/.git/hooks/pre-push" ] && [ ! -L "$TMP/.git/hooks/pre-push" ] && cmp -s "$HOOKS/require-status-sync.sh" "$TMP/.git/hooks/pre-push" || rc=1; check "/nonna uninstall: ...and leaves it where it is" 0 "$rc"
 rm -rf "$TMP"
 # Her link in .git/hooks goes even when core.hooksPath now points elsewhere.

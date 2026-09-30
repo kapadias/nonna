@@ -74,7 +74,8 @@ nonna_hook_chains_hers() {
 # nonna_hook_is_copy <git hook> <her script>
 #   True when the git hook is a regular file, not a link, that is byte for byte her script: what
 #   Git Bash's ln -s leaves in place of a link. Her script finds its lib/ beside itself, so a copy
-#   in .git/hooks finds none: it runs, exits 0 and enforces nothing.
+#   in .git/hooks finds none: it runs, exits 0 and enforces nothing, unless someone copied lib/
+#   beside it too (the warnings that name a copy say so).
 nonna_hook_is_copy() {
   [ -f "$1" ] && [ ! -L "$1" ] && [ -f "$2" ] && cmp -s "$1" "$2"
 }

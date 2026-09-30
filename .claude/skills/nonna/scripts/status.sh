@@ -32,7 +32,7 @@ hook_state() { # <git hook> <her script>: a check mark, or what is wrong
   if [ -L "$d" ] && [ ! -e "$d" ]; then printf 'points at nothing'
   elif [ ! -e "$d" ]; then printf 'missing'
   elif nonna_hook_is_hers "$(readlink "$d" 2>/dev/null)" "$2" "$root/hooks/$2"; then printf '✓'
-  elif nonna_hook_is_copy "$d" "$root/hooks/$2"; then printf 'a copy, not a link: not enforced' # no lib/ beside it
+  elif nonna_hook_is_copy "$d" "$root/hooks/$2"; then printf 'a copy, not a link: not enforced (unless you copied its lib/ beside it)'
   elif nonna_hook_chains_hers "$d" "$2" "$root/hooks/$2"; then printf '✓'
   else printf 'not hers'; fi
 }

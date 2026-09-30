@@ -24,7 +24,7 @@ for pair in pre-push:require-status-sync.sh pre-commit:pre-commit.sh; do
     rm -f "$d" && removed+=("$d (her link to $s)")
   elif [ -e "$d" ] || [ -L "$d" ]; then
     if nonna_hook_is_copy "$d" "$root/hooks/$s"; then
-      left+=("$d is a copy of her $s that enforces nothing: delete it") # named, never deleted: not a link of hers
+      left+=("$d is a copy of her $s that enforces nothing (unless you copied its lib/ beside it): delete it") # named, never deleted: not a link of hers
     elif nonna_hook_chains_hers "$d" "$s" "$root/hooks/$s"; then
       left+=("$d is yours but still runs her $s: take that line out yourself")
     else

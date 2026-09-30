@@ -80,7 +80,7 @@ wire_hook() { # <git hook name> <script name>
     elif nonna_hook_is_copy "$dest" "$real"; then
       # What an older session start left where ln -s copies (Git Bash): it runs, finds no lib/ beside itself
       # and enforces nothing. Named and never deleted: it was there before me.
-      hook_warns+=("$dest is a copy of her $2, not a link, and a copy cannot find its lib/, so her $1 gate is NOT enforced; delete it")
+      hook_warns+=("$dest is a copy of her $2, not a link, and a copy cannot find its lib/ (unless you copied its lib/ beside it), so her $1 gate is NOT enforced; delete it")
     else # the user's own, even when it shares her script's name, unless it chains hers
       nonna_hook_chains_hers "$dest" "$2" "$target" \
         || hook_warns+=("$dest is not Nonna's, so her $1 gate is NOT enforced; chain $target from it")
