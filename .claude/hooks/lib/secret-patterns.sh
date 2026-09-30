@@ -30,9 +30,10 @@ _nonna_sample_words='xxxx|example|your[-_]|changeme|dummy|redacted|placeholder|f
 # _nonna_is_placeholder <matched-value>  -> 0 if the match is an obvious non-secret: a sample word, or
 # a reference to a value kept elsewhere (${VAR}, env(...), os.environ, process.env, <name>). Read in
 # the shell, with no process per match (the scan's text is in lower case): thousands of sample ids
-# must not outlast the hook's timeout, since a hook that times out does not block.
+# must not outlast the hook's timeout, since a hook that times out does not block. Bytes, as the
+# patterns read them (LC_ALL=C): in a UTF-8 locale [^>] would not match a Latin-1 byte.
 _nonna_is_placeholder() {
-  local re="$_nonna_sample_words"'|\$\{|env\(|os\.environ|process\.env|<[^>]+>'
+  local LC_ALL=C re="$_nonna_sample_words"'|\$\{|env\(|os\.environ|process\.env|<[^>]+>'
   [[ $1 =~ $re ]]
 }
 
@@ -85,7 +86,9 @@ _nonna_match() {
 #   NUL is not glued to the text before it, and UTF-16 text (a NUL after every ASCII character) or a
 #   key a NUL cuts in two is read whole. The shell cannot hold a NUL, so each becomes \001 first; a
 #   caller that must keep text in a variable before the scan passes its NULs as \001 the same way.
-#   The text is read in lower case, once: the patterns match any case (grep -i) all the same.
+#   The text is read in lower case, once: the patterns match any case (grep -i) all the same. The
+#   reading with the NULs deleted holds only the lines that had one: the others read the same both
+#   ways, and a rule that reads only it (a key glued to what came before) must not reach them.
 nonna_scan_secrets() {
   local raw
   raw="$(LC_ALL=C tr '\000' '\001' 2>/dev/null | LC_ALL=C tr '[:upper:]' '[:lower:]' 2>/dev/null || true)"
@@ -93,10 +96,19 @@ nonna_scan_secrets() {
   case "$raw" in
     *$'\001'*)
       _nonna_scan_text "$(printf '%s' "$raw" | LC_ALL=C tr '\001' ' ')" \
-        || _nonna_scan_text "$(printf '%s' "$raw" | LC_ALL=C tr -d '\001')" glued
+        || _nonna_scan_text "$(_nonna_nul_lines "$raw" | LC_ALL=C tr -d '\001')" glued
       ;;
     *) _nonna_scan_text "$raw" ;;
   esac
+}
+
+# _nonna_nul_lines <text>  -> the lines that hold a \001 (a NUL, as the scan reads it); all of the
+#   text should the selection fail, so that a tool gone missing reads more, never less.
+_nonna_nul_lines() {
+  local ctrl_a lines rc=0
+  ctrl_a="$(printf '\001')"
+  lines="$(printf '%s\n' "$1" | LC_ALL=C grep -a -e "$ctrl_a")" || rc=$?
+  if [ "$rc" = 0 ]; then printf '%s' "$lines"; else printf '%s' "$1"; fi
 }
 
 # _nonna_scan_text <text> [glued]  -> the patterns, in order: the first class that matches, and 0.
