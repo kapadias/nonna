@@ -2881,6 +2881,12 @@ check "patch: a record a file, for Add, Update, a move and Delete" "$(printf 'Ad
   "$(pf '*** Begin Patch' '*** Add File: a.py' '+k = 1' '+m = "q"' '*** Update File: b.py' '@@ def f():' ' ctx' '-old' '+new' '*** Update File: c.py' '*** Move to: d.py' '@@' '+z' '*** Delete File: e.py' '*** End Patch')"
 check "patch: a header led by another blank, after an Add hunk, is refused" "rc=1" "$(pf '*** Begin Patch' '*** Add File: a.py' '+x = 1' "$(printf '\v*** Update File: .git/config')" '+[core]' '*** End Patch')"
 check "patch: space-led Move to and Update File lines in an Update hunk are context" "$(printf 'Update\tconfig.py\t\tk = 1\nrc=0')" "$(pf '*** Begin Patch' '*** Update File: config.py' ' *** Move to: tests/x.py' ' *** Update File: tests/y.py' '+k = 1' '*** End Patch')"
+# A patch is checked a file at a time, and a hook that outruns its timeout does not block: one over
+# 256 KB, or one that touches over 200 files, is refused. At each limit it is still read.
+check "patch: a patch of 256 KB is read" "rc=0" "$(pf '*** Begin Patch' '*** Add File: n' "+$(printf '%0262096d' 0)" '*** End Patch' | tail -n 1)"
+check "patch: a patch over 256 KB is refused" "rc=3" "$(pf '*** Begin Patch' '*** Add File: n' "+$(printf '%0262097d' 0)" '*** End Patch')"
+check "patch: a patch that touches 200 files is read" "rc=0" "$(pf '*** Begin Patch' "$(python3 -c 'print("\n".join("*** Delete File: f%d" % i for i in range(200)))')" '*** End Patch' | tail -n 1)"
+check "patch: a patch that touches over 200 files is refused" "rc=4" "$(pf '*** Begin Patch' "$(python3 -c 'print("\n".join("*** Delete File: f%d" % i for i in range(201)))')" '*** End Patch')"
 
 echo "== Codex plugin (hooks/codex-hooks.json: Codex's own payloads, read by the same gates) =="
 # Codex loads the plugin's hooks from hooks/codex-hooks.json, which .codex-plugin/plugin.json names, and
@@ -2988,6 +2994,15 @@ check "codex: a patch the reader cannot read (awk fails) is refused, not passed"
 rm -rf "$NJX" "$BADJQX" "$BADAWKX"
 # Codex's grammar puts a file in every patch, so one in which no file is read was not understood.
 check "codex: a patch in which no file is read is refused, not passed" 2 "$(cx_run PreToolUse '^apply_patch$' "$(cx_patch 'x = 1')")"
+# A patch too large to check before the hook times out is refused, as the branch guard refuses a
+# command over 256 KB: a hook that outruns its timeout does not block.
+BIGX="$(python3 -c 'import json, sys
+print(json.dumps({"session_id": sys.argv[1], "transcript_path": None, "cwd": sys.argv[2], "hook_event_name": "PreToolUse",
+  "model": "test-model", "permission_mode": "default", "turn_id": "turn-1", "tool_name": "apply_patch", "tool_use_id": "call-1",
+  "tool_input": {"command": "*** Begin Patch\n*** Add File: notes.md\n+" + "x" * 270000 + "\n*** End Patch"}}))' "$CXS" "$CXR")"
+check "codex: a patch over 256 KB is refused, not read past the timeout" 2 "$(cx_run PreToolUse '^apply_patch$' "$BIGX")"
+MANYX="$(cx_tool apply_patch "$(printf '*** Begin Patch\n'; python3 -c 'print("\n".join("*** Delete File: f%d.py" % i for i in range(201)))'; printf '*** End Patch')")"
+check "codex: a patch over 200 files is refused, not checked past the timeout" 2 "$(cx_run PreToolUse '^apply_patch$' "$MANYX")"
 # SessionStart: Codex's session id marks where the session began, the git hooks are linked through the
 # plugin's data directory, and the answer has the shape Codex's SessionStart reads.
 cx_run SessionStart '*' "$(cx_event SessionStart '{"source": "startup"}')" >/dev/null

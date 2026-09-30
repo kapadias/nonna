@@ -249,10 +249,12 @@ payload:
 
 Codex edits with `apply_patch`, one call that can add, change, move and delete several files.
 `lib/host-codex.sh` reads it as Claude Code's Write and Edit, one per file, so each guard judges a
-file of the patch as it judges a Claude Code edit, and refuses a patch it cannot read. Nothing else
-is wired: Codex's `PostCompact` takes no context (its `SessionStart` after a compaction carries the
-rules again), the plugin never formats, and Codex runs none of her agents, so there is no review
-verdict to check.
+file of the patch as it judges a Claude Code edit. It refuses a patch it cannot read with
+certainty, and one over 256 KB or 200 files, too much to check before the hook times out.
+
+Nothing else is wired: Codex's `PostCompact` takes no context (its `SessionStart` after a compaction
+carries the rules again), the plugin never formats, and Codex runs none of her agents, so there is
+no review verdict to check.
 
 What differs from Claude Code:
 

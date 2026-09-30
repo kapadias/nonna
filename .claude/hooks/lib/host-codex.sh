@@ -22,14 +22,23 @@
 #   at. A patch that passes returns 0. Either way it prints nothing. Any other payload is printed
 #   unchanged.
 nonna_codex_payload() {
-  local gate="${1:-}" payload files f
+  local gate="${1:-}" payload files f rc=0
   payload="$(cat 2>/dev/null || true)"
   # The name, read raw: a JSON string escapes its quotes, so no value inside one reads as this.
   if ! printf '%s' "$payload" | grep -qE '"tool_name"[[:space:]]*:[[:space:]]*"apply_patch"'; then
     printf '%s' "$payload"
     return 0
   fi
-  if ! files="$(printf '%s' "$payload" | _nonna_codex_files)"; then
+  files="$(printf '%s' "$payload" | _nonna_codex_files)" || rc=$?
+  if [ "$rc" = 3 ] || [ "$rc" = 4 ]; then # a hook that outruns its timeout does not block (lib/patch.sh)
+    if [ "$rc" = 3 ]; then
+      echo "✗ Nonna: that's too much to taste in one bite. (codex: the patch is over 256 KB, too long to read before the hook times out.)" >&2
+    else
+      echo "✗ Nonna: that's too much to taste in one bite. (codex: the patch touches over 200 files, too many to check before the hook times out.)" >&2
+    fi
+    echo "  Split it into smaller patches." >&2
+    return 2
+  elif [ "$rc" != 0 ]; then
     echo "✗ Nonna: I can't taste what I can't read. (codex: the patch could not be read, so it is refused, not guessed at.)" >&2
     echo "  Check that it names each file it changes; if it does, check that awk and jq work in this shell." >&2
     return 2

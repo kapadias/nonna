@@ -6,11 +6,13 @@
         "hooks": [
           {
             "type": "command",
-            "command": "NONNA_HOST=codex \"${PLUGIN_ROOT}\"/hooks/guard-branch.sh"
+            "command": "NONNA_HOST=codex \"${PLUGIN_ROOT}\"/hooks/guard-branch.sh",
+            "timeout": 600
           },
           {
             "type": "command",
-            "command": "NONNA_HOST=codex \"${PLUGIN_ROOT}\"/hooks/secret-scan.sh"
+            "command": "NONNA_HOST=codex \"${PLUGIN_ROOT}\"/hooks/secret-scan.sh",
+            "timeout": 600
           }
         ]
       },
@@ -19,11 +21,13 @@
         "hooks": [
           {
             "type": "command",
-            "command": "NONNA_HOST=codex \"${PLUGIN_ROOT}\"/hooks/guard-branch.sh"
+            "command": "NONNA_HOST=codex \"${PLUGIN_ROOT}\"/hooks/guard-branch.sh",
+            "timeout": 600
           },
           {
             "type": "command",
-            "command": "NONNA_HOST=codex \"${PLUGIN_ROOT}\"/hooks/secret-scan.sh"
+            "command": "NONNA_HOST=codex \"${PLUGIN_ROOT}\"/hooks/secret-scan.sh",
+            "timeout": 600
           }
         ]
       }

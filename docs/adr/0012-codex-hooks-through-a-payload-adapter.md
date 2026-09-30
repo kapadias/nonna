@@ -83,10 +83,11 @@ has hooks with Nonna's contracts: exit code 2 blocks a `PreToolUse` call, a `Sto
   hook changes, so an update that edits `codex-hooks.json` asks each user again.
 - Codex hands a `Stop` hook's reason to the agent as a new prompt. The failing lines stay quoted as
   the repository's words, as under Claude Code; a suite's output can still address the agent there.
-- A patch over many files starts the gate once per file: about 45 ms a file for each guard when
-  measured, so 100 files took 4.5 seconds. A hook that outruns its timeout does not block, and Codex
-  allows 600 seconds by default, which a patch would need some 13,000 files to use up. Revisit if
-  long patches come near it; refusing a patch over a file count would close it.
+- A patch starts the gate once per file, about 45 ms a file for each guard when measured, and a
+  hook that outruns its timeout does not block. So `lib/patch.sh` refuses a patch over 256 KB, or
+  one that touches over 200 files, as the branch guard refuses a command over 256 KB; at the file
+  limit a guard takes about 9 seconds. The guards' timeout is set to 600 seconds, Codex's default,
+  so a lower default in a later Codex cannot cut it short.
 - `/nonna` and the plugin's options are Claude Code's. Under Codex, her settings are git config, and
   the first-session notice, which names `/nonna`, says so less well than it could.
 - Only a payload whose `tool_name` is `apply_patch` is read as a patch: that is the shape Codex

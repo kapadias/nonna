@@ -11,7 +11,10 @@
 #   <op> is Add, Update or Delete; <moved to> is empty unless an Update moves the file; <added lines>
 #   are the lines the patch adds to the file, joined by \n. Each field but <op> is written as the
 #   inside of a JSON string, so a record is one line, a field holds no tab, and a JSON payload can take
-#   a field as it is. To refuse a patch it cannot read with certainty, it prints nothing and returns 1.
+#   a field as it is. To refuse a patch it prints nothing and returns non-zero: 1 for a patch it
+#   cannot read with certainty; 3 for one over 256 KB, and 4 for one that touches over 200 files (a
+#   move touches two), too much to check a file at a time before a hook times out, since a hook that
+#   times out does not block.
 #   The grammar is read as an allowlist, and a line it does not allow refuses the patch: following
 #   each of a parser's trim rules instead is how a header would slip past. In an Add hunk, a line that
 #   starts with + is a line it adds. In an Update hunk, a line that is empty or starts with a space,
@@ -25,7 +28,7 @@
 #   Characters are escaped one at a time and joined pairwise, in n log n time in any awk (as
 #   lib/json.sh decodes).
 nonna_patch_files() {
-  LC_ALL=C awk '
+  LC_ALL=C awk -v most_bytes=262144 -v most_files=200 '
     function joined(   m, j) {
       while (np > 1) {
         m = 0
@@ -50,6 +53,8 @@ nonna_patch_files() {
       for (i = 33; i < 127; i++) PRINTABLE = PRINTABLE sprintf("%c", i)
     }
     {
+      size += length($0) + 1
+      if (size > most_bytes) { big = 1; exit }
       line = $0; sub(/\r$/, "", line)
       if (st == "add") {
         if (substr(line, 1, 1) == "+") { added(line); next }
@@ -73,7 +78,11 @@ nonna_patch_files() {
       if (st == "") cur = 0
     }
     END {
+      if (big) exit 3
       if (bad || !nf) exit 1
+      files = nf
+      for (i = 1; i <= nf; i++) if (mv[i] != "") files++
+      if (files > most_files) exit 4
       for (i = 1; i <= nf; i++) {
         np = 0
         for (k = lo[i]; k <= hi[i]; k++) { if (np) p[++np] = "\\n"; p[++np] = ln[k] }
