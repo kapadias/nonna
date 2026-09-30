@@ -14,10 +14,13 @@
 #             it introduces, not on debt someone else left
 #   --ledger  print the grouped ledger to stdout (exit code unchanged)
 # Exit: 0 every marker names a trigger · 1 at least one does not · 2 usage error,
-#       --range outside a git repo, or an unresolvable range (fail closed).
+#       --range outside a git repo, an unresolvable range, or a tool that fails (fail closed).
 # The comma is the only separator; a ceiling that needs a comma gets reworded. If real
 # markers ever need a second separator, add it here and in the lean skill together.
 set -uo pipefail
+# Bytes, not the locale's characters: a file may hold a byte that is not text in the user's
+# locale, and macOS's grep, tr, sed and sort stop at one, which would drop its marker.
+export LC_ALL=C
 
 PATTERN='(#|//) ?debt:'
 SKIP_DIRS=(.git node_modules dist build target vendor .venv venv __pycache__ coverage htmlcov)
@@ -123,7 +126,8 @@ rows="$(printf '%s\n' "$hits" | awk -v pat="$PATTERN" '
     gsub(/^[ \t]+|[ \t]+$/, "", ceiling); gsub(/^[ \t]+|[ \t]+$/, "", trigger)
     ok = (ceiling != "" && trigger != "") ? 1 : 0
     printf "%s\t%s\t%d\t%s\t%s\n", file, ln, ok, ceiling, trigger
-  }' | sort -t "$(printf '\t')" -k1,1 -k2,2n)"
+  }' | sort -t "$(printf '\t')" -k1,1 -k2,2n)" \
+  || { printf 'check-debt: cannot classify the markers — refusing to pass them\n' >&2; exit 2; }
 
 total=0; bad=0
 if [ -n "$rows" ]; then

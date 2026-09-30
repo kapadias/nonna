@@ -1764,6 +1764,23 @@ printf 'v = 1  # %s nul byte\n\0\n' "$M" > "$TMP/src/nul.py"
 out="$(cd "$TMP" && bash "$CD" src 2>&1)"; contains "check-debt: a NUL byte does not hide a marker" "src/nul.py:1: no-trigger" "$out"
 printf 'w = 1  # %s bad byte \xff\n' "$M" > "$TMP/src/utf.py"
 out="$(cd "$TMP" && LC_ALL=C.UTF-8 bash "$CD" src 2>&1)"; contains "check-debt: an invalid UTF-8 byte does not hide a marker" "src/utf.py:1: no-trigger" "$out"
+# macOS's sort reads its input in the user's locale and stops at a byte that is not text there; a
+# ledger that lost the row would pass the marker. A sort that fails for any reason is a stop.
+BSDSORT="$(mktemp -d)"; REALSORT="$(command -v sort)"
+cat > "$BSDSORT/sort" <<STUB
+#!/bin/sh
+t="\$(mktemp)"; cat > "\$t"
+if [ "\${LC_ALL:-}" != C ] && ! python3 -c 'import sys; open(sys.argv[1], "rb").read().decode("utf-8")' "\$t" 2>/dev/null; then
+  echo "sort: Illegal byte sequence" >&2; rm -f "\$t"; exit 2
+fi
+"$REALSORT" "\$@" < "\$t"; rc=\$?; rm -f "\$t"; exit \$rc
+STUB
+chmod +x "$BSDSORT/sort"
+out="$(cd "$TMP" && PATH="$BSDSORT:$PATH" LC_ALL=C.UTF-8 bash "$CD" src 2>&1)"
+contains "check-debt: an invalid UTF-8 byte does not hide a marker where sort reads the locale (macOS)" "src/utf.py:1: no-trigger" "$out"
+printf '#!/bin/sh\nexit 2\n' > "$BSDSORT/sort"
+( cd "$TMP" && PATH="$BSDSORT:$PATH" bash "$CD" src >/dev/null 2>&1 ); check "check-debt: a sort that fails is a stop, not a clean ledger" 2 "$?"
+rm -rf "$BSDSORT"
 rm -f "$TMP/src/nul.py" "$TMP/src/utf.py"
 printf 'x = 1  # %s single file\n' "$M" > "$TMP/src/single.py"
 out="$(cd "$TMP" && bash "$CD" src/single.py 2>&1)"; contains "check-debt: a single-file operand keeps its filename" "src/single.py:1: no-trigger" "$out"

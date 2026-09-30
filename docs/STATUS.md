@@ -136,8 +136,9 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
     - "where's the test?" counts a new `.test.mts`, `.test.cts` or `_test.cxx`, and four Stop tests
       that the first ask's memo had answered now decide alone;
     - `check-debt.sh`'s `tr` and `sed` read bytes: on a Mac they refused a file with a byte that is
-      not UTF-8, so its marker went unseen. The real Mac run had failed that test too, and the
-      BSD-tools simulation, run to the end on this unit for the first time, found why.
+      not UTF-8, so its marker went unseen. The real Mac run had failed that test too; the BSD-tools
+      simulation, run to the end on this unit for the first time, found this much of why (the rest
+      was `sort`, below).
   - **Fifth review round** (the security review approved the fourth with findings; each fix has a
     test that failed first):
     - without jq, the write guard reads a `\u0000` escape as the NUL byte it stands for, so a key
@@ -174,6 +175,13 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
       longer one hid the key, which both reviewers found. The route for values over 512 characters
       is tested both ways (a long secret is one, a long sample is not), after a mutant that called
       every such value a sample passed the suite.
+  - **The first real-Mac run of the launch PR** (#22) failed tests the simulation passed; the
+    simulation now has each cause (Python 3.9 as `python3`, and a `sort` that stops at a byte that
+    is not UTF-8), and each fix has a test that failed first:
+    - `check-debt.sh` reads bytes throughout (`LC_ALL=C` for the whole script): macOS's `sort`
+      stopped at a byte that is not UTF-8, and the empty ledger it left passed the marker. A sort
+      or awk that fails while the markers are classified is now a stop (exit 2), not a clean
+      ledger;
   - **Secret scan:** it missed Anthropic keys and OpenAI's `sk-proj-`, `sk-svcacct-` and `sk-admin-`
     keys, which the docs said it caught. The write guard, pre-commit and pre-push now refuse them;
     golden tests hold each key type and a key given as a shell default, a property test holds the
