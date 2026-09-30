@@ -15,14 +15,14 @@
         "matcher": "Edit|Write",
         "bash": "\"${CLAUDE_PLUGIN_ROOT}\"/.claude/hooks/guard-branch.sh",
         "env": { "NONNA_HOST": "copilot" },
-        "timeoutSec": 60
+        "timeoutSec": 600
       },
       {
         "type": "command",
         "matcher": "Edit|Write",
         "bash": "\"${CLAUDE_PLUGIN_ROOT}\"/.claude/hooks/secret-scan.sh",
         "env": { "NONNA_HOST": "copilot" },
-        "timeoutSec": 60
+        "timeoutSec": 600
       },
       {
         "type": "command",
