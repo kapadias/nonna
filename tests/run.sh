@@ -2870,6 +2870,33 @@ space_run "$SP/.claude/settings.json"
 check "settings.json: every command runs from a project dir with a space (ran $ran)${bad_cmds:+ (not: $bad_cmds)}" 0 "$rc"
 rm -rf "$(dirname "$SP")"
 
+echo "== .gitattributes (text checks out as LF, whatever core.autocrlf says) =="
+# Git for Windows checks text out with CRLF (its installer sets core.autocrlf=true), and a plugin is installed
+# by git clone. Git Bash reads such scripts; WSL's bash does not (bash\r), and two checks anchor a regex at a
+# line end or compare bytes. So the repository says what a clone holds: LF, and the CRLF files it has stay so.
+GA="$ROOT/.gitattributes"
+rc=0; [ -f "$GA" ] || rc=1; check "gitattributes: the repository has one" 0 "$rc"
+TMP="$(mktemp -d)"; mkdir -p "$TMP/src"; "${GIT[@]}" -C "$TMP/src" init -q
+printf 'a\tb\r\n' > "$TMP/src/old.tsv"; "${GIT[@]}" -C "$TMP/src" add -A; "${GIT[@]}" -C "$TMP/src" commit -qm old
+cp "$GA" "$TMP/src/.gitattributes" 2>/dev/null
+printf '#!/usr/bin/env bash\necho hi\n' > "$TMP/src/hook.sh"; printf 'BEGIN { print 1 }\n' > "$TMP/src/lib.awk"; printf '# Title\n\ntext\n' > "$TMP/src/README.md"
+"${GIT[@]}" -C "$TMP/src" add -A; "${GIT[@]}" -C "$TMP/src" commit -qm new
+"${GIT[@]}" clone -q -c core.autocrlf=true "$TMP/src" "$TMP/dst"
+# A CR in the word itself ($'\r'), not one read back through $(...), which can trim it.
+grep -q $'\r' "$TMP/dst/hook.sh"; check "gitattributes: a shell script is checked out with LF where core.autocrlf=true" 1 "$?"
+grep -q $'\r' "$TMP/dst/lib.awk"; check "gitattributes: ...and an awk file" 1 "$?"
+grep -q $'\r' "$TMP/dst/README.md"; check "gitattributes: ...and a markdown file" 1 "$?"
+grep -q $'\r' "$TMP/dst/old.tsv"; check "gitattributes: a file committed with CRLF stays as committed, not rewritten" 0 "$?"
+rc=0; [ -z "$("${GIT[@]}" -C "$TMP/dst" status --porcelain)" ] || rc=1; check "gitattributes: ...and the clone is clean" 0 "$rc"
+rm -rf "$TMP"
+if git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  n="$(cd "$ROOT" && git ls-files -- '*.sh' '*.awk' | wc -l | tr -d ' ')"
+  bad="$(cd "$ROOT" && git ls-files -z -- '*.sh' '*.awk' | xargs -0 git check-attr eol -- | grep -v ': lf$' | head -n 3)"
+  rc=0; [ "$n" -gt 0 ] && [ -z "$bad" ] || rc=1; check "gitattributes: every one of the $n tracked .sh and .awk files is marked eol=lf${bad:+ (not: $bad)}" 0 "$rc"
+else
+  echo "  (skip: this is not a git checkout, so there is no list of tracked files to check)"
+fi
+
 echo "== harness_lint.py (the linter is itself a gate) =="
 # A linter with no failing-case test is an unverified gate: it would still print
 # "OK" if a check silently stopped firing. Each case copies the real tree, breaks
