@@ -2,7 +2,7 @@
 
 Three ways in: the Claude Code plugin, the [GitHub Copilot CLI plugin](#github-copilot-cli-the-plugin),
 or `install.sh`, which puts the gates in the repository itself, for Claude Code and for other agents.
-All three start in lite mode.
+All three start in lite mode. Codex can install the plugin too ([Codex: the plugin](#codex-the-plugin)).
 
 ## Claude Code: the plugin
 
@@ -26,13 +26,14 @@ Nonna is on here (lite). Before the agent can say done, Nonna runs: python3 -m p
 When she finds no test suite, it says so:
 
 ```text
-Nonna is on here (lite). She found no test command here, so the test gate is off; set one with: /nonna test '<command>'. Added .git/hooks/pre-push and pre-commit. See or change it with /nonna.
+Nonna is on here (lite). She found no test command here (or its runner is not installed), so the test gate is off; set one with: /nonna test '<command>'. Added .git/hooks/pre-push and pre-commit. See or change it with /nonna.
 ```
 
 When a git hook could not be wired, a `Note:` says which gate is not enforced and why.
 
 Using another agent, or want the gates committed for your whole team? See
-[install.sh](#other-agents-installsh).
+[install.sh](#other-agents-installsh). Gemini CLI can also load the rules as
+[an extension](#gemini-cli-the-extension), without the hooks.
 
 ### `/nonna`
 
@@ -141,13 +142,43 @@ push that changes code. It comes from, in order: `NONNA_TEST_CMD` (Claude Code's
 detects the command each time instead.
 
 Under the plugin, while a repository has no `nonna.testCmd`, each session start detects one and
-records it, if `run_tests` is on: `python3 -m pytest -q` (pytest installed, and a `pytest.ini`,
-`tox.ini` or `conftest.py`, or test files such as `tests/test_*.py`), `npm test --silent` (a `test`
-script in `package.json`), `go test ./...` or `cargo test --quiet`. Once one is recorded, Nonna never
-changes it, not even an empty one; turning `run_tests` off later does not remove it. That is the
-consent: under the plugin, Nonna runs your tests only when `run_tests` allowed it or you set the
-command yourself, and a repository cannot set it for you, because `.git/config` is never cloned. No
-suite found means no gate, and the first-session notice says so.
+records it, if `run_tests` is on. Detection takes the first row of this table whose files are there
+and whose runner is installed:
+
+| Found in the repository                                                        | Recorded                | Needs                                     |
+| ------------------------------------------------------------------------------ | ----------------------- | ----------------------------------------- |
+| `pytest.ini`, `tox.ini`, `conftest.py` or test files such as `tests/test_*.py` | `python3 -m pytest -q`  | pytest installed                          |
+| a `Gemfile`, and `.rspec` or `spec/spec_helper.rb`                             | `bundle exec rspec`     | `bundle` on the `PATH`                    |
+| a `Gemfile` and a `Rakefile`, and `test/`                                      | `bundle exec rake test` | `bundle` on the `PATH`                    |
+| `phpunit.xml`, `phpunit.xml.dist` or `phpunit.dist.xml`, and `vendor/bin/pest` | `vendor/bin/pest`       | `php` on the `PATH`; that file executable |
+| the same, and `vendor/bin/phpunit`                                             | `vendor/bin/phpunit`    | `php` on the `PATH`; that file executable |
+| `gradlew` (Java, Kotlin)                                                       | `./gradlew test`        | `gradlew` executable; a JVM               |
+| `mvnw`                                                                         | `./mvnw test`           | `mvnw` executable; a JVM                  |
+| a `pom.xml`                                                                    | `mvn test`              | `mvn` on the `PATH`                       |
+| one `.sln`, `.slnx` or `.*proj` file (`.csproj`, `.fsproj`, ...)               | `dotnet test`           | `dotnet` on the `PATH`                    |
+| a `mix.exs`                                                                    | `mix test`              | `mix` on the `PATH`                       |
+| a `test` script in `package.json`                                              | `npm test --silent`     |                                           |
+| a `go.mod`                                                                     | `go test ./...`         |                                           |
+| a `Cargo.toml`                                                                 | `cargo test --quiet`    |                                           |
+
+A missing runner would read as a red suite and block every push, so a row whose runner is missing is
+skipped, and detection goes on to the rows below it: a repository that `package.json`, `go.mod` or
+`Cargo.toml` gated before is gated still. (The pytest row is the one exception: its files claim the
+repository, and without pytest nothing is recorded.) The back ends come before `package.json`
+because in a Rails, Laravel or Phoenix app it usually serves the front end. The scripts a repository
+ships bring no runtime, so `gradlew` and `mvnw` need a JVM (`JAVA_HOME/bin/java` when `JAVA_HOME` is
+set, else `java` on the `PATH`, as they look for one) and the `vendor/bin` scripts need `php`. A
+`Gemfile` alone is no Ruby suite, nor is a bare `spec/` or `test/` (Jasmine and mocha use them), and
+`dotnet test` cannot choose among several solution or project files, so a folder with more than one
+skips that row. Detection looks for a runner and never starts one, nor any code the repository ships.
+
+Once one is recorded, Nonna never changes it, not even an empty one; turning `run_tests` off later
+does not remove it. That is the consent: under the plugin, Nonna runs your tests only when
+`run_tests` allowed it or you set the command yourself, and a repository cannot set it for you,
+because `.git/config` is never cloned. Every recorded command runs code the repository ships;
+`./gradlew`, `./mvnw` and `vendor/bin/*` are the repository's own files, run as they are. Turn
+`run_tests` off before opening a repository you do not trust. No suite found means no gate, and the
+first-session notice says so.
 
 On red, the Stop hook sends the agent back once with the failing lines: it fixes them, or it tells
 you plainly that it is not done. What the suite prints is shown to the agent quoted, as the
@@ -223,6 +254,62 @@ Code loads them in every session and Nonna stops carrying her own, in lite mode 
 If another plugin already gives the agent the same "reuse before you write" ladder, full mode leaves
 its own copy out rather than say it twice. `NONNA_LADDER=on` or `off` decides it yourself.
 
+## Codex: the plugin
+
+Codex reads the same marketplace and installs the same plugin:
+
+```
+codex plugin marketplace add kapadias/nonna
+```
+
+Then install Nonna from `/plugins` in Codex, or with `codex plugin add nonna@nonna` from a terminal,
+and trust her hooks in `/hooks`. Codex runs no plugin hook until you trust it, and asks again when
+an update changes one.
+
+Codex loads her hooks from `hooks/codex-hooks.json`, which the plugin's `.codex-plugin/plugin.json`
+names, and runs the same scripts as Claude Code, with `NONNA_HOST=codex` so that each reads Codex's
+payload:
+
+| Codex event                   | What runs                                                                    |
+| ----------------------------- | ---------------------------------------------------------------------------- |
+| `SessionStart`                | wires the git hooks, records the test command, carries her rules             |
+| `PreToolUse` on `Bash`        | the branch guard and the secret guard, as under Claude Code                  |
+| `PreToolUse` on `apply_patch` | both guards, on each file the patch touches and the lines it adds            |
+| `Stop`                        | the test gate and "where's the test?": a red suite sends the agent back once |
+| `SubagentStart`               | carries her rules into each subagent                                         |
+
+Codex edits with `apply_patch`, one call that can add, change, move and delete several files.
+`lib/host-codex.sh` reads it as Claude Code's Write and Edit, one per file, so each guard judges a
+file of the patch as it judges a Claude Code edit. It refuses a patch it cannot read with
+certainty, and one over 256 KB or 200 files, too much to check before the hook times out.
+
+Nothing else is wired: Codex's `PostCompact` takes no context (its `SessionStart` after a compaction
+carries the rules again), the plugin never formats, and Codex runs none of her agents, so there is
+no review verdict to check.
+
+What differs from Claude Code:
+
+- **Her settings are git config.** `/nonna` is Claude Code's command; where a notice names it, use
+  `git config nonna.mode` and `git config nonna.testCmd` ([Configuration](#configuration)). The
+  plugin's options are Claude Code's too: under Codex she runs with their defaults, lite and
+  `run_tests` on.
+- **The git hooks link through Codex's plugin data directory** (`~/.codex/plugins/data/…/current`).
+  To take her out, run the [commands by hand](#what-nonna-changes-on-your-machine) in each
+  repository, then `codex plugin remove nonna@nonna`.
+- **Not yet proven in Codex.** The hooks are golden-tested against the payloads Codex documents,
+  and Codex 0.159.2 installs the plugin and lists exactly these hooks. They have not yet run in a
+  Codex session end to end, and the benchmark has no Codex arm, so no number in the README is
+  Codex's.
+- **What her Codex hooks do not see.** Codex runs no hook for input sent to a shell session that is
+  already running, so a command typed into a shell that already passed the guards is not read by
+  them, a later `git push --no-verify` there included. An `apply_patch` or a heredoc run through
+  the shell reaches her as a shell command, and nothing it writes is scanned for secrets. Her git
+  hooks are the backstop, except against `--no-verify`, which skips them; the wall is branch
+  protection on the server.
+
+Without the plugin, `install.sh --host agents` gives Codex the house rules in `AGENTS.md` and the git
+hooks, as every other agent gets them.
+
 ## GitHub Copilot CLI: the plugin
 
 ```bash
@@ -254,7 +341,7 @@ object, where only `apply_patch`'s raw text comes as a string; a path that is no
 that are not one path or a flat, non-empty list) is refused, never read untranslated. A refusal
 also goes out as `permissionDecision: "deny"` with her message as the reason, the form Copilot
 shows the agent, and session start's context as `additionalContext`
-([ADR 0012](adr/0012-copilot-cli-plugin.md)).
+([ADR 0014](adr/0014-copilot-cli-plugin.md)).
 
 What differs from Claude Code:
 
@@ -359,6 +446,33 @@ enforcement, so read that exit as a gate that is off. Once your hook or your hoo
 running it again exits 0. Pin a release with `curl … | NONNA_REF=<tag> bash`. Prefer to read before
 you pipe? `curl -fsSLO …/install.sh`, read it, then `bash install.sh`.
 
+### Gemini CLI: the extension
+
+Gemini CLI can also take the house rules as an extension, with nothing to pipe into a shell. This
+works from v2.0.0: Gemini CLI installs the latest release, and v1.0.0, the one before, has no
+extension manifest.
+
+```bash
+gemini extensions install https://github.com/kapadias/nonna
+```
+
+It carries lite's six house rules and nothing else. **An extension installs no git hooks**, so until
+you add them, nothing but the agent's own care stops a commit on `main`, a secret or a push on a red
+suite. Run `install.sh --host gemini` from the root of the repository for the hooks. That also
+writes `GEMINI.md` with the same rules, so with both the agent reads them twice, which does no harm.
+
+- **It applies everywhere.** Gemini CLI enables an extension in every repository you use it in;
+  `gemini extensions disable nonna --scope workspace` turns it off in one. It changes nothing in
+  your repositories: Gemini CLI keeps it in `~/.gemini/extensions/nonna`.
+- **It installs a release.** Gemini CLI takes the latest GitHub release's source archive, not
+  `main`. `--ref v2.0.0` pins one, and `gemini extensions update nonna` moves to a newer one. The
+  release workflow refuses a tag that differs from the `version` in `gemini-extension.json`, the
+  number `gemini extensions list` shows.
+- **Check it.** Restart Gemini CLI. `gemini extensions list` shows `nonna` and, under
+  `Context files:`, `hosts/gemini-extension/GEMINI.md`, the file the extension loads; ask the agent
+  for the house rules. From a clone, `gemini extensions link .` tries your own changes.
+- **Uninstall.** `gemini extensions uninstall nonna`.
+
 ## Copy-in install, for teams
 
 `install.sh` puts the gates in the repository itself. Commit what it adds, and everyone who clones
@@ -439,6 +553,12 @@ that still runs hers. It tells you when your global git config still has `nonna.
 Clean the repositories first: once the plugin is gone its git hooks point at nothing, and git skips
 a hook it cannot find without a word. Until then, a new session in a repository sets her up again;
 to keep the plugin but not in one repository, use `/nonna off`.
+
+### The Gemini CLI extension
+
+`gemini extensions uninstall nonna` removes it. It added nothing to your repositories; the git
+hooks and `GEMINI.md` that `install.sh --host gemini` adds come out as in
+[a copy-in install](#a-copy-in-install).
 
 ### A copy-in install
 

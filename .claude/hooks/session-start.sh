@@ -14,7 +14,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 root="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 cd "$root" 2>/dev/null || exit 0
 [ "$(nonna_mode)" = off ] && exit 0 # off means off: nothing enforced, nothing said
-if [ "${NONNA_HOST:-}" = copilot ]; then # Copilot CLI: its reply (ADR-0012)
+if [ "${NONNA_HOST:-}" = copilot ]; then # Copilot CLI: its reply (ADR-0014)
   # shellcheck source=/dev/null
   . "$here/lib/host-copilot.sh"
   nonna_copilot_reply
@@ -149,7 +149,7 @@ msg="Nonna is on (${mode}). Gates live: branch guard (no commits or pushes to ma
 if [ -n "$gate" ]; then
   msg="${msg} Test gate: ${gate} runs before a turn that changed code can end, and before a push; a red suite blocks."
 else
-  msg="${msg} Test gate: off, no test command found here. The user can set one: /nonna test '<command>'."
+  msg="${msg} Test gate: off, no test command found here (or its runner is not installed). The user can set one: /nonna test '<command>'."
 fi
 
 # 5. Plugin install: carry the constitution in (nonna_core_carrier, lib/core.sh —
@@ -168,7 +168,7 @@ if [ "$(nonna_config nonna.announced)" != 2 ] && git rev-parse --git-dir >/dev/n
   if [ -n "$gate" ]; then
     user_msg="$user_msg Before the agent can say done, Nonna runs: ${gate}."
   else
-    user_msg="$user_msg She found no test command here, so the test gate is off; set one with: /nonna test '<command>'."
+    user_msg="$user_msg She found no test command here (or its runner is not installed), so the test gate is off; set one with: /nonna test '<command>'."
   fi
   if [ "${#wired[@]}" -gt 0 ]; then
     added="${wired[0]}"

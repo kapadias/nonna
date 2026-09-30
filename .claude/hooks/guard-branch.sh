@@ -81,7 +81,13 @@ raw_tool() { printf '%s' "$payload" | grep -oE '"tool_name"[[:space:]]*:[[:space
 has_field() { printf '%s' "$payload" | grep -qE "\"$1\"[[:space:]]*:[[:space:]]*\"[^\"]"; }
 
 payload="$(cat 2>/dev/null || true)"
-if [ "${NONNA_HOST:-}" = copilot ]; then # Copilot CLI: its payload and its reply (ADR-0012)
+# Codex's apply_patch, read a file at a time (lib/host-codex.sh; codex-hooks.json sets NONNA_HOST).
+if [ "${NONNA_HOST:-}" = codex ]; then
+  # shellcheck source=/dev/null
+  . "$here/lib/host-codex.sh"
+  payload="$(printf '%s' "$payload" | nonna_codex_payload "$here/guard-branch.sh")" || exit 2
+fi
+if [ "${NONNA_HOST:-}" = copilot ]; then # Copilot CLI: its payload and its reply (ADR-0014)
   # shellcheck source=/dev/null
   . "$here/lib/host-copilot.sh"
   nonna_copilot_reply

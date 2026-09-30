@@ -2,7 +2,7 @@
 # Sourced helper — GitHub Copilot CLI's hook payloads and replies, read and said as Claude Code's.
 # Copilot runs her gates from hooks/copilot-hooks.json, which puts NONNA_HOST=copilot in their
 # environment; a gate that needs this sources it inside its own `if [ "${NONNA_HOST:-}" = copilot ]`
-# block (ADR-0012). The host is what that file says, never a guess from the payload.
+# block (ADR-0014). The host is what that file says, never a guess from the payload.
 #
 # The hooks file names its events in PascalCase, so Copilot sends its VS Code compatible payload:
 # snake_case, with session_id, cwd, stop_hook_active and Claude Code's tool name (Bash, Write, Edit,

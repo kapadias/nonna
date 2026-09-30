@@ -1,4 +1,4 @@
-# ADR 0012 — A Copilot CLI plugin runs her gates in Copilot's hooks
+# ADR 0014 — A Copilot CLI plugin runs her gates in Copilot's hooks
 
 - **Status:** Accepted
 - **Date:** 2026-09-30

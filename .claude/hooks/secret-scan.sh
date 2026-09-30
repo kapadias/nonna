@@ -16,8 +16,14 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 [ "$(cd "${CLAUDE_PROJECT_DIR:-.}" 2>/dev/null && nonna_mode)" = off ] && exit 0 # off means off
 
 payload="$(cat 2>/dev/null || true)"
+# Codex's apply_patch, read a file at a time (lib/host-codex.sh; codex-hooks.json sets NONNA_HOST).
+if [ "${NONNA_HOST:-}" = codex ]; then
+  # shellcheck source=/dev/null
+  . "$here/lib/host-codex.sh"
+  payload="$(printf '%s' "$payload" | nonna_codex_payload "$here/secret-scan.sh")" || exit 2
+fi
 [ -n "$payload" ] || exit 0
-if [ "${NONNA_HOST:-}" = copilot ]; then # Copilot CLI: its payload and its reply (ADR-0012)
+if [ "${NONNA_HOST:-}" = copilot ]; then # Copilot CLI: its payload and its reply (ADR-0014)
   # shellcheck source=/dev/null
   . "$here/lib/host-copilot.sh"
   nonna_copilot_reply
