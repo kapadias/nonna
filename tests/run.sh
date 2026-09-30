@@ -3092,7 +3092,24 @@ while IFS= read -r order; do
 done <<<"$(python3 -c 'import itertools; [print(" ".join(map(str, p))) for r in (2, 3) for p in itertools.permutations(range(4), r)]')"
 check "copilot: a grep over several paths, in each of $eq_n orders, is refused exactly when one of them is${eq_bad:+ (not:$eq_bad)}" "" "$eq_bad"
 rm -rf "$EQ"
-rm -rf "$CPR" "$SR" "$SSR" "$CPD"
+# A copy-in install under Copilot, as it stands: Copilot also runs a repository's .claude/settings.json hooks,
+# with no NONNA_HOST, so they read its commands but not its file tools; beside the plugin, each gate runs
+# twice. Copilot users take the plugin.
+CI="$(mktemp -d)"; "${GIT[@]}" -C "$CI" init -q; "${GIT[@]}" -C "$CI" commit -q --allow-empty -m init; "${GIT[@]}" -C "$CI" branch -M main; copy_in "$CI"
+ci_cmd() { # <matcher> <script>: the command settings.json runs for it
+  python3 -c 'import json, sys
+for e in json.load(open(sys.argv[1]))["hooks"]["PreToolUse"]:
+    for h in e["hooks"] if e.get("matcher") == sys.argv[2] else []:
+        if h["command"].endswith("/" + sys.argv[3]):
+            print(h["command"]); sys.exit()' "$ROOT/.claude/settings.json" "$1" "$2"
+}
+pre Bash '{"command":"git commit -m x"}' | (cd "$CI" && CLAUDE_PROJECT_DIR="$CI" bash -c "$(ci_cmd Bash guard-branch.sh)" 2>/dev/null)
+check "copy-in under Copilot: its settings.json hooks still refuse a commit on main" 2 "$?"
+pre Write '{"path":"'"$CI"'/settings.py","file_text":"aws_id = \"'"$FAKE_AWS"'\""}' | (cd "$CI" && CLAUDE_PROJECT_DIR="$CI" bash -c "$(ci_cmd 'Edit|Write|MultiEdit' secret-scan.sh)" 2>/dev/null)
+check "copy-in under Copilot: they do not read create's file_text, so a key passes (the plugin reads it)" 0 "$?"
+pre Bash '{"command":"ls"}' | (cd "$CI" && CLAUDE_PROJECT_DIR='' bash -c "$(ci_cmd Bash guard-branch.sh)" 2>/dev/null)
+check "copy-in under Copilot: without CLAUDE_PROJECT_DIR its command cannot start (127, which Copilot takes as a denial)" 127 "$?"
+rm -rf "$CPR" "$SR" "$SSR" "$CPD" "$CI"
 # The files themselves: the hooks file, the plugin manifest and the marketplace entry.
 out="$(python3 -c 'import json, os, sys
 root = sys.argv[1]
