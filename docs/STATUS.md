@@ -167,11 +167,13 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
     - a string escape starts a token as `\n` and `\u0000` do (`\x01`, `\0`, `\000`, `\a`, `\e`,
       `\v`): once the real-length rule read only lines with a NUL, a key in a byte literal
       (`b"\x0a\xa4\x01sk-proj-…"`) had nothing else to find it, which the security re-review found;
-    - a shell subscript before a key (`${a[0]-key}`) is read to 64 characters: unbounded, grep read
-      from every `{a[` to the end of a line that never closed one, and 240 KB of them before a key
-      took 79 s. The route for values over 512 characters is tested both ways (a long secret is
-      one, a long sample is not), after a mutant that called every such value a sample passed the
-      suite.
+    - no shell subscript before a key is read: any `]-` starts a token, so a key after
+      `${a[0]-`, after a subscript of any length, or after a nested one (`${a[${b[0]}]-key}`) is
+      found, in fixed time per place. Read to its end, grep went from every `{a[` to the end of a
+      line that never closed one (240 KB of them before a key took 79 s); read to 64 characters, a
+      longer one hid the key, which both reviewers found. The route for values over 512 characters
+      is tested both ways (a long secret is one, a long sample is not), after a mutant that called
+      every such value a sample passed the suite.
   - **Secret scan:** it missed Anthropic keys and OpenAI's `sk-proj-`, `sk-svcacct-` and `sk-admin-`
     keys, which the docs said it caught. The write guard, pre-commit and pre-push now refuse them;
     golden tests hold each key type and a key given as a shell default, a property test holds the

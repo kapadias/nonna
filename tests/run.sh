@@ -237,6 +237,9 @@ long="$KEY_TAIL$KEY_TAIL$KEY_TAIL$KEY_TAIL$KEY_TAIL$KEY_TAIL$KEY_TAIL"
 printf 'token = "%s"' "${long:0:600}" | scan; check "a 600-character quoted secret is a secret" 0 "$?"
 printf 'token = "example%s"' "${long:0:600}" | scan; check "a 600-character quoted value with a sample word is a sample" 1 "$?"
 printf 'token = "<%s>"' "${long:0:600}" | scan; check "a 600-character <placeholder> is a sample" 1 "$?"
+# A subscript's own length or nesting does not hide the key after it: its closing "]-" starts a token.
+printf '${m[%s]-%s}' "$(printf 'k%.0s' 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70)" "$FAKE_OAI" | scan; check "detects an OpenAI key after a 70-character subscript" 0 "$?"
+printf '${a[${b[0]}]-%s}' "$FAKE_OAI" | scan; check "detects an OpenAI key after a nested subscript" 0 "$?"
 # The same for a key after many subscripts: ${a[0]-key} starts a token, and a subscript that never
 # closes must not make grep read to the end of the line from every one of them.
 subs='{a['; for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do subs="$subs$subs"; done # 98 KB

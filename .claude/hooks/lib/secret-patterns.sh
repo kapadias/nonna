@@ -139,9 +139,9 @@ _nonna_scan_text() {
   # starts after anything but a letter, digit or hyphen, after a JSON or string escape (\n, \u0000,
   # \x01, \0, \e: the raw payload the no-jq scan reads writes a control character so, and so does a
   # byte literal), after a URL escape (%3D, %20), and after a shell or compose default (${VAR:-key},
-  # ${1-key}, ${a[0]-key}, ${?-key}, ${!ref-key}). A subscript is read to 64 characters: unbounded,
-  # grep -o would read from every "{a[" to the end of a line that never closes one.
-  local tok='(^|[^A-Za-z0-9-]|:-|%[0-9A-Fa-f]{2}|\{!?([A-Za-z_][A-Za-z0-9_]*|[0-9]+|[@*#?$!-])(\[[^]]{0,64}\])?-|\\[abefnrtv]|\\u[0-9A-Fa-f]{4}|\\x[0-9A-Fa-f]{1,2}|\\[0-7]{1,3})'
+  # ${1-key}, ${?-key}, ${!ref-key}, ${a[0]-key}). Any "]-" starts one, so no subscript is read: one
+  # of any length or nesting (${a[${b[0]}]-key}) neither hides the key nor makes grep read past it.
+  local tok='(^|[^A-Za-z0-9-]|:-|%[0-9A-Fa-f]{2}|\{!?([A-Za-z_][A-Za-z0-9_]*|[0-9]+|[@*#?$!-])-|\]-|\\[abefnrtv]|\\u[0-9A-Fa-f]{4}|\\x[0-9A-Fa-f]{1,2}|\\[0-7]{1,3})'
   if _nonna_match 'OpenAI API key' "${tok}sk-(proj|svcacct|admin)-[A-Za-z0-9_-]{40,}" "$text" 'sk-(proj|svcacct|admin)-[a-z0-9_-]{40}'; then return 0; fi
   # Where the NUL bytes are gone, one as long as a real key (a tail of 80 or more; real ones have
   # about 156) is a key wherever it starts: in UTF-16 text a kana's high byte ("0") is glued to the
