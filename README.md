@@ -202,7 +202,7 @@ scan what the shell writes; the git hooks are the backstop there
 
 ² Through Copilot's `sessionStart`, `preToolUse` and `agentStop` hooks, which Copilot CLI documents
 for plugins (1.0.72 or later). Golden-tested against Copilot's documented hook payloads; not yet run
-in a live Copilot session. The branch guard does not yet read the files an `apply_patch` names.
+in a live Copilot session. An `apply_patch` is judged a file at a time, as Codex's is.
 [`docs/INSTALL.md`](docs/INSTALL.md#github-copilot-cli-the-plugin) says what differs.
 
 ³ Copilot CLI also runs the hooks `install.sh` writes into `.claude/settings.json`, untranslated: they
@@ -269,7 +269,7 @@ the plugin.
 ## Development
 
 ```bash
-bash tests/run.sh              # every gate proven to block and to allow (1557 golden tests)
+bash tests/run.sh              # every gate proven to block and to allow (1573 golden tests)
 python3 tests/harness_lint.py  # word budgets, host files in sync, hook wiring, README numbers
 ```
 

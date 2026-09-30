@@ -3390,6 +3390,42 @@ cop PreToolUse 'Edit|Write' secret-scan.sh "$CPR" "$(pre Edit '"*** Begin Patch\
 check "copilot: a clean apply_patch exits 0" 0 "$?"
 cop PreToolUse 'Edit|Write' secret-scan.sh "$CPR" "$(pre Edit '{"input":"*** Begin Patch\n*** Add File: settings.py\n+aws_id = \"'"$FAKE_AWS"'\"\n*** End Patch\n"}')" >/dev/null
 check "copilot: an apply_patch given as {input} that adds a key exits 2" 2 "$?"
+# An apply_patch is read as Codex's is (lib/patch.sh): each file it touches reaches both gates as Claude
+# Code's Write or Edit, with the lines it adds, whether its text comes raw or as input or patch.
+cpatch() { # <raw|input|patch> <patch line>...: an apply_patch's tool_input, its text in that form
+  printf '%s\n' '*** Begin Patch' "${@:2}" '*** End Patch' | python3 -c 'import json, sys
+text = sys.stdin.read()
+print(json.dumps(text if sys.argv[1] == "raw" else {sys.argv[1]: text}))' "$1"
+}
+for form in raw input patch; do
+  cop PreToolUse 'Edit|Write' guard-branch.sh "$CPR" "$(pre Edit "$(cpatch "$form" '*** Update File: .git/config' '@@' '+[core]')")" >/dev/null
+  check "copilot: an apply_patch ($form) that updates .git/config exits 2" 2 "$?"
+  cop PreToolUse 'Edit|Write' guard-branch.sh "$CPR" "$(pre Edit "$(cpatch "$form" '*** Update File: app.py' '@@' '-x = 1' '+x = 2' '*** Add File: .git/hooks/pre-commit' '+exit 0')")" >/dev/null
+  check "copilot: an apply_patch ($form) whose second file is .git/hooks/pre-commit exits 2" 2 "$?"
+  cop PreToolUse 'Edit|Write' secret-scan.sh "$CPR" "$(pre Edit "$(cpatch "$form" '*** Add File: tests/fixtures/keys.py' "+aws_id = \"$FAKE_AWS\"" '*** Add File: src/settings.py' "+aws_id = \"$FAKE_AWS\"")")" >/dev/null
+  check "copilot: an apply_patch ($form) with a fixture first and a key in its second file exits 2" 2 "$?"
+  clean="$(cpatch "$form" '*** Update File: app.py' '@@' '-x = 1' '+x = 2' '*** Add File: docs/notes.md' '+Notes.' '*** Delete File: old.py')"
+  cop PreToolUse 'Edit|Write' secret-scan.sh "$CPR" "$(pre Edit "$clean")" >/dev/null
+  check "copilot: a clean apply_patch ($form) over three files exits 0 (secret guard)" 0 "$?"
+  cop PreToolUse 'Edit|Write' guard-branch.sh "$CPR" "$(pre Edit "$clean")" >/dev/null
+  check "copilot: a clean apply_patch ($form) over three files exits 0 (branch guard)" 0 "$?"
+done
+# An Edit that names a path and carries a patch is judged both ways.
+jstr="$(cpatch input '*** Update File: .git/config' '@@' '+[core]' | python3 -c 'import json, sys
+d = json.load(sys.stdin); d.update({"path": "app.py", "old_str": "x = 1", "new_str": "x = 2"}); print(json.dumps(d))')"
+cop PreToolUse 'Edit|Write' guard-branch.sh "$CPR" "$(pre Edit "$jstr")" >/dev/null
+check "copilot: an edit of app.py that also carries a patch to .git/config exits 2" 2 "$?"
+# What the patch reader refuses is refused: a line outside its grammar, a patch over 256 KB, or one over
+# 200 files, too much to judge a file at a time before the hook times out (which lets the call through).
+cop PreToolUse 'Edit|Write' guard-branch.sh "$CPR" "$(pre Edit "$(cpatch raw '*** Frobnicate File: app.py' '+x = 2')")" >/dev/null
+check "copilot: an apply_patch outside the patch grammar exits 2" 2 "$?"
+out="$(cop PreToolUse 'Edit|Write' secret-scan.sh "$CPR" "$(pre Edit "$(cpatch raw '*** Add File: notes.md' "+$(printf '%0270000d' 0)")")")"
+check "copilot: an apply_patch over 256 KB exits 2" 2 "$?"
+contains "copilot: and the refusal says why" "over 256 KB" "$out"
+many=(); for i in $(seq 1 201); do many+=("*** Delete File: f$i.py"); done
+out="$(cop PreToolUse 'Edit|Write' guard-branch.sh "$CPR" "$(pre Edit "$(cpatch raw "${many[@]}")")")"
+check "copilot: an apply_patch over 200 files exits 2" 2 "$?"
+contains "copilot: and the refusal says why" "over 200 files" "$out"
 # Copilot's argument names are what its tools act on, so they are what the gates read: a Claude-named key
 # beside one (a decoy) never stands in for it, and every content key of a write is scanned.
 cop PreToolUse 'Edit|Write' secret-scan.sh "$CPR" "$(pre Write '{"path":"src/config.py","file_text":"aws_id = \"'"$FAKE_AWS"'\"","content":"x = 1"}')" >/dev/null
@@ -3524,6 +3560,16 @@ njc 'Edit|Write' secret-scan.sh Write '{"path":"a.py","file_text":"x = 1"'
 check "copilot: without jq, a payload that never closes exits 2" 2 "$?"
 njc 'Edit|Write' secret-scan.sh Edit '"*** Begin Patch\n*** Update File: app.py\n@@\n-x = 1\n+x = 2\n*** End Patch\n"'
 check "copilot: without jq, apply_patch's raw text is still read (a clean patch exits 0)" 0 "$?"
+njc 'Edit|Write' guard-branch.sh Edit "$(cpatch raw '*** Update File: .git/config' '@@' '+[core]')"
+check "copilot: without jq, an apply_patch that updates .git/config exits 2" 2 "$?"
+njc 'Edit|Write' guard-branch.sh Edit "$(cpatch input '*** Update File: app.py' '@@' '+x = 2' '*** Add File: .git/hooks/pre-commit' '+exit 0')"
+check "copilot: without jq, an apply_patch ({input}) whose second file is .git/hooks/pre-commit exits 2" 2 "$?"
+njc 'Edit|Write' secret-scan.sh Edit "$(cpatch patch '*** Add File: tests/fixtures/keys.py' "+aws_id = \"$FAKE_AWS\"" '*** Add File: src/settings.py' "+aws_id = \"$FAKE_AWS\"")"
+check "copilot: without jq, an apply_patch ({patch}) with a fixture first and a key in its second file exits 2" 2 "$?"
+njc 'Edit|Write' guard-branch.sh Edit '{"path":"app.py","old_str":"x = 1","new_str":"x = 2","input":"*** Begin Patch\n*** Update File: app.py\n@@\n+x = 3\n*** End Patch\n"}'
+check "copilot: without jq, a patch beside an edit's own arguments is refused" 2 "$?"
+njc 'Edit|Write' secret-scan.sh Edit "$(cpatch raw '*** Frobnicate File: app.py' '+x = 2')"
+check "copilot: without jq, an apply_patch outside the patch grammar exits 2" 2 "$?"
 # A jq that cannot run the translation: the call is refused, not read untranslated.
 printf '#!/bin/sh\nexit 5\n' > "$NJC/jq"; chmod +x "$NJC/jq"
 njc 'Edit|Write' secret-scan.sh Write '{"path":"a.py","file_text":"x = 1"}'

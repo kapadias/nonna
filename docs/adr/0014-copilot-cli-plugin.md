@@ -68,17 +68,20 @@ while a file in `.github/hooks/` adds hooks of its own.
    `session_id` and `stop_hook_active`, and takes `{decision, reason}` as it is.
 4. **Copilot's names win, and every target is judged.** Copilot's tools act on their own argument
    names, so those are what the gates read, whatever Claude-named key sits beside them (a decoy): a
-   write's content keys are joined and all scanned. A grep over several paths becomes one payload per
-   path, and `nonna_copilot_each` runs the gate on each, refusing on the first refusal; past 32
+   write's content keys are joined and all scanned. A grep over several paths becomes one payload
+   per path, and `nonna_copilot_each` runs the gate on each, refusing on the first refusal; past 32
    paths, which could not all be judged before the hook's timeout (which lets a call through), it is
-   refused up front. An `apply_patch` is scanned whole, so a patch that only removes a key is refused
-   too; the files it names wait for a patch reader shared with Codex's adapter. A call not in the
-   shape Copilot sends is refused, never read untranslated: a payload that is not a JSON object,
-   arguments that are not an object (only `apply_patch`'s raw text comes as a string, and never as
-   JSON in one), a path that is not a string, paths that are not one path or a flat, non-empty list.
-   Where the payload cannot be read safely it is refused too: without jq, a payload that does not
-   close, a list of paths, a Claude-named key beside Copilot's, or input to a shell; with jq, JSON it
-   cannot translate.
+   refused up front. An `apply_patch` is read as Codex's is (ADR-0013): `lib/patch.sh` reads it by
+   its grammar, and `lib/host-codex.sh`'s `_nonna_codex_files` makes each file it touches Claude
+   Code's Write or Edit, with the lines the patch adds, so no second parser and no second shape;
+   `nonna_copilot_each` runs the gate on each, and a patch the reader refuses (outside its grammar,
+   over 256 KB or 200 files) is refused. An Edit that names a path and carries a patch is judged
+   both ways. A call not in the shape Copilot sends is refused, never read untranslated: a payload
+   that is not a JSON object, arguments that are not an object (only `apply_patch`'s raw text comes
+   as a string, and never as JSON in one), a path that is not a string, paths that are not one path
+   or a flat, non-empty list. Where the payload cannot be read safely it is refused too: without jq,
+   a payload that does not close, a list of paths, a Claude-named key beside Copilot's, or input to
+   a shell; with jq, JSON it cannot translate.
 5. **Copilot's switches are the user's.** Under either agent, the branch guard refuses a write to
    `.github/copilot/settings*.json` or under `.github/hooks/`, by file tool or by shell, as it does
    `.git/config` and the git hooks.
@@ -96,6 +99,9 @@ while a file in `.github/hooks/` adds hooks of its own.
   are pointed to the plugin; a copy-in that reads Copilot's payloads is a separate change.
 - Under Copilot a guard that crashes denies the tool call, Copilot's rule, where Claude Code lets it
   through.
+- Copilot's and Codex's patches share one reader and one shape: a change to `lib/patch.sh` or to
+  `_nonna_codex_files` changes what both hosts' gates judge, and the Copilot adapter sources
+  Codex's to reach it. Only the lines a patch adds are scanned, as only an Edit's new text is.
 - `nonna_hook_is_hers` knows Claude Code's plugin directories, not Copilot's: `/nonna`'s scripts
   leave the git hooks the Copilot plugin wired, and a later Claude Code session in the same
   repository warns about them. Revisit when both plugins share repositories in practice.

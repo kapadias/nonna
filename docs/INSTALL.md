@@ -350,12 +350,15 @@ What differs from Claude Code:
   `git config nonna.testCmd '<command>'`. Or run her script yourself from the repository:
   `bash ~/.copilot/installed-plugins/nonna/nonna/.claude/skills/nonna/scripts/nonna.sh test '<command>'`
   (under `$COPILOT_HOME` if you set it).
-- **An `apply_patch` is read whole.** Its text is scanned for keys, so a patch that only removes a
-  key is refused too, but the branch guard does not yet read the files it names: a patch can still
-  change `.git/config`. A guard that crashes denies the tool call, as Copilot rules, where Claude
-  Code lets it through. Without jq, what the text alone cannot show safely (a payload that does not
-  close, arguments that are not an object, a list of paths, a Claude-named key beside Copilot's,
-  input to a shell) is refused.
+- **An `apply_patch` is read a file at a time.** `lib/patch.sh` reads it by its grammar, as it reads
+  Codex's, and each file the patch adds, updates, moves or deletes reaches both guards as Claude
+  Code's Write or Edit, with the lines the patch adds to it: a patch that touches `.git/config` or
+  adds a key to any of its files is refused. So is a patch the reader cannot read with certainty,
+  and one over 256 KB or 200 files, too much to judge before the hook times out. A guard that
+  crashes denies the tool call, as Copilot rules, where Claude Code lets it through. Without jq,
+  what the text alone cannot show safely (a payload that does not close, arguments that are not an
+  object, a list of paths, a Claude-named key beside Copilot's, input to a shell, a patch beside
+  other arguments) is refused.
 - **Copilot's own switches are the user's.** Under either agent, the branch guard refuses the agent
   writing `.github/copilot/settings*.json`, where one `disableAllHooks` line turns every hook off, or
   anything under `.github/hooks/`, by file tool or by shell.

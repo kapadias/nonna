@@ -161,12 +161,13 @@ Your AI agent says "done"; Nonna makes it prove it.
   then `copilot plugin install nonna@nonna`. `.github/plugin/` holds its marketplace and manifest;
   `hooks/copilot-hooks.json` runs her scripts from `.claude/hooks/` at `sessionStart`, `preToolUse`
   and `agentStop`, with `NONNA_HOST=copilot`. Copilot's agent can no longer end its turn on a red
-  suite, commit to `main` or write a key into a file. PascalCase event names bring Copilot's
-  payload close to Claude Code's; `.claude/hooks/lib/host-copilot.sh` renames the tools' arguments
+  suite, commit to `main` or write a key into a file. PascalCase event names bring Copilot's payload
+  close to Claude Code's; `.claude/hooks/lib/host-copilot.sh` renames the tools' arguments
   (Copilot's names win over any Claude-named decoy; a grep over up to 32 paths is judged path by
-  path, and one over more is refused; a call not in Copilot's shape is refused, never read
-  untranslated) and gives her replies in Copilot's form, a refusal's reason included. Under either
-  agent, the branch guard also refuses the agent writing Copilot's repository settings, where one
+  path, and one over more is refused; an `apply_patch` is judged a file at a time, through the patch
+  reader Codex's plugin brought; a call not in Copilot's shape is refused, never read untranslated)
+  and gives her replies in Copilot's form, a refusal's reason included. Under either agent, the
+  branch guard also refuses the agent writing Copilot's repository settings, where one
   `disableAllHooks` line turns every hook off, or its repository hooks. Golden-tested against
   Copilot's documented payloads and held equal to Claude Code's goldens; not yet run in a live
   Copilot session.

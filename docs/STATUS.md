@@ -80,8 +80,9 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   `session-start.sh`, `guard-branch.sh`, `secret-scan.sh` and `stop-dod.sh` with
   `NONNA_HOST=copilot`, under PascalCase event names, for which Copilot sends Claude Code's field
   and tool names. `.claude/hooks/lib/host-copilot.sh` renames the tools' arguments, Copilot's names
-  winning over any decoy, judges each path of a grep, refuses a call not in Copilot's shape, and
-  gives her replies in Copilot's form; one block in each of three scripts calls it. Under either
+  winning over any decoy, judges each path of a grep and each file of an `apply_patch` (through
+  `lib/patch.sh` and `_nonna_codex_files`, as Codex's are), refuses a call not in Copilot's shape,
+  and gives her replies in Copilot's form; one block in each of three scripts calls it. Under either
   agent the branch guard now refuses writes to Copilot's repository settings and hooks
   (`disableAllHooks` turns every hook off). Golden tests from Copilot's documented payloads, one of
   them holding the adapter equal to Claude Code's goldens; no live Copilot session has run it.
@@ -543,9 +544,7 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
 - The Copilot CLI plugin has not run in a live Copilot session: a smoke run (a commit on `main`, a
   key in a new file, a turn ending on a red suite) belongs on the go/no-go list. Its git hooks point
   into Copilot's plugin data, which `nonna_hook_is_hers` does not know, so `/nonna`'s scripts leave
-  them and a Claude Code session in the same repository warns about them (ADR-0014). The branch
-  guard does not yet read the files a Copilot `apply_patch` names; that waits on the patch reader
-  Codex's adapter brings (#25).
+  them and a Claude Code session in the same repository warns about them (ADR-0014).
 - The Codex plugin (#25) in a real Codex session: install it from `/plugins`, trust its hooks in
   `/hooks`, and see a red suite send the agent back and a patch with a key refused; then a Codex
   arm in `bench/` before the README says what it does for Codex.

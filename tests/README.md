@@ -111,15 +111,18 @@ Exercises each deterministic gate with fixed inputs and asserts the exit code:
   blocks, once; session start records the test command and the session's start, wires the git hooks,
   and answers in `additionalContext`. A Claude-named decoy beside Copilot's own key never stands in
   for it, and a grep over several paths is judged path by path, up to 32; more are refused. An
-  equivalence test runs Claude Code's own Write, Edit, Read and Grep goldens rewritten in Copilot's
-  names, and every order of a several-path grep, and wants the same exit codes. Writes to Copilot's
-  repository settings and hooks are refused under either agent. A call not in Copilot's shape
-  (arguments that are a string or a list, JSON in a string, a path that is a list, paths that nest
-  or are empty, truncated JSON) is refused. A Claude Code payload passes the adapter byte for byte,
-  nothing is translated without `NONNA_HOST=copilot`; without jq, what the text cannot show safely
-  is refused, and so is JSON jq cannot translate. A copy-in install's hooks under Copilot are pinned
-  as they are (untranslated). The hooks file, the manifests, and every command run from a path with
-  a space are checked too.
+  `apply_patch`, raw or as `input` or `patch`, is judged a file at a time by both guards: an update
+  of `.git/config`, a second file under `.git/hooks/`, and a key in a second file after a fixture
+  are refused, with jq and without; a clean patch over three files passes; and what the patch reader
+  refuses (outside its grammar, over 256 KB, over 200 files) is refused. An equivalence test runs
+  Claude Code's own Write, Edit, Read and Grep goldens rewritten in Copilot's names, and every order
+  of a several-path grep, and wants the same exit codes. Writes to Copilot's repository settings and
+  hooks are refused under either agent. A call not in Copilot's shape (arguments that are a string
+  or a list, JSON in a string, a path that is a list, paths that nest or are empty, truncated JSON)
+  is refused. A Claude Code payload passes the adapter byte for byte, nothing is translated without
+  `NONNA_HOST=copilot`; without jq, what the text cannot show safely is refused, and so is JSON jq
+  cannot translate. A copy-in install's hooks under Copilot are pinned as they are (untranslated).
+  The hooks file, the manifests, and every command run from a path with a space are checked too.
 - **assets/build.py** (the launch images): `run.sh` runs `test_assets.py`, then drives `--check` on
   the standard library alone (`python3 -I -S`, as CI's lint job would). It passes on the real
   tree, and on a copy that has had exactly one thing broken it fails, naming the file: an SVG
