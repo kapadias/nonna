@@ -68,6 +68,24 @@ never offered to the model, so it is not counted.
 
 History lives in `CHANGELOG.md` and `git log`. Entries here describe the current unit of work.
 
+- **2026-09-30** — The test gate finds five more stacks (#28). `nonna_detect_test_cmd` now names
+  `bundle exec rspec` or `bundle exec rake test`, `vendor/bin/pest` or `vendor/bin/phpunit`,
+  `./gradlew test`, `./mvnw test` or `mvn test`, `dotnet test` and `mix test`, each only when its
+  runner is there (`command -v`, or an executable file; a JVM or php too for the scripts a repository
+  ships); detection runs nothing. Decided: pytest stays first, the back ends come before
+  `package.json` (in a Rails, Laravel or Phoenix app it serves the front end), `go.mod` and
+  `Cargo.toml` keep their places. Review round 1: a row whose runner is missing is skipped and
+  detection goes on to the rows below, so no repository is gated less than on `develop` (only
+  pytest's row still claims its repository). Markers beyond the issue's list, each for a named input:
+  Ruby needs a `Gemfile` and `.rspec` or `spec/spec_helper.rb` (a Node project's Jasmine `spec/`
+  would get `bundle exec rspec` otherwise), and `dotnet test` is named for exactly one file of
+  MSBuild's own glob `*.sln *.slnx *.*proj` (several stop it with MSB1011). Tests: golden per
+  language, the fall-through, and a property over 312 seeded piles of marker files and runners
+  against a table (`tests/detect_property.py`). ADR-0011 lists the marker-file routes a copy-in
+  install leaves an agent: pytest's claim, and wrapper scripts it writes itself.
+  `nonna_test_digest` does not learn their failure lines yet, and the session-start "Detected stack"
+  label still knows only node, python, go and rust.
+
 - **2026-09-30** — No demo video in the repository's tree. The README's demo (a gif, an mp4 and the
   raw recording of one session, and the page on how it was recorded) is removed with its block in
   the README, and the split-screen film on `chore/17-demo` is not merged: both are launch
