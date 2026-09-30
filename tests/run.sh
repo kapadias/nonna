@@ -33,7 +33,7 @@ CLAUDE_CONFIG_DIR="$(mktemp -d)"; export CLAUDE_CONFIG_DIR
 GIT_CONFIG_GLOBAL="$CLAUDE_CONFIG_DIR/gitconfig"; : > "$GIT_CONFIG_GLOBAL"; export GIT_CONFIG_GLOBAL
 GIT_CONFIG_NOSYSTEM=1; export GIT_CONFIG_NOSYSTEM
 unset NONNA_MODE NONNA_TEST_CMD NONNA_TEST_TIMEOUT NONNA_LADDER CLAUDE_PLUGIN_OPTION_MODE \
-  CLAUDE_PLUGIN_OPTION_RUN_TESTS CLAUDE_PLUGIN_ROOT CLAUDE_PLUGIN_DATA CLAUDE_PROJECT_DIR
+  CLAUDE_PLUGIN_OPTION_RUN_TESTS CLAUDE_PLUGIN_ROOT CLAUDE_PLUGIN_DATA CLAUDE_PROJECT_DIR NONNA_HOST
 
 check() { # <desc> <expected_exit> <actual_exit>
   if [ "$2" = "$3" ]; then
@@ -2868,6 +2868,150 @@ space_run "$SP/.claude/hooks/hooks.json"
 check "hooks.json: every command runs from a plugin root with a space (ran $ran)${bad_cmds:+ (not: $bad_cmds)}" 0 "$rc"
 space_run "$SP/.claude/settings.json"
 check "settings.json: every command runs from a project dir with a space (ran $ran)${bad_cmds:+ (not: $bad_cmds)}" 0 "$rc"
+rm -rf "$(dirname "$SP")"
+
+echo "== Copilot CLI plugin (hooks/copilot-hooks.json runs her gates with NONNA_HOST=copilot) =="
+# The plugin's root is this repository. Its hooks file names the events in PascalCase, so Copilot sends
+# its VS Code compatible payload: snake_case, with Claude Code's tool name. The payloads are the
+# documented ones (docs.github.com/en/copilot/reference/hooks-reference), each tool's arguments as
+# Copilot CLI 1.0.89 defines them: bash {command, description, mode, initial_wait}, create {path,
+# file_text}, edit {path, old_str, new_str}, view {path}, grep {pattern, paths}, str_replace_editor
+# {command, path}, apply_patch its raw patch text. No Copilot runs: each gate runs as the file wires it.
+CPH="$ROOT/hooks/copilot-hooks.json"
+cop_cmd() { # <event> <matcher, - for none> <script>: the command the hooks file runs for it, its env first
+  python3 -c 'import json, shlex, sys
+try:
+    hooks = json.load(open(sys.argv[1]))["hooks"]
+except Exception:
+    sys.exit(0)
+for e in hooks.get(sys.argv[2], []):
+    if e.get("matcher", "-") == sys.argv[3] and "/.claude/hooks/" + sys.argv[4] in e.get("bash", ""):
+        env = [k + "=" + shlex.quote(v) for k, v in sorted(e.get("env", {}).items())]
+        print(" ".join(["env"] + env + [e["bash"]]))
+        break' "$CPH" "$1" "$2" "$3"
+}
+cop() { # <event> <matcher> <script> <repo> <payload>: runs it as Copilot would; its stdout and exit
+  local cmd; cmd="$(cop_cmd "$1" "$2" "$3")"
+  [ -n "$cmd" ] || return 99 # not wired
+  printf '%s' "$5" | (cd "$4" && CLAUDE_PLUGIN_ROOT="$ROOT" CLAUDE_PROJECT_DIR="$4" bash -c "$cmd" 2>/dev/null)
+}
+CPR="$(mktemp -d)"; "${GIT[@]}" -C "$CPR" init -q; "${GIT[@]}" -C "$CPR" commit -q --allow-empty -m init; "${GIT[@]}" -C "$CPR" branch -M main
+pre() { # <tool_name> <tool_input>: Copilot's PreToolUse payload for a tool call in $CPR
+  printf '{"hook_event_name":"PreToolUse","session_id":"c0p1l07-5e55","timestamp":"2026-09-30T12:00:00.000Z","cwd":"%s","tool_name":"%s","tool_input":%s}' "$CPR" "$1" "$2"
+}
+out="$(cop PreToolUse Bash guard-branch.sh "$CPR" "$(pre Bash '{"command":"git commit -m x","description":"Commit the change","mode":"sync","initial_wait":30}')")"
+check "copilot: git commit on main exits 2" 2 "$?"
+contains "copilot: the refusal is Copilot's deny, which it shows the agent" '"permissionDecision":"deny"' "$out"
+contains "copilot: with her reason as permissionDecisionReason" "Make a branch" "$(printf '%s' "$out" | jq -r '.permissionDecisionReason // empty' 2>/dev/null)"
+out="$(cop PreToolUse 'Edit|Write' secret-scan.sh "$CPR" "$(pre Write '{"path":"'"$CPR"'/settings.py","file_text":"aws_id = \"'"$FAKE_AWS"'\"\n"}')")"
+check "copilot: a new file holding a key (create's file_text) exits 2" 2 "$?"
+contains "copilot: and the agent is told why" "house key" "$out"
+edit='{"path":"'"$CPR"'/app.py","old_str":"x = 1","new_str":"x = 2"}'
+cop PreToolUse 'Edit|Write' secret-scan.sh "$CPR" "$(pre Edit "$edit")" >/dev/null; check "copilot: a clean edit exits 0 (secret guard)" 0 "$?"
+cop PreToolUse 'Edit|Write' guard-branch.sh "$CPR" "$(pre Edit "$edit")" >/dev/null; check "copilot: a clean edit exits 0 (branch guard, which only warns on main)" 0 "$?"
+cop PreToolUse 'Edit|Write' guard-branch.sh "$CPR" "$(pre Edit '{"path":"'"$CPR"'/.git/config","old_str":"[core]","new_str":"[core]\n\tbare = false"}')" >/dev/null
+check "copilot: an edit of .git/config (edit's path) exits 2" 2 "$?"
+cop PreToolUse 'Read|Grep' secret-scan.sh "$CPR" "$(pre Read '{"path":"'"$CPR"'/.env"}')" >/dev/null; check "copilot: a view of .env exits 2" 2 "$?"
+cop PreToolUse 'Read|Grep' secret-scan.sh "$CPR" "$(pre Grep '{"pattern":".","paths":["'"$CPR"'/.env"]}')" >/dev/null; check "copilot: a grep of .env (grep's paths) exits 2" 2 "$?"
+cop PreToolUse 'Edit|Write' secret-scan.sh "$CPR" "$(pre Edit '{"command":"view","path":"'"$CPR"'/.env"}')" >/dev/null; check "copilot: a view of .env through str_replace_editor (an Edit) exits 2" 2 "$?"
+cop PreToolUse 'Edit|Write' secret-scan.sh "$CPR" "$(pre Edit '"*** Begin Patch\n*** Add File: settings.py\n+aws_id = \"'"$FAKE_AWS"'\"\n*** End Patch\n"')" >/dev/null
+check "copilot: an apply_patch that adds a key (raw patch text) exits 2" 2 "$?"
+cop PreToolUse 'Edit|Write' secret-scan.sh "$CPR" "$(pre Edit '"*** Begin Patch\n*** Update File: app.py\n@@\n-x = 1\n+x = 2\n*** End Patch\n"')" >/dev/null
+check "copilot: a clean apply_patch exits 0" 0 "$?"
+# The host is whatever the hooks file says, never guessed from the payload; Claude Code's own payloads
+# go through the adapter byte for byte.
+printf '%s' "$(pre Write '{"path":"a.py","file_text":"aws_id = \"'"$FAKE_AWS"'\""}')" | CLAUDE_PROJECT_DIR="$CPR" "$HOOKS/secret-scan.sh" 2>/dev/null
+check "copilot: without NONNA_HOST=copilot, Copilot's argument names are not read (the host is never sniffed)" 0 "$?"
+cl='{"tool_name":"Grep", "tool_input":{"pattern":"x","path":"src"}}'
+check "copilot: a Claude Code payload passes the adapter byte for byte" 0 "$( . "$HOOKS/lib/host-copilot.sh" 2>/dev/null
+  if [ "$(printf '%s' "$cl" | nonna_copilot_payload 2>/dev/null)" = "$cl" ]; then echo 0; else echo 1; fi)"
+# Without jq the adapter renames Copilot's path in the text, where the guard's own reader finds it.
+NJC="$(mktemp -d)"
+for b in bash sh env cat grep sed head tail tr cut awk dirname basename git mktemp touch; do
+  p="$(command -v "$b" 2>/dev/null || true)"; if [ -n "$p" ]; then ln -s "$p" "$NJC/$b" 2>/dev/null || true; fi
+done
+cmd="$(cop_cmd PreToolUse 'Edit|Write' guard-branch.sh)"
+pre Edit '{"path":"'"$CPR"'/.git/config","old_str":"[core]","new_str":"[core]"}' \
+  | (cd "$CPR" && PATH="$NJC" CLAUDE_PLUGIN_ROOT="$ROOT" CLAUDE_PROJECT_DIR="$CPR" bash -c "${cmd:-exit 99}" 2>/dev/null)
+check "copilot: without jq, an edit of .git/config still exits 2" 2 "$?"
+rm -rf "$NJC"
+# Stop: the same Stop payload (stop_hook_active, decision/reason) as Claude Code's, a session_id in it.
+SR="$(mktemp -d)"; "${GIT[@]}" -C "$SR" init -q; printf 'x = 1\n' > "$SR/app.py"; "${GIT[@]}" -C "$SR" add -A >/dev/null; "${GIT[@]}" -C "$SR" commit -qm init
+git -C "$SR" config nonna.testCmd false # what session start records under the plugin; here the suite is red
+printf 'x = 2\n' > "$SR/app.py"
+stop() { printf '{"hook_event_name":"Stop","session_id":"c0p1l07-5e55","timestamp":"2026-09-30T12:00:00.000Z","cwd":"%s","transcript_path":"/tmp/t.jsonl","stop_reason":"end_turn","stop_hook_active":%s}' "$SR" "$1"; }
+out="$(cop Stop - stop-dod.sh "$SR" "$(stop false)")"
+contains "copilot: agentStop (Stop) on a red suite blocks" '"decision":"block"' "$out"
+contains "copilot: and says the tests said no" "the tests say no" "$out"
+out="$(cop Stop - stop-dod.sh "$SR" "$(stop true)")"
+printf '%s' "$out" | grep -q '"decision"'; check "copilot: the next stop, stop_hook_active true, goes through" 1 "$?"
+# SessionStart: what it records and wires, and its context as Copilot reads it (top-level additionalContext).
+SSR="$(mktemp -d)"; "${GIT[@]}" -C "$SSR" init -q; printf 'module x\n' > "$SSR/go.mod"; "${GIT[@]}" -C "$SSR" add -A >/dev/null; "${GIT[@]}" -C "$SSR" commit -qm init
+CPD="$(mktemp -d)"
+out="$(CLAUDE_PLUGIN_DATA="$CPD" cop SessionStart - session-start.sh "$SSR" '{"hook_event_name":"SessionStart","session_id":"c0p1l07-5e55","timestamp":"2026-09-30T12:00:00.000Z","cwd":"'"$SSR"'","source":"startup"}')"
+contains "copilot: session start's context is a top-level additionalContext" "Nonna is on (lite)" "$(printf '%s' "$out" | tail -n 1 | jq -r '.additionalContext // empty' 2>/dev/null)"
+contains "copilot: and what she did is shown to the user as a progress line" '"type":"progress"' "$out"
+check "copilot: session start records the test command for the stop gate" "go test ./..." "$(git -C "$SSR" config --get nonna.testCmd)"
+check "copilot: session start records where the session began" 0 \
+  "$(if [ -f "$(git -C "$SSR" rev-parse --absolute-git-dir)/nonna/base-c0p1l07-5e55" ]; then echo 0; else echo 1; fi)"
+check "copilot: session start wires both git hooks, through the plugin's data directory" "$CPD/current/hooks/require-status-sync.sh $CPD/current/hooks/pre-commit.sh" \
+  "$(readlink "$SSR/.git/hooks/pre-push") $(readlink "$SSR/.git/hooks/pre-commit")"
+rm -rf "$CPR" "$SR" "$SSR" "$CPD"
+# The files themselves: the hooks file, the plugin manifest and the marketplace entry.
+out="$(python3 -c 'import json, os, sys
+root = sys.argv[1]
+bad = []
+try:
+    cfg = json.load(open(os.path.join(root, "hooks/copilot-hooks.json")))
+except Exception as e:
+    print("unreadable: %s" % e); sys.exit(0)
+if cfg.get("version") != 1: bad.append("version is not 1")
+if sorted(cfg.get("hooks", {})) != ["PreToolUse", "SessionStart", "Stop"]: bad.append("events %s" % sorted(cfg.get("hooks", {})))
+want = {("PreToolUse", "Bash"): ["guard-branch.sh", "secret-scan.sh"], ("PreToolUse", "Edit|Write"): ["guard-branch.sh", "secret-scan.sh"],
+        ("PreToolUse", "Read|Grep"): ["secret-scan.sh"], ("Stop", "-"): ["stop-dod.sh"], ("SessionStart", "-"): ["session-start.sh"]}
+got = {}
+for ev, entries in cfg.get("hooks", {}).items():
+    for e in entries:
+        cmd = e.get("bash", "")
+        script = cmd.split("/.claude/hooks/")[-1].split(" ")[0] if cmd.startswith("\"${CLAUDE_PLUGIN_ROOT}\"/.claude/hooks/") else None
+        if not script or not os.path.isfile(os.path.join(root, ".claude/hooks", script)): bad.append("command %r" % cmd)
+        if e.get("type") != "command": bad.append("type of %r" % cmd)
+        if e.get("env") != {"NONNA_HOST": "copilot"}: bad.append("env of %r" % cmd)
+        if not isinstance(e.get("timeoutSec"), int) or e["timeoutSec"] < (300 if ev == "Stop" else 60): bad.append("timeoutSec of %r" % cmd)
+        got.setdefault((ev, e.get("matcher", "-")), []).append(script)
+if got != want: bad.append("wiring %s" % sorted(got.items()))
+print("; ".join(bad))' "$ROOT")"
+check "copilot hooks: version 1, PascalCase events, the core gates, NONNA_HOST=copilot, timeouts no shorter than Claude Code's${out:+ ($out)}" "" "$out"
+out="$(python3 -c 'import json, os, sys
+root = sys.argv[1]
+bad = []
+try:
+    plugin = json.load(open(os.path.join(root, ".github/plugin/plugin.json")))
+    market = json.load(open(os.path.join(root, ".github/plugin/marketplace.json")))
+    claude = json.load(open(os.path.join(root, ".claude/.claude-plugin/plugin.json")))
+except Exception as e:
+    print("unreadable: %s" % e); sys.exit(0)
+entry = (market.get("plugins") or [{}])[0]
+if plugin.get("name") != "nonna" or market.get("name") != "nonna" or entry.get("name") != "nonna": bad.append("names")
+if not (plugin.get("version") == entry.get("version") == claude.get("version")): bad.append("versions")
+if plugin.get("hooks") != "hooks/copilot-hooks.json": bad.append("hooks path %r" % plugin.get("hooks"))
+if os.path.realpath(os.path.join(root, entry.get("source", "-"))) != os.path.realpath(root): bad.append("source %r" % entry.get("source"))
+print("; ".join(bad))' "$ROOT")"
+check "copilot plugin: .github/plugin/ names nonna at Claude Code's version, this root, and its hooks file${out:+ ($out)}" "" "$out"
+SP="$(mktemp -d)/with space"; mkdir -p "$SP/hooks"; cp -R "$ROOT/.claude" "$SP/.claude"; cp "$CPH" "$SP/hooks/" 2>/dev/null; "${GIT[@]}" -C "$SP" init -q
+cop_unrunnable() { # each command in the Copilot hooks file that the shell could not start from $SP
+  python3 -c 'import json, shlex, sys
+for es in json.load(open(sys.argv[1]))["hooks"].values():
+    for e in es:
+        print(" ".join(["env"] + [k + "=" + shlex.quote(v) for k, v in sorted(e.get("env", {}).items())] + [e["bash"]]))' "$SP/hooks/copilot-hooks.json" 2>/dev/null \
+    | while IFS= read -r cmd; do
+      (cd "$SP" && printf '{}' | CLAUDE_PLUGIN_ROOT="$SP" CLAUDE_PLUGIN_DATA="$SP/.data" CLAUDE_PROJECT_DIR="$SP" bash -c "$cmd" >/dev/null 2>&1)
+      case $? in 126 | 127) printf '%s\n' "$cmd" ;; esac
+    done
+}
+bad_cmds="$(cop_unrunnable)"
+if [ -f "$SP/hooks/copilot-hooks.json" ] && [ -z "$bad_cmds" ]; then rc=0; else rc=1; fi
+check "copilot hooks: every command runs from a plugin root with a space${bad_cmds:+ (not: $bad_cmds)}" 0 "$rc"
 rm -rf "$(dirname "$SP")"
 
 echo "== harness_lint.py (the linter is itself a gate) =="

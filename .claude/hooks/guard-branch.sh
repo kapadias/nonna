@@ -80,6 +80,12 @@ raw_tool() { printf '%s' "$payload" | grep -oE '"tool_name"[[:space:]]*:[[:space
 has_field() { printf '%s' "$payload" | grep -qE "\"$1\"[[:space:]]*:[[:space:]]*\"[^\"]"; }
 
 payload="$(cat 2>/dev/null || true)"
+if [ "${NONNA_HOST:-}" = copilot ]; then # Copilot CLI: its payload and its reply (ADR-0012)
+  # shellcheck source=/dev/null
+  . "$here/lib/host-copilot.sh"
+  payload="$(printf '%s' "$payload" | nonna_copilot_payload)"
+  nonna_copilot_reply
+fi
 tool="$(printf '%s' "$payload" | nonna_json_field '.tool_name')"
 [ -n "$tool" ] || tool="$(raw_tool)" # a parser that failed (jq, awk) leaves the name empty
 

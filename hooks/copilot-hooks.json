@@ -1,0 +1,58 @@
+{
+  "version": 1,
+  "hooks": {
+    "SessionStart": [
+      {
+        "type": "command",
+        "bash": "\"${CLAUDE_PLUGIN_ROOT}\"/.claude/hooks/session-start.sh \"${CLAUDE_PLUGIN_DATA}\"",
+        "env": { "NONNA_HOST": "copilot" },
+        "timeoutSec": 60
+      }
+    ],
+    "PreToolUse": [
+      {
+        "type": "command",
+        "matcher": "Edit|Write",
+        "bash": "\"${CLAUDE_PLUGIN_ROOT}\"/.claude/hooks/guard-branch.sh",
+        "env": { "NONNA_HOST": "copilot" },
+        "timeoutSec": 60
+      },
+      {
+        "type": "command",
+        "matcher": "Edit|Write",
+        "bash": "\"${CLAUDE_PLUGIN_ROOT}\"/.claude/hooks/secret-scan.sh",
+        "env": { "NONNA_HOST": "copilot" },
+        "timeoutSec": 60
+      },
+      {
+        "type": "command",
+        "matcher": "Bash",
+        "bash": "\"${CLAUDE_PLUGIN_ROOT}\"/.claude/hooks/guard-branch.sh",
+        "env": { "NONNA_HOST": "copilot" },
+        "timeoutSec": 60
+      },
+      {
+        "type": "command",
+        "matcher": "Bash",
+        "bash": "\"${CLAUDE_PLUGIN_ROOT}\"/.claude/hooks/secret-scan.sh",
+        "env": { "NONNA_HOST": "copilot" },
+        "timeoutSec": 60
+      },
+      {
+        "type": "command",
+        "matcher": "Read|Grep",
+        "bash": "\"${CLAUDE_PLUGIN_ROOT}\"/.claude/hooks/secret-scan.sh",
+        "env": { "NONNA_HOST": "copilot" },
+        "timeoutSec": 60
+      }
+    ],
+    "Stop": [
+      {
+        "type": "command",
+        "bash": "\"${CLAUDE_PLUGIN_ROOT}\"/.claude/hooks/stop-dod.sh",
+        "env": { "NONNA_HOST": "copilot" },
+        "timeoutSec": 300
+      }
+    ]
+  }
+}

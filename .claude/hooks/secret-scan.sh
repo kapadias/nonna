@@ -17,6 +17,12 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 payload="$(cat 2>/dev/null || true)"
 [ -n "$payload" ] || exit 0
+if [ "${NONNA_HOST:-}" = copilot ]; then # Copilot CLI: its payload and its reply (ADR-0012)
+  # shellcheck source=/dev/null
+  . "$here/lib/host-copilot.sh"
+  payload="$(printf '%s' "$payload" | nonna_copilot_payload)"
+  nonna_copilot_reply
+fi
 
 # Read and Grep branch: the same secret files settings.json's permissions.deny refuses (Claude Code
 # applies Read denies to Grep as well). A plugin cannot carry permissions, so without this a plugin

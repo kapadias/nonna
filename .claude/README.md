@@ -65,7 +65,9 @@ discipline is **enforced by code, not prose**. Start with [`../CLAUDE.md`](../CL
   context emitter; `shell-words.awk` — how the shell will read a command, for the branch guard;
   `expand.awk` — its brace lists and globs, as the shell expands them;
   `tests.sh` — the test command, runner and failure digest; `lite.md` — lite's house
-  rules; `ladder.sh` — whether another plugin already states the ladder); plugin wiring in
+  rules; `ladder.sh` — whether another plugin already states the ladder; `host-copilot.sh` —
+  Copilot CLI's payloads and replies, read and said as Claude Code's, for the scripts
+  `../hooks/copilot-hooks.json` runs with `NONNA_HOST=copilot`, ADR-0012); plugin wiring in
   `hooks.json`, asserted equivalent to `settings.json` by the linter.
 - **`settings.json`** — denies reading secrets (`.env`/`*.pem`/`*.key`/`.ssh`/`.aws`/…) and
   `git push --force`, which the hooks also refuse, because a plugin cannot carry this file; wires the

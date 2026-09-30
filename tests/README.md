@@ -87,6 +87,15 @@ Exercises each deterministic gate with fixed inputs and asserts the exit code:
   bleed; fails closed on an absent version, an empty version, a missing
   changelog, a whitespace-only section, and a version matched literally
   rather than as a regex.
+- **Copilot CLI plugin** (`hooks/copilot-hooks.json`, `lib/host-copilot.sh`, ADR-0012): each gate
+  runs as Copilot's hooks file wires it, on Copilot's documented payloads. `git commit` on `main`, a
+  new file holding a key, an edit of `.git/config`, a view or grep of `.env` and an `apply_patch`
+  that adds a key are refused, the reason in Copilot's `permissionDecisionReason`; a clean edit and a
+  clean patch pass; `agentStop` on a red suite blocks, once; session start records the test command
+  and the session's start, wires the git hooks, and answers in `additionalContext`. A Claude Code
+  payload passes the adapter byte for byte, nothing is translated without `NONNA_HOST=copilot`, and
+  without jq the `.git/config` edit is still refused. The hooks file, the manifests, and every
+  command run from a path with a space are checked too.
 - **assets/build.py** (the launch images): `run.sh` runs `test_assets.py`, then drives `--check` on
   the standard library alone (`python3 -I -S`, as CI's lint job would). It passes on the real
   tree, and on a copy that has had exactly one thing broken it fails, naming the file: an SVG
