@@ -2951,6 +2951,11 @@ check "codex: a patch that takes a key out passes (only what it adds is written)
 check "codex: a header led by another blank, after an Add hunk, is refused" 2 "$(cx_run PreToolUse '^apply_patch$' "$(cx_patch '*** Add File: a.py' '+x = 1' "$(printf '\v*** Update File: .git/config')" '+[core]')")"
 check "codex: a space-led Move to line is context, so the key after it is the updated file's" 2 "$(cx_run PreToolUse '^apply_patch$' "$(cx_patch '*** Update File: config.py' ' *** Move to: tests/fixtures/keys.py' "+aws_id = \"$FAKE_AWS\"")")"
 check "codex: a space-led Update File line is context, so the key after it is the updated file's" 2 "$(cx_run PreToolUse '^apply_patch$' "$(cx_patch '*** Update File: config.py' ' *** Update File: tests/fixtures/keys.py' "+aws_id = \"$FAKE_AWS\"")")"
+# Codex strips some blanks from a path's edges, so the branch guard would judge a path Codex does not
+# write: a path that starts or ends with one is refused.
+check "codex: a move to .git/config with a trailing space is refused by the branch guard" 2 "$(cx_patch '*** Update File: app.txt' '*** Move to: .git/config ' '@@' '-a' '+x' | (cd "$CXR" && NONNA_HOST=codex "$HOOKS/guard-branch.sh" >/dev/null 2>&1); printf '%s' "$?")"
+check "codex: a move to .git/config with a trailing no-break space is refused by the branch guard" 2 "$(cx_patch '*** Update File: app.txt' "$(printf '*** Move to: .git/config\302\240')" '@@' '-a' '+x' | (cd "$CXR" && NONNA_HOST=codex "$HOOKS/guard-branch.sh" >/dev/null 2>&1); printf '%s' "$?")"
+check "codex: an Add File path led by a tab is refused by the branch guard" 2 "$(cx_patch "$(printf '*** Add File: \t.git/hooks/pre-push')" '+x' | (cd "$CXR" && NONNA_HOST=codex "$HOOKS/guard-branch.sh" >/dev/null 2>&1); printf '%s' "$?")"
 # What the gates read, exactly: a Write of each file the patch adds and an Edit of each it updates, with the
 # lines it adds; an Edit with nothing added of each file it deletes or moves away. A stand-in gate records them.
 REC="$(mktemp -d)"; printf 'cat >> "%s/seen"; echo >> "%s/seen"\n' "$REC" "$REC" > "$REC/gate.sh"

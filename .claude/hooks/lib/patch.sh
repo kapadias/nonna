@@ -21,9 +21,10 @@
 #   +, - or @@, or is *** End of File, belongs to the hunk and is never a header, and *** Move to:
 #   counts only on the line after the hunk's header, as it is written. Every other line must be
 #   *** Begin Patch, *** End Patch or a file header once spaces, tabs and CRs are stripped from its
-#   ends, and a file name must end in printable ASCII (a parser may trim more kinds of blank than
-#   those three). A CR at a line's end is dropped first, as a parser splits lines, and a patch that
-#   names no file is refused: the grammar puts one in every patch.
+#   ends. A path, a header's or a move's, whose first or last character is a blank, a control
+#   character or non-ASCII is refused: a parser trims some of these, and the gate cannot know the
+#   path it would write. A CR at a line's end is dropped first, as a parser splits lines, and a patch
+#   that names no file is refused: the grammar puts one in every patch.
 #   A \001 in the patch (how a caller keeps a NUL byte, lib/secret-patterns.sh) is written as \u0001.
 #   Characters are escaped one at a time and joined pairwise, in n log n time in any awk (as
 #   lib/json.sh decodes).
@@ -47,6 +48,9 @@ nonna_patch_files() {
       return nf
     }
     function added(line) { ln[++nl] = esc(substr(line, 2)); hi[cur] = nl }
+    function edge_ok(path) { # printable ASCII at both ends: nothing a parser could trim
+      return path != "" && index(PRINTABLE, substr(path, 1, 1)) && index(PRINTABLE, substr(path, length(path), 1))
+    }
     BEGIN {
       for (i = 1; i < 32; i++) E[sprintf("%c", i)] = sprintf("\\u%04x", i)
       E["\\"] = "\\\\"; E["\""] = "\\\""
@@ -61,7 +65,11 @@ nonna_patch_files() {
         st = ""
       }
       if (st == "update") {
-        if (first && index(line, "*** Move to: ") == 1) { first = 0; mv[cur] = esc(substr(line, 14)); next }
+        if (first && index(line, "*** Move to: ") == 1) {
+          first = 0; to = substr(line, 14)
+          if (!edge_ok(to)) { bad = 1; exit }
+          mv[cur] = esc(to); next
+        }
         first = 0; c = substr(line, 1, 1)
         if (c == "+") { added(line); next }
         if (line == "" || c == " " || c == "-" || index(line, "@@") == 1 || line == "*** End of File") next
@@ -73,7 +81,7 @@ nonna_patch_files() {
       else if (index(t, "*** Update File: ") == 1) { op = "Update"; path = substr(t, 18); st = "update"; first = 1 }
       else if (index(t, "*** Delete File: ") == 1) { op = "Delete"; path = substr(t, 18); st = "" }
       else { bad = 1; exit }
-      if (path == "" || !index(PRINTABLE, substr(path, length(path), 1))) { bad = 1; exit }
+      if (!edge_ok(path)) { bad = 1; exit }
       cur = file(op, path)
       if (st == "") cur = 0
     }

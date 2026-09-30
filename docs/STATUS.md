@@ -80,7 +80,7 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   grammar does not allow now refuses the patch, and so does a patch over 256 KB or 200 files, too
   much to check before a hook times out. `lib/host-codex.sh` turns each record into Claude Code's
   Write or Edit with the lines it adds, and the gate checks each. Codex's `Stop` and `SessionStart`
-  payloads and answers already match. 50 golden tests (Codex's documented payloads, the grammar,
+  payloads and answers already match. 53 golden tests (Codex's documented payloads, the grammar,
   the lint's new checks) and the release's version check. Not yet run in a Codex session end to
   end, and no Codex arm in `bench/`, so the README makes no parity claim; INSTALL says what the
   Codex hooks do not see (input to a shell already running, a patch written through the shell).

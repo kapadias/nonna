@@ -66,9 +66,10 @@ has hooks with Nonna's contracts: exit code 2 blocks a `PreToolUse` call, a `Sto
    allowlist rather than by following Codex's trim rules, which a header slipped past in review: a
    line an Update hunk may hold is never a header, `*** Move to:` counts only as written and on the
    line after its header, and any other line must be `*** Begin Patch`, `*** End Patch` or a file
-   header once spaces, tabs and CRs are stripped, its file name ending in printable ASCII. So is a
-   patch that cannot be decoded (jq or awk failing), or that names no file, since the grammar puts
-   one in every patch.
+   header once spaces, tabs and CRs are stripped. A path, a header's or a move's, whose first or
+   last character is a blank, a control character or non-ASCII is refused, because Codex trims some
+   of these and the guard cannot know the path it would write. So is a patch that cannot be decoded
+   (jq or awk failing), or that names no file, since the grammar puts one in every patch.
 5. **The lint holds the Codex file to its own form and core gates**: the command form above, the
    gates on `Bash`, `apply_patch`, `Stop` and `SessionStart`, and a manifest that names the file on
    the plugin's version. The release checks the Codex manifest's version with the others.
