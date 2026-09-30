@@ -2915,6 +2915,11 @@ rm -rf "$RD"
 RD="$(rel_repo)"
 out="$(cd "$RD" && GITHUB_REF_NAME="v9.9.9" bash "$RS" 2>&1)"; check "release: a tag none of the manifests agree with fails" 1 "$?"
 contains "release: ...and names the first manifest that disagrees" "plugin.json says $RV" "$out"
+rm -rf "$RD"
+# A tree with no extension manifest must not publish: the step fails closed rather than skipping the file.
+RD="$(rel_repo)"; rm "$RD/gemini-extension.json"
+out="$(cd "$RD" && GITHUB_REF_NAME="v$RV" bash "$RS" 2>&1)"; check "release: a tree with no gemini-extension.json fails closed" 1 "$?"
+contains "release: ...and says which file is missing" "gemini-extension.json" "$out"
 rm -rf "$RD" "$RS"
 
 echo "== hook wiring (every command survives a path with a space) =="
