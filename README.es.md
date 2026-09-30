@@ -194,7 +194,7 @@ Qué recibe cada agente:
 |                                                                                                 | Claude Code | Codex (plugin) | Cualquier otro agente |
 | ----------------------------------------------------------------------------------------------- | :---------: | :------------: | :-------------------: |
 | Las reglas de la casa de Nonna                                                                  |     sí      |       sí       |          sí           |
-| Hooks de git: ningún commit en `main`, ningún secreto en staging                                |     sí      |       sí       |          sí           |
+| Hooks de git: ningún commit en `main` ni con un secreto en staging                              |     sí      |       sí       |          sí           |
 | Hooks de git: ningún push con pruebas en rojo o con un secreto                                  |     sí      |       sí       |          sí           |
 | No puede terminar su turno con la suite en rojo; "where's the test?"                            |     sí      |   conectado¹   |          no           |
 | Guardián de secretos en cada escritura y lectura de archivos, guardián de ramas en cada comando |     sí      |   conectado¹   |          no           |
