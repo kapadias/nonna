@@ -5,14 +5,14 @@
 
 <img src="assets/nonna-banner.svg" alt="Nonna, la abuela de la cuchara de palo: le da igual que haya compilado." width="100%">
 
-**Tu agente de IA dice "listo". Nonna le hace demostrarlo.**
+**Tu agente de IA dice "listo". Nonna hace que lo demuestre.**
 
 <a href="https://github.com/kapadias/nonna/releases"><img src="https://img.shields.io/github/v/release/kapadias/nonna?style=flat-square&color=2E4A3A&label=release" alt="Última versión"></a>
 <a href="https://github.com/kapadias/nonna/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/kapadias/nonna/ci.yml?branch=main&style=flat-square&label=gate%20tests" alt="Pruebas de los controles"></a>
 <a href="#otros-agentes"><img src="https://img.shields.io/badge/works_with-Claude_Code_·_Codex_·_Cursor_·_Copilot_·_Gemini_·_more-2E4A3A?style=flat-square" alt="Funciona con Claude Code, Codex, Cursor, Copilot, Gemini y más"></a>
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-5A4A3F?style=flat-square" alt="MIT"></a>
 
-**1<!--n:traps.plugin-lite.k--> de 64<!--n:traps.n--> ejecuciones tomó un atajo (sin Nonna: 24<!--n:traps.none.k-->) · 1<!--n:task.claims-done.plugin-lite.k--> de 8<!--n:task.n--> dijo "listo" con las pruebas en rojo (sin Nonna: 4<!--n:task.claims-done.none.k-->) · 0<!--n:task.push.plugin-lite.k--> de 8<!--n:task.n--> hizo push a `main` (sin Nonna: 8<!--n:task.push.none.k-->) · +$0.03<!--n:small.delta.cents--> por cambio**
+**1<!--n:traps.plugin-lite.k--> de 64<!--n:traps.n--> ejecuciones tomó un atajo (sin Nonna: 24<!--n:traps.none.k-->) · 1<!--n:task.claims-done.plugin-lite.k--> de 8<!--n:task.n--> dijo "listo" con las pruebas en rojo (sin Nonna: 4<!--n:task.claims-done.none.k-->) · 0<!--n:task.push.plugin-lite.k--> de 8<!--n:task.n--> hicieron push a `main` (sin Nonna: 8<!--n:task.push.none.k-->) · +$0.03<!--n:small.delta.cents--> por cambio**
 
 <sub>Claude Sonnet 5.5<!--n:model.sonnet--> y Haiku 4.5<!--n:model.haiku-->, 8<!--n:traps.tasks--> tareas trampa × 4<!--n:traps.reps--> ejecuciones cada una, comprobaciones ocultas, el plugin en modo lite. [Método y datos en bruto](bench/) · [reproducir](#reproducir)</sub>
 
@@ -20,7 +20,7 @@
 
 Los agentes dicen "listo" cuando un archivo de pruebas pasa y otro está roto. Nonna ejecuta toda tu
 suite de pruebas antes de dejar que el agente se detenga, y lo manda de vuelta cuando la suite está
-en rojo. También frena los commits y los push a `main`, los push forzados y los secretos escritos en
+en rojo. También bloquea los commits y los push a `main`, los push forzados y los secretos escritos en
 archivos. Nada de esto lo decide un modelo: lo decide el código de salida de tu comando de pruebas.
 
 ## Instalación
@@ -45,31 +45,31 @@ Es decir: Nonna está activa en este repositorio en modo lite; antes de que el a
 terminó, ejecuta `python3 -m pytest -q`; añadió `.git/hooks/pre-push` y `pre-commit`; y con `/nonna`
 lo ves o lo cambias.
 
-`/nonna` muestra qué hace cumplir y de dónde sale cada ajuste; `/nonna off` la apaga en este
+`/nonna` muestra qué hace cumplir y de dónde viene cada opción; `/nonna off` la apaga en este
 repositorio. ¿Usas Codex, Cursor, Copilot, Gemini u otro agente? Mira
 [otros agentes](#otros-agentes).
 
-## Qué revisa
+## Qué comprueba
 
-| Cuándo                                                           | Qué hace                      | Bloquea cuando                                                                                  |
-| ---------------------------------------------------------------- | ----------------------------- | ----------------------------------------------------------------------------------------------- |
-| El agente intenta terminar su turno después de cambiar código    | Ejecuta tu comando de pruebas | Sale con un código distinto de cero                                                             |
-| El agente cambió código y ninguna prueba                         | Pregunta "where's the test?"  | Una vez; se acepta una razón clara de por qué no hace falta ninguna                             |
-| El agente ejecuta `git commit` o `git push`                      | Guardián de ramas             | Commit o push a `main`, `master` o `develop`; cualquier push forzado; saltarse los hooks de git |
-| El agente escribe, lee o busca en archivos, o ejecuta un comando | Guardián de secretos          | El contenido parece una clave; lee `.env`, claves o credenciales                                |
-| Cualquiera ejecuta `git push`                                    | Hook `pre-push`               | Suite en rojo, o un secreto en cualquiera de los commits enviados                               |
-| Cualquiera ejecuta `git commit`                                  | Hook `pre-commit`             | En `main`, `master` o `develop`, o un secreto en staging                                        |
+| Cuándo                                                           | Qué hace                                     | Bloquea cuando                                                                                  |
+| ---------------------------------------------------------------- | -------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| El agente intenta terminar su turno después de cambiar código    | Ejecuta tu comando de pruebas                | Sale con un código distinto de cero                                                             |
+| El agente cambió código sin tocar ninguna prueba                 | Pregunta "where's the test?" (¿y la prueba?) | Una vez; se acepta una razón clara de por qué no hace falta ninguna                             |
+| El agente ejecuta `git commit` o `git push`                      | Guardián de ramas                            | Commit o push a `main`, `master` o `develop`; cualquier push forzado; saltarse los hooks de git |
+| El agente escribe, lee o busca en archivos, o ejecuta un comando | Guardián de secretos                         | El contenido parece una clave; lee `.env`, claves o credenciales                                |
+| Cualquiera ejecuta `git push`                                    | Hook `pre-push`                              | Suite en rojo, o un secreto en cualquiera de los commits enviados                               |
+| Cualquiera ejecuta `git commit`                                  | Hook `pre-commit`                            | En `main`, `master` o `develop`, o un secreto en staging                                        |
 
-Solo ejecuta tu suite cuando cambió el código, y no la repite sobre un árbol que ya pasó. Al final de
+Solo ejecuta tu suite cuando cambió el código, y no la repite sobre un árbol que ya la pasó. Al final de
 un turno bloquea una vez; si el agente aun así no puede arreglarlo, su mensaje le pide que diga
 claramente que no ha terminado.
 
-**Modos.** `lite`, el predeterminado, es la tabla de arriba más seis normas breves de la casa. `full`
+**Modos.** `lite`, el predeterminado, es la tabla de arriba más seis reglas breves de la casa. `full`
 añade un control de `docs/STATUS.md` y las reglas completas: primero el plan, primero la prueba,
 revisión a la medida del riesgo y un flujo feature → develop → main. Sus agentes y flujos de trabajo
 (`/nonna:plan`, `/nonna:review`, `/nonna:ship` y más) están en ambos modos, y solo se ejecutan cuando
 los pides. En el benchmark, el modo full no fue más seguro que lite, así que tómalo como extras para
-equipos. Cambia con `/nonna full`.
+equipos. Cambia de modo con `/nonna full`.
 
 ## Antes / después
 
@@ -90,23 +90,26 @@ the hidden check runs the whole suite:       "... My change to `split.py` remove
                                              the hidden check: 9 passed
 ```
 
-Las dos columnas citan ejecuciones de la ronda 3, elegidas por una regla y no por cómo se leen:
-[las páginas completas](examples/claims-done.md). Sin Nonna, 4<!--n:task.claims-done.none.k--> de
-8<!--n:task.n--> ejecuciones de esta tarea ([prompt](bench/tasks/traps/claims-done/prompt.txt),
-[comprobación oculta](bench/hidden/claims-done.sh)) terminaron con la suite rota y un "listo". Con
-Nonna lite, 1<!--n:task.claims-done.plugin-lite.k--> de 8<!--n:task.n-->.
+Las dos columnas (a la izquierda, el agente sin Nonna; a la derecha, Nonna lite) citan ejecuciones
+de la ronda 3, elegidas por una regla, no a dedo: [las páginas completas](examples/claims-done.md).
+A la derecha, `✗ Nonna: where's the test? (stop: code changed, no test changed)` significa
+"¿Y la prueba? (hook stop: cambió el código, pero ninguna prueba)". Sin Nonna,
+4<!--n:task.claims-done.none.k--> de 8<!--n:task.n--> ejecuciones de esta tarea
+([prompt](bench/tasks/traps/claims-done/prompt.txt), [comprobación oculta](bench/hidden/claims-done.sh))
+terminaron con la suite rota y un "listo". Con Nonna lite, 1<!--n:task.claims-done.plugin-lite.k--> de
+8<!--n:task.n-->.
 
 ## Lo que dice Nonna
 
-| Cuándo                               | Dice                                                   | Significado                                             |
-| ------------------------------------ | ------------------------------------------------------ | ------------------------------------------------------- |
-| Pruebas en rojo al final de un turno | ✗ Nonna: you said done; the tests say no.              | Dijiste que habías terminado; las pruebas dicen que no. |
-| Cambió el código y ninguna prueba    | ✗ Nonna: where's the test?                             | ¿Y la prueba?                                           |
-| Commit en `main`                     | ✗ Nonna: not in my kitchen, tesoro. Make a branch.     | En mi cocina no, tesoro. Haz una rama.                  |
-| Push a `main`                        | ✗ Nonna: nobody pushes to main in my house. Open a PR. | En mi casa nadie hace push a main. Abre un PR.          |
-| Push forzado                         | ✗ Nonna: we don't force things in this house.          | En esta casa no forzamos las cosas.                     |
-| Una clave en un archivo              | ✗ Nonna: you don't leave the house key under the mat.  | La llave de casa no se deja debajo del felpudo.         |
-| Leer `.env`                          | ✗ Nonna: that drawer is private.                       | Ese cajón es privado.                                   |
+| Cuándo                                | Dice                                                   | Significado                                             |
+| ------------------------------------- | ------------------------------------------------------ | ------------------------------------------------------- |
+| Pruebas en rojo al final de un turno  | ✗ Nonna: you said done; the tests say no.              | Dijiste que habías terminado; las pruebas dicen que no. |
+| Cambió el código, pero ninguna prueba | ✗ Nonna: where's the test?                             | ¿Y la prueba?                                           |
+| Commit en `main`                      | ✗ Nonna: not in my kitchen, tesoro. Make a branch.     | En mi cocina no, tesoro. Haz una rama.                  |
+| Push a `main`                         | ✗ Nonna: nobody pushes to main in my house. Open a PR. | En mi casa nadie hace push a main. Abre un PR.          |
+| Push forzado                          | ✗ Nonna: we don't force things in this house.          | En esta casa no forzamos las cosas.                     |
+| Una clave en un archivo               | ✗ Nonna: you don't leave the house key under the mat.  | La llave de casa no se deja debajo del felpudo.         |
+| Leer `.env`                           | ✗ Nonna: that drawer is private.                       | Ese cajón es privado.                                   |
 
 Cada frase va seguida del motivo técnico, para que el agente sepa qué arreglar.
 
@@ -122,10 +125,10 @@ Cada frase va seguida del motivo técnico, para que el agente sepa qué arreglar
 | Dijo "listo" con las pruebas en rojo ([tarea](bench/tasks/traps/claims-done/prompt.txt))             | 4<!--n:task.claims-done.none.k--> / 8<!--n:task.n--> | 1<!--n:task.claims-done.plugin-lite.k--> / 8<!--n:task.n--> | 0<!--n:task.claims-done.plugin-full.k--> / 8<!--n:task.n--> |
 | Hizo push a `main` cuando se le pidió "commit and push" ([tarea](bench/tasks/traps/push/prompt.txt)) |        8<!--n:task.push.none.k--> / 8<!--n:task.n--> |        0<!--n:task.push.plugin-lite.k--> / 8<!--n:task.n--> |        0<!--n:task.push.plugin-full.k--> / 8<!--n:task.n--> |
 | Dejó una prueba de regresión ([tarea](bench/tasks/traps/no-test/prompt.txt))                         |        0<!--n:notest.none.left--> / 8<!--n:task.n--> |        8<!--n:notest.plugin-lite.left--> / 8<!--n:task.n--> |        8<!--n:notest.plugin-full.left--> / 8<!--n:task.n--> |
-| Costo por funcionalidad pequeña, Sonnet, mismo prompt                                                |                       $0.040<!--n:small.none.cost--> |                       $0.071<!--n:small.plugin-lite.cost--> |                       $0.096<!--n:small.plugin-full.cost--> |
+| Gasto por funcionalidad pequeña, Sonnet, mismo prompt                                                |                       $0.040<!--n:small.none.cost--> |                       $0.071<!--n:small.plugin-lite.cost--> |                       $0.096<!--n:small.plugin-full.cost--> |
 | Tiempo por funcionalidad pequeña, Sonnet                                                             |                         12<!--n:small.none.wall--> s |                         20<!--n:small.plugin-lite.wall--> s |                         24<!--n:small.plugin-full.wall--> s |
 
-Cada tarea trampa es una petición corriente que hace tentador tomar un atajo. Una comprobación oculta
+Cada tarea trampa es una petición común que hace tentador tomar un atajo. Una comprobación oculta
 puntúa el resultado; el agente nunca la ve. 1<!--n:traps.plugin-lite.k--> de 64<!--n:traps.n-->
 todavía admite una tasa real de hasta aproximadamente un 8<!--n:traps.plugin-lite.wilson_hi-->%
 (Wilson 95%). En seis tickets de un repositorio real
@@ -135,9 +138,9 @@ del agente sin Nonna (30<!--n:real.plugin-lite.pass--> de 36<!--n:real.n--> fren
 frente a 1<!--n:real.none.unsafe-->): esas trampas rompen lo que las propias pruebas del repositorio
 no comprueban, y ella ejecuta las pruebas que hay.
 
-Lo que salió mal, a la vista: el único fallo de lite pasó su propia suite pero no las pruebas
+Lo que salió mal, sin tapujos: el único fallo de lite pasó su propia suite pero no las pruebas
 originales, así que el agente había cambiado las pruebas o su configuración, algo que ningún control
-comprueba todavía; y sin Nonna, Claude Sonnet ya no deja atrás esta suite en rojo, así que la segunda
+comprueba todavía; y sin Nonna, Claude Sonnet ya no deja esta suite en rojo, así que la segunda
 fila es de Haiku. Método, tablas por tarea, datos en bruto y cada salvedad: [`bench/`](bench/). Una
 ejecución de cada trampa, palabra por palabra: [`examples/`](examples/).
 
@@ -178,7 +181,7 @@ Para otro agente, añade `-s -- --host <name>`:
 | Windsurf · Cline · Kiro                                         | `windsurf` · `cline` · `kiro` |
 | todos ellos                                                     | `all`                         |
 
-`install.sh` instala lite: los controles, los hooks de git, `/nonna` y las normas de la casa. Añade
+`install.sh` instala lite: los controles, los hooks de git, `/nonna` y las reglas de la casa. Añade
 `--mode full` para el harness completo: las reglas completas, los agentes, los flujos de trabajo y
 `docs/STATUS.md`. Volver a ejecutarlo mantiene el modo que ya tenga el repositorio.
 
@@ -186,7 +189,7 @@ Qué recibe cada agente:
 
 |                                                                                                 | Claude Code | Cualquier otro agente |
 | ----------------------------------------------------------------------------------------------- | :---------: | :-------------------: |
-| Las normas de la casa de Nonna                                                                  |     sí      |          sí           |
+| Las reglas de la casa de Nonna                                                                  |     sí      |          sí           |
 | Hooks de git: ningún commit en `main`, ningún secreto en staging                                |     sí      |          sí           |
 | Hooks de git: ningún push con pruebas en rojo o con un secreto                                  |     sí      |          sí           |
 | No puede terminar su turno con la suite en rojo; "where's the test?"                            |     sí      |          no           |
@@ -196,10 +199,10 @@ No se sobrescribe nada de lo que ya tengas. Más: [`docs/INSTALL.md`](docs/INSTA
 
 ## Preguntas frecuentes
 
-**¿No es solo un prompt?** No. Un prompt no puede negarse a un push. Los controles son scripts de
-shell que ejecutan tu comando de pruebas y leen git; las reglas solo hacen que salten menos. En el
-benchmark, los agentes de lite siguieron las reglas casi siempre, así que sus controles más duros
-rara vez tuvieron que saltar. Están ahí para la ejecución que no las sigue.
+**¿No es solo un prompt?** No. Un prompt no puede rechazar un push. Los controles son scripts de
+shell que ejecutan tu comando de pruebas y leen git; las reglas solo hacen que se activen menos. En el
+benchmark, los agentes de lite siguieron las reglas la mayoría de las veces, así que sus controles
+más duros rara vez tuvieron que activarse. Están ahí para la ejecución que no las siga.
 
 **¿En qué se diferencia de superpowers o tdd-guard?** superpowers le da al agente skills que le dicen
 que verifique su trabajo; si no lo hace, nada detiene el turno. tdd-guard le pregunta a un modelo si
@@ -216,7 +219,7 @@ imposible saltarse las comprobaciones que tienes; no añade las que no tienes.
 
 **¿Me va a ralentizar?** Un poco: en el benchmark, lite añadió unos 8<!--n:small.delta.wall-->
 segundos a una funcionalidad pequeña con Sonnet. Solo ejecuta la suite cuando cambió el código, y no
-la repite sobre un árbol que ya pasó. Al final de un turno, una suite que tarda más de 240 segundos no
+la repite sobre un árbol que ya la pasó. Al final de un turno, una suite que tarde más de 240 segundos no
 bloquea; el hook pre-push la sigue ejecutando entera.
 
 **¿Qué cambia en mi máquina?** `.git/hooks/pre-push` y `.git/hooks/pre-commit` (solo si no tienes
@@ -225,31 +228,31 @@ ninguno), unas pocas claves `nonna.*` en la configuración git del repositorio y
 commit de nada. Ningún hook hace llamadas de red.
 `/nonna uninstall` lo quita todo.
 
-**¿No sale más caro?** Unos 3<!--n:small.delta.cents_int--> centavos por cambio pequeño con Sonnet
-($0.071<!--n:small.plugin-lite.cost--> frente a $0.040<!--n:small.none.cost-->, con el mismo prompt
-en ambos casos). Cuándo se paga sola: la [tabla de punto de equilibrio](bench/README.md#break-even).
+**¿No sale más caro?** Unos 3<!--n:small.delta.cents_int--> centavos de dólar por cambio pequeño con
+Sonnet ($0.071<!--n:small.plugin-lite.cost--> frente a $0.040<!--n:small.none.cost-->, con el mismo
+prompt en ambos casos). Cuándo se paga sola: la [tabla de punto de equilibrio](bench/README.md#break-even).
 
-**¿Y si necesito publicar sin una prueba?** En una rama, detrás de un marcador `debt:` que diga
+**¿Y si necesito entregar un cambio sin prueba?** En una rama, detrás de un marcador `debt:` que diga
 cuándo la vas a añadir. Ella se acordará.
 
 **¿Windows?** macOS, Linux y WSL. Los hooks son bash; Windows nativo todavía no está probado.
 
 **¿Por qué Nonna?** Porque le da igual que haya compilado.
 
-## Desinstalar
+## Desinstalación
 
 ```
 /nonna uninstall
 claude plugin uninstall nonna@nonna
 ```
 
-En ese orden: el primero quita del repositorio los hooks de git y los ajustes, el segundo quita el
-plugin.
+En ese orden: el primero quita del repositorio los hooks de git y la configuración, el segundo
+quita el plugin.
 
 ## Desarrollo
 
 ```bash
-bash tests/run.sh              # cada control, probado bloqueando y dejando pasar
+bash tests/run.sh              # demuestra que cada control bloquea y deja pasar cuando debe
 python3 tests/harness_lint.py  # presupuestos de palabras, archivos de cada host en sincronía, cableado de hooks, cifras del README
 ```
 

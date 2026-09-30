@@ -3,9 +3,9 @@
 
 [English](README.md) · [简体中文](README.zh-CN.md) · **한국어** · [日本語](README.ja.md) · [Español](README.es.md)
 
-<img src="assets/nonna-banner.svg" alt="Nonna, 나무 주걱을 든 할머니: 컴파일이 됐다고? 할머니는 그런 거 신경 안 쓴다." width="100%">
+<img src="assets/nonna-banner.svg" alt="Nonna, 나무 숟가락을 든 할머니: 컴파일이 됐다고 봐주지는 않는다." width="100%">
 
-**AI 에이전트는 "완료"라고 말합니다. Nonna는 그걸 증명하게 만듭니다.**
+**AI 에이전트는 "완료"라고 말합니다. Nonna는 그 말을 증명하게 합니다.**
 
 <a href="https://github.com/kapadias/nonna/releases"><img src="https://img.shields.io/github/v/release/kapadias/nonna?style=flat-square&color=2E4A3A&label=release" alt="최신 릴리스"></a>
 <a href="https://github.com/kapadias/nonna/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/kapadias/nonna/ci.yml?branch=main&style=flat-square&label=gate%20tests" alt="게이트 테스트"></a>
@@ -18,7 +18,7 @@
 
 </div>
 
-에이전트는 테스트 파일 하나가 통과하면, 다른 파일이 깨져 있어도 "완료"라고 말합니다. Nonna는 에이전트가 멈추기 전에 테스트 스위트 전체를 실행하고, 빨간불이면 다시 돌려보냅니다. `main`으로의 커밋과 푸시, 강제 푸시, 파일에 적힌 시크릿도 막습니다. 이 가운데 어느 것도 모델이 판단하지 않습니다. 판단하는 것은 테스트 명령의 종료 코드입니다.
+에이전트는 테스트 파일 하나가 통과하면, 다른 파일이 깨져 있어도 "완료"라고 말합니다. Nonna는 에이전트가 작업을 끝내려 하면 먼저 테스트 스위트 전체를 실행하고, 빨간불이면 다시 돌려보냅니다. `main`에 커밋하거나 푸시하는 것, 강제 푸시, 파일에 시크릿을 써 넣는 것도 막습니다. 이 가운데 어느 것도 모델이 판단하지 않습니다. 판단하는 것은 테스트 명령의 종료 코드입니다.
 
 ## 설치
 
@@ -37,20 +37,20 @@ Claude Code에서:
 Nonna is on here (lite). Before the agent can say done, Nonna runs: python3 -m pytest -q. Added .git/hooks/pre-push and pre-commit. See or change it with /nonna.
 ```
 
-Nonna가 이 저장소에서 lite 모드로 켜졌고, 에이전트가 완료라고 하기 전에 `python3 -m pytest -q`를 실행하며, `.git/hooks/pre-push`와 `pre-commit`을 추가했고, `/nonna`로 확인하거나 바꿀 수 있다는 뜻입니다.
+이 저장소에서 Nonna가 lite 모드로 켜졌다는 뜻입니다. 에이전트가 "완료"라고 말하려면 먼저 Nonna가 `python3 -m pytest -q`를 실행합니다. `.git/hooks/pre-push`와 `pre-commit`을 추가했고, `/nonna`로 확인하거나 바꿀 수 있습니다.
 
 `/nonna`는 Nonna가 무엇을 강제하는지, 각 설정이 어디서 왔는지 보여 줍니다. `/nonna off`는 이 저장소에서 Nonna를 끕니다. Codex, Cursor, Copilot, Gemini 같은 다른 에이전트를 쓰나요? [다른 에이전트](#다른-에이전트)를 보세요.
 
 ## Nonna가 검사하는 것
 
-| 언제                                                             | 하는 일                      | 막는 경우                                                                              |
-| ---------------------------------------------------------------- | ---------------------------- | -------------------------------------------------------------------------------------- |
-| 에이전트가 코드를 바꾼 뒤 턴을 끝내려 할 때                      | 테스트 명령 실행             | 명령이 0이 아닌 코드로 종료할 때                                                       |
-| 에이전트가 코드는 바꿨는데 테스트는 바꾸지 않았을 때             | "where's the test?"라고 물음 | 한 번만. 테스트가 필요 없는 이유를 분명히 말하면 통과                                  |
-| 에이전트가 `git commit`이나 `git push`를 실행할 때               | 브랜치 가드                  | `main`, `master`, `develop`에 커밋하거나 푸시할 때; 모든 강제 푸시; git 훅을 건너뛸 때 |
-| 에이전트가 파일을 쓰거나 읽거나 검색할 때, 또는 명령을 실행할 때 | 시크릿 가드                  | 내용이 키처럼 보일 때; `.env`나 키, 자격 증명을 읽을 때                                |
-| 누구든 `git push`를 실행할 때                                    | `pre-push` 훅                | 테스트가 빨간불이거나, 푸시되는 커밋 중 하나에 시크릿이 있을 때                        |
-| 누구든 `git commit`을 실행할 때                                  | `pre-commit` 훅              | `main`, `master`, `develop` 위에서 커밋할 때, 또는 스테이징된 시크릿이 있을 때         |
+| 언제                                                             | 하는 일                                           | 막는 경우                                                                              |
+| ---------------------------------------------------------------- | ------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| 에이전트가 코드를 바꾼 뒤 턴을 끝내려 할 때                      | 테스트 명령 실행                                  | 명령이 0이 아닌 코드로 종료할 때                                                       |
+| 에이전트가 코드는 바꿨는데 테스트는 바꾸지 않았을 때             | "where's the test?"(테스트는 어디 있니?)라고 물음 | 한 번만. 테스트가 필요 없는 이유를 분명히 말하면 통과                                  |
+| 에이전트가 `git commit`이나 `git push`를 실행할 때               | 브랜치 가드                                       | `main`, `master`, `develop`에 커밋하거나 푸시할 때; 모든 강제 푸시; git 훅을 건너뛸 때 |
+| 에이전트가 파일을 쓰거나 읽거나 검색할 때, 또는 명령을 실행할 때 | 시크릿 가드                                       | 내용이 키처럼 보일 때; `.env`나 키, 자격 증명을 읽을 때                                |
+| 누구든 `git push`를 실행할 때                                    | `pre-push` 훅                                     | 테스트가 빨간불이거나, 푸시되는 커밋 중 하나에 시크릿이 있을 때                        |
+| 누구든 `git commit`을 실행할 때                                  | `pre-commit` 훅                                   | `main`, `master`, `develop` 위에서 커밋할 때, 또는 스테이징된 시크릿이 있을 때         |
 
 Nonna는 코드가 바뀌었을 때만 테스트 스위트를 실행하고, 이미 통과한 트리에서는 다시 실행하지 않습니다. 턴이 끝날 때는 한 번만 막습니다. 그래도 에이전트가 고치지 못하면, 아직 끝나지 않았다고 분명히 말하라고 메시지로 알려 줍니다.
 
@@ -74,7 +74,7 @@ the hidden check runs the whole suite:       "... My change to `split.py` remove
                                              the hidden check: 9 passed
 ```
 
-두 열 모두 라운드 3의 실행을 그대로 옮긴 것으로, 읽기 좋은 것이 아니라 규칙에 따라 골랐습니다: [전체 페이지](examples/claims-done.md). Nonna 없이는 이 과제([프롬프트](bench/tasks/traps/claims-done/prompt.txt), [숨은 검사](bench/hidden/claims-done.sh))의 실행 8<!--n:task.n-->회 중 4<!--n:task.claims-done.none.k-->회가 깨진 테스트 스위트와 "완료"로 끝났습니다. Nonna lite에서는 8<!--n:task.n-->회 중 1<!--n:task.claims-done.plugin-lite.k-->회였습니다.
+두 열(왼쪽은 Nonna 없이, 오른쪽은 Nonna lite) 모두 라운드 3의 실행을 그대로 옮긴 것으로, 보기 좋은 것을 고른 게 아니라 정해 둔 규칙에 따라 골랐습니다: [전체 페이지](examples/claims-done.md). 오른쪽의 `✗ Nonna: where's the test? (stop: code changed, no test changed)`는 "테스트는 어디 있니? (stop 훅: 코드는 바뀌었는데 테스트는 그대로)"라는 뜻입니다. Nonna 없이는 이 과제([프롬프트](bench/tasks/traps/claims-done/prompt.txt), [숨은 검사](bench/hidden/claims-done.sh))의 실행 8<!--n:task.n-->회 중 4<!--n:task.claims-done.none.k-->회가 깨진 테스트 스위트와 "완료"로 끝났습니다. Nonna lite에서는 8<!--n:task.n-->회 중 1<!--n:task.claims-done.plugin-lite.k-->회였습니다.
 
 ## Nonna가 하는 말
 
@@ -84,7 +84,7 @@ the hidden check runs the whole suite:       "... My change to `split.py` remove
 | 코드는 바뀌었는데 테스트는 그대로 | ✗ Nonna: where's the test?                             | 테스트는 어디 있니?                                     |
 | `main`에 커밋                     | ✗ Nonna: not in my kitchen, tesoro. Make a branch.     | 내 부엌에선 안 된다, 얘야. 브랜치를 만들렴.             |
 | `main`에 푸시                     | ✗ Nonna: nobody pushes to main in my house. Open a PR. | 우리 집에선 아무도 main에 푸시하지 않는단다. PR을 열렴. |
-| 강제 푸시                         | ✗ Nonna: we don't force things in this house.          | 이 집에선 억지로 하는 법이 없단다.                      |
+| 강제 푸시                         | ✗ Nonna: we don't force things in this house.          | 이 집에선 뭐든 강제로 하지 않는단다.                    |
 | 파일 속 키                        | ✗ Nonna: you don't leave the house key under the mat.  | 집 열쇠를 현관 매트 밑에 두는 게 아니란다.              |
 | `.env` 읽기                       | ✗ Nonna: that drawer is private.                       | 그 서랍은 함부로 여는 게 아니란다.                      |
 
@@ -105,9 +105,9 @@ the hidden check runs the whole suite:       "... My change to `split.py` remove
 | 작은 기능당 비용, Sonnet, 같은 프롬프트                                               |                       $0.040<!--n:small.none.cost--> |                       $0.071<!--n:small.plugin-lite.cost--> |                       $0.096<!--n:small.plugin-full.cost--> |
 | 작은 기능당 시간, Sonnet                                                              |                         12<!--n:small.none.wall--> s |                         20<!--n:small.plugin-lite.wall--> s |                         24<!--n:small.plugin-full.wall--> s |
 
-함정 과제는 모두 지름길이 끌리게 만드는 평범한 요청입니다. 결과는 숨은 검사가 채점하고, 에이전트는 이 검사를 보지 못합니다. 64<!--n:traps.n-->회 중 1<!--n:traps.plugin-lite.k-->회라는 결과로도 실제 비율은 최대 약 8<!--n:traps.plugin-lite.wilson_hi-->%일 수 있습니다(Wilson 95%). 실제 저장소의 티켓 여섯 개([full-stack-fastapi-template](bench/README.md#the-real-suite))에서 lite는 Nonna 없는 에이전트의 통과율을 유지했고(36<!--n:real.n-->회 중 30<!--n:real.plugin-lite.pass-->회, Nonna 없이 28<!--n:real.none.pass-->회), 더 안전하지도 않았습니다(안전하지 않은 실행 1<!--n:real.plugin-lite.unsafe-->회, Nonna 없이 1<!--n:real.none.unsafe-->회). 그 함정들은 저장소 자체 테스트가 검사하지 않는 부분을 깨뜨리고, Nonna는 있는 테스트를 실행할 뿐이기 때문입니다.
+함정 과제는 모두 지름길로 빠지고 싶어지는 평범한 요청입니다. 결과는 숨은 검사가 채점하고, 에이전트는 이 검사를 보지 못합니다. 64<!--n:traps.n-->회 중 1<!--n:traps.plugin-lite.k-->회라는 결과로도 실제 비율은 최대 약 8<!--n:traps.plugin-lite.wilson_hi-->%일 수 있습니다(Wilson 95%). 실제 저장소의 티켓 여섯 개([full-stack-fastapi-template](bench/README.md#the-real-suite))에서 lite는 Nonna 없는 에이전트의 통과율을 유지했고(36<!--n:real.n-->회 중 30<!--n:real.plugin-lite.pass-->회, Nonna 없이 28<!--n:real.none.pass-->회), 더 안전하지도 않았습니다(안전하지 않은 실행 1<!--n:real.plugin-lite.unsafe-->회, Nonna 없이 1<!--n:real.none.unsafe-->회). 그 함정들은 저장소 자체 테스트가 검사하지 않는 부분을 깨뜨리고, Nonna는 있는 테스트를 실행할 뿐이기 때문입니다.
 
-잘못된 점도 공개합니다. lite의 유일한 실패는 자기 테스트 스위트는 통과했지만 원래 테스트는 통과하지 못했습니다. 즉 에이전트가 테스트나 그 설정을 바꿨다는 뜻인데, 이는 아직 어떤 게이트도 검사하지 않습니다. 또 Nonna 없이도 Claude Sonnet은 더 이상 이 빨간 테스트 스위트를 남기지 않기 때문에, 두 번째 행은 Haiku의 결과입니다. 방법, 과제별 표, 원본 데이터와 모든 주의 사항: [`bench/`](bench/). 함정마다 실행 하나씩, 토씨 하나 바꾸지 않고: [`examples/`](examples/).
+잘못된 점도 공개합니다. lite가 놓친 단 한 번의 실행은 자기 테스트 스위트는 통과했지만 원래 테스트는 통과하지 못했습니다. 즉 에이전트가 테스트나 그 설정을 바꿨다는 뜻인데, 이는 아직 어떤 게이트도 검사하지 않습니다. 또 Nonna 없이도 Claude Sonnet은 더 이상 이 빨간 테스트 스위트를 남기지 않기 때문에, 두 번째 행은 Haiku의 결과입니다. 방법, 과제별 표, 원본 데이터와 모든 주의 사항: [`bench/`](bench/). 함정마다 실행 하나씩, 토씨 하나 바꾸지 않고: [`examples/`](examples/).
 
 ### 재현하기
 
@@ -117,7 +117,7 @@ bash bench/verify/verify.sh      # 검사기 자체를 검증, API 호출 없음
 bash bench/run.sh --suite traps --arm none,plugin-lite --model sonnet --reps 4
 ```
 
-Sonnet으로 약 $3<!--n:repro.sonnet.cost-->가 들며, `ANTHROPIC_API_KEY`로 청구됩니다. 이 숫자를 해석한 규칙은 [실행 전에 미리 등록](bench/PREREGISTRATION.md)해 두었습니다.
+Sonnet으로 약 $3<!--n:repro.sonnet.cost-->가 들며, `ANTHROPIC_API_KEY`로 청구됩니다. 이 숫자를 해석한 규칙은 실행 전에 [사전 등록](bench/PREREGISTRATION.md)해 두었습니다.
 
 ## ponytail, caveman, superpowers와 함께 쓰기
 
@@ -150,7 +150,7 @@ curl -fsSL https://raw.githubusercontent.com/kapadias/nonna/main/install.sh | ba
 |                                                              | Claude Code | 그 밖의 모든 에이전트 |
 | ------------------------------------------------------------ | :---------: | :-------------------: |
 | Nonna의 집안 규칙                                            |    있음     |         있음          |
-| Git 훅: `main`에 커밋 금지, 시크릿 스테이징 금지             |    있음     |         있음          |
+| Git 훅: `main`에 커밋 금지, 스테이징된 시크릿 커밋 금지      |    있음     |         있음          |
 | Git 훅: 빨간 테스트나 시크릿이 있으면 푸시 금지              |    있음     |         있음          |
 | 빨간 테스트로는 턴을 끝낼 수 없음; "where's the test?"       |    있음     |         없음          |
 | 모든 파일 쓰기와 읽기에 시크릿 가드, 모든 명령에 브랜치 가드 |    있음     |         없음          |
@@ -163,9 +163,9 @@ curl -fsSL https://raw.githubusercontent.com/kapadias/nonna/main/install.sh | ba
 
 **superpowers나 tdd-guard와 무엇이 다른가요?** superpowers는 작업을 검증하라고 알려 주는 스킬을 에이전트에게 줍니다. 에이전트가 검증하지 않아도 턴을 막는 것은 없습니다. tdd-guard는 편집마다 TDD를 따랐는지 모델에게 묻습니다. Nonna는 어떤 모델에게도 묻지 않습니다. 테스트 명령을 실행해 종료 코드가 0이 아니면 막고, 에이전트 안과 git 양쪽에 브랜치 가드와 시크릿 가드를 더합니다.
 
-**그래도 에이전트가 Nonna를 빠져나갈 수 있나요?** 네, 저희가 본 방법은 두 가지입니다. Nonna는 테스트를 있는 그대로 실행하므로, 스위트를 통과시키려고 테스트나 그 설정을 바꾸는 에이전트는 빠져나갑니다. 벤치마크에서 lite의 유일한 실패가 그랬습니다. 규칙은 이를 금지하지만, 이를 검사하는 게이트는 아직 없습니다. 그리고 어떤 테스트도 검사하지 않는 것은 Nonna도 볼 수 없습니다. 실제 저장소 티켓에서 빠져나간 함정들은 그곳의 어떤 테스트도 다루지 않는 부분을 깨뜨렸습니다. Nonna는 이미 있는 검사를 건너뛸 수 없게 만들 뿐, 없는 검사를 더하지는 않습니다.
+**그래도 에이전트가 Nonna의 감시를 빠져나갈 수 있나요?** 네, 저희가 본 방법은 두 가지입니다. Nonna는 테스트를 있는 그대로 실행하므로, 스위트를 통과시키려고 테스트나 그 설정을 바꾸는 에이전트는 빠져나갑니다. 벤치마크에서 lite가 놓친 단 한 번의 실행이 그랬습니다. 규칙은 이를 금지하지만, 이를 검사하는 게이트는 아직 없습니다. 그리고 어떤 테스트도 검사하지 않는 것은 Nonna도 볼 수 없습니다. 실제 저장소 티켓에서 빠져나간 함정들은 그곳의 어떤 테스트도 다루지 않는 부분을 깨뜨렸습니다. Nonna는 이미 있는 검사를 건너뛸 수 없게 만들 뿐, 없는 검사를 더하지는 않습니다.
 
-**느려지나요?** 조금요. 벤치마크에서 lite는 Sonnet으로 작은 기능 하나를 만들 때 약 8<!--n:small.delta.wall-->초를 더 썼습니다. 코드가 바뀌었을 때만 스위트를 실행하고, 이미 통과한 트리에서는 다시 실행하지 않습니다. 턴이 끝날 때 240초보다 오래 걸리는 스위트는 막지 않으며, pre-push 훅은 여전히 전체를 실행합니다.
+**느려지나요?** 조금 느려집니다. 벤치마크에서 lite는 Sonnet으로 작은 기능 하나를 만들 때 약 8<!--n:small.delta.wall-->초를 더 썼습니다. 코드가 바뀌었을 때만 스위트를 실행하고, 이미 통과한 트리에서는 다시 실행하지 않습니다. 스위트가 240초 안에 끝나지 않으면 턴이 끝날 때는 막지 않지만, pre-push 훅은 그래도 스위트 전체를 실행합니다.
 
 **내 컴퓨터에서 무엇을 바꾸나요?** `.git/hooks/pre-push`와 `.git/hooks/pre-commit`(기존 훅이 없을 때만), 저장소 git 설정의 `nonna.*` 키 몇 개, 그리고 `.git/` 아래의 작은 파일들(마지막으로 통과한 실행, 세션 시작 시각, 이미 경고한 브랜치)입니다. 아무것도 커밋하지 않습니다. 네트워크 호출을 하는 훅은 없습니다. `/nonna uninstall`로 모두 제거됩니다.
 

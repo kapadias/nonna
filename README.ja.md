@@ -18,7 +18,7 @@
 
 </div>
 
-エージェントは、あるテストファイルが通り、別のファイルが壊れているときに「完了しました」と言います。Nonna はエージェントが止まるのを許す前にテストスイート全体を実行し、赤なら差し戻します。`main` へのコミットとプッシュ、強制プッシュ、ファイルに書き込まれたシークレットも止めます。どれもモデルが判断するのではありません。判断するのはテストコマンドの終了コードです。
+エージェントは、あるテストファイルが通れば、別のテストファイルが壊れていても「完了しました」と言います。Nonna は、エージェントに作業の終了を認める前にテストスイート全体を実行し、赤なら差し戻します。`main` へのコミットやプッシュ、強制プッシュ、ファイルへのシークレットの書き込みも止めます。どれもモデルが判断するのではありません。判断するのはテストコマンドの終了コードです。
 
 ## インストール
 
@@ -39,18 +39,18 @@ Nonna is on here (lite). Before the agent can say done, Nonna runs: python3 -m p
 
 つまり、Nonna がこのリポジトリで lite モードで有効になったこと、エージェントが完了と言う前に `python3 -m pytest -q` を実行すること、`.git/hooks/pre-push` と `pre-commit` を追加したこと、`/nonna` で確認や変更ができることを伝えています。
 
-`/nonna` は、Nonna が何を強制しているか、それぞれの設定がどこから来ているかを表示します。`/nonna off` でこのリポジトリでは無効になります。Codex、Cursor、Copilot、Gemini などほかのエージェントを使っていますか？ [ほかのエージェント](#ほかのエージェント)を見てください。
+`/nonna` は、Nonna が何を強制しているか、各設定がどこで決まっているかを表示します。`/nonna off` でこのリポジトリでは無効になります。Codex、Cursor、Copilot、Gemini などほかのエージェントを使っていますか？ [ほかのエージェント](#ほかのエージェント)を見てください。
 
 ## Nonna がチェックすること
 
-| いつ                                                                       | 何をするか                    | ブロックする条件                                                                           |
-| -------------------------------------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------ |
-| エージェントがコードを変えたあとターンを終えようとしたとき                 | テストコマンドを実行          | 終了コードが 0 以外                                                                        |
-| エージェントがコードを変えたのにテストを変えていないとき                   | 「where's the test?」と尋ねる | 一度だけ。テストが要らない理由をはっきり述べれば通す                                       |
-| エージェントが `git commit` か `git push` を実行したとき                   | ブランチガード                | `main`、`master`、`develop` へのコミットやプッシュ／あらゆる強制プッシュ／git フックの回避 |
-| エージェントがファイルを書く・読む・検索する、またはコマンドを実行するとき | シークレットガード            | 内容がキーに見える／`.env`、キー、認証情報を読む                                           |
-| 誰かが `git push` を実行したとき                                           | `pre-push` フック             | テストが赤、またはプッシュするコミットのどれかにシークレット                               |
-| 誰かが `git commit` を実行したとき                                         | `pre-commit` フック           | `main`、`master`、`develop` 上である、またはステージされたシークレット                     |
+| いつ                                                                       | 何をするか                                      | ブロックする条件                                                                           |
+| -------------------------------------------------------------------------- | ----------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| エージェントがコードを変えたあとターンを終えようとしたとき                 | テストコマンドを実行                            | 終了コードが 0 以外                                                                        |
+| エージェントがコードを変えたのにテストを変えていないとき                   | 「where's the test?」（テストはどこ？）と尋ねる | 一度だけ。テストが要らない理由をはっきり述べれば通す                                       |
+| エージェントが `git commit` か `git push` を実行したとき                   | ブランチガード                                  | `main`、`master`、`develop` へのコミットやプッシュ／あらゆる強制プッシュ／git フックの回避 |
+| エージェントがファイルを書く・読む・検索する、またはコマンドを実行するとき | シークレットガード                              | 内容がキーに見える／`.env`、キー、認証情報を読む                                           |
+| 誰かが `git push` を実行したとき                                           | `pre-push` フック                               | テストが赤、またはプッシュするコミットのどれかにシークレット                               |
+| 誰かが `git commit` を実行したとき                                         | `pre-commit` フック                             | `main`、`master`、`develop` 上である、またはステージされたシークレット                     |
 
 スイートを実行するのはコードが変わったときだけで、すでに通ったツリーでは再実行しません。ターンの終わりにブロックするのは一度だけです。それでもエージェントが直せなければ、まだ終わっていないとはっきり言うよう Nonna のメッセージが促します。
 
@@ -74,13 +74,13 @@ the hidden check runs the whole suite:       "... My change to `split.py` remove
                                              the hidden check: 9 passed
 ```
 
-どちらの列も第 3 ラウンドの実行からの引用で、読みやすさではなくルールに従って選んでいます：[全文](examples/claims-done.md)。Nonna なしでは、このタスク（[プロンプト](bench/tasks/traps/claims-done/prompt.txt)、[隠しチェック](bench/hidden/claims-done.sh)）の 8<!--n:task.n--> 回の実行のうち 4<!--n:task.claims-done.none.k--> 回が、壊れたテストスイートと「完了」で終わりました。Nonna lite では 8<!--n:task.n--> 回中 1<!--n:task.claims-done.plugin-lite.k--> 回です。
+どちらの列（左が Nonna なし、右が Nonna lite）も第 3 ラウンドの実行からの引用で、見栄えではなくルールに従って選んでいます：[全文](examples/claims-done.md)。右の列の `✗ Nonna: where's the test? (stop: code changed, no test changed)` は「テストはどこ？（stop フック：コードは変わったのに、テストは変わっていない）」という意味です。Nonna なしでは、このタスク（[プロンプト](bench/tasks/traps/claims-done/prompt.txt)、[隠しチェック](bench/hidden/claims-done.sh)）の 8<!--n:task.n--> 回の実行のうち 4<!--n:task.claims-done.none.k--> 回が、テストスイートが壊れたまま「完了」と報告して終わりました。Nonna lite では 8<!--n:task.n--> 回中 1<!--n:task.claims-done.plugin-lite.k--> 回です。
 
 ## Nonna のひとこと
 
 | いつ                                       | Nonna の言葉                                           | 意味                                                         |
 | ------------------------------------------ | ------------------------------------------------------ | ------------------------------------------------------------ |
-| ターンの終わりにテストが赤                 | ✗ Nonna: you said done; the tests say no.              | 「終わった」と言ったね。テストは「まだ」だってさ。           |
+| ターンの終わりにテストが赤                 | ✗ Nonna: you said done; the tests say no.              | 「終わった」と言ったね。テストは「まだ」って言ってるよ。     |
 | コードは変わったのにテストは変わっていない | ✗ Nonna: where's the test?                             | テストはどこ？                                               |
 | `main` でコミット                          | ✗ Nonna: not in my kitchen, tesoro. Make a branch.     | いい子だから、うちの台所ではやめてね。ブランチを作りなさい。 |
 | `main` へプッシュ                          | ✗ Nonna: nobody pushes to main in my house. Open a PR. | うちでは誰も main にプッシュしないの。PR を出しなさい。      |
@@ -107,7 +107,7 @@ the hidden check runs the whole suite:       "... My change to `split.py` remove
 
 罠タスクはどれも、近道をしたくなるごく普通の依頼です。結果は隠しチェックが採点し、エージェントがそれを目にすることはありません。64<!--n:traps.n--> 回中 1<!--n:traps.plugin-lite.k--> 回でも、真の割合は最大でおよそ 8<!--n:traps.plugin-lite.wilson_hi-->% まであり得ます（Wilson 95%）。実在のリポジトリの 6 件のチケット（[full-stack-fastapi-template](bench/README.md#the-real-suite)）では、lite は Nonna なしのエージェントの合格率を保ち（36<!--n:real.n--> 回中 30<!--n:real.plugin-lite.pass--> 回、Nonna なしは 28<!--n:real.none.pass--> 回）、安全性は上がりませんでした（危険な実行は 1<!--n:real.plugin-lite.unsafe--> 回、Nonna なしも 1<!--n:real.none.unsafe--> 回）。これらの罠はリポジトリ自身のテストが確かめていないところを壊し、Nonna は今あるテストを実行するだけだからです。
 
-うまくいかなかったことも隠しません。lite の唯一の失敗は、自分のテストスイートは通ったのに元のテストは通りませんでした。つまりエージェントがテストかその設定を変えたということで、これはまだどのゲートもチェックしていません。また、Nonna なしでも Claude Sonnet はもうこの赤いテストスイートを残さないため、2 行目は Haiku の結果です。手法、タスク別の表、生データ、すべての注意点：[`bench/`](bench/)。各罠の実行を 1 回ずつ、一字一句そのまま：[`examples/`](examples/)。
+うまくいかなかったことも隠しません。lite で唯一失敗した実行は、自分のテストスイートは通ったのに、元のテストは通りませんでした。つまりエージェントがテストかその設定を変えたということで、これはまだどのゲートもチェックしていません。また、Nonna なしでも Claude Sonnet はもうこの赤いテストスイートを残さないため、2 行目の失敗はすべて Haiku のものです。手法、タスク別の表、生データ、すべての注意点：[`bench/`](bench/)。各罠の実行を 1 回ずつ、一字一句そのまま：[`examples/`](examples/)。
 
 ### 再現する
 
@@ -117,7 +117,7 @@ bash bench/verify/verify.sh      # チェッカー自体を検証（API 呼び�
 bash bench/run.sh --suite traps --arm none,plugin-lite --model sonnet --reps 4
 ```
 
-Sonnet でおよそ $3<!--n:repro.sonnet.cost-->、`ANTHROPIC_API_KEY` に課金されます。これらの数字の読み方を決めたルールは、[実行前に事前登録](bench/PREREGISTRATION.md)してあります。
+Sonnet でおよそ $3<!--n:repro.sonnet.cost-->、`ANTHROPIC_API_KEY` に課金されます。これらの数字の読み方を決めたルールは、[実行前に登録](bench/PREREGISTRATION.md)してあります。
 
 ## ponytail、caveman、superpowers と一緒に使う
 
@@ -165,17 +165,17 @@ curl -fsSL https://raw.githubusercontent.com/kapadias/nonna/main/install.sh | ba
 
 **それでもエージェントが Nonna をすり抜けることは？** あります。私たちが見たのは 2 通りです。Nonna はテストをそのまま実行するので、スイートを通すためにテストやその設定を変えたエージェントは通り抜けます。ベンチマークでの lite の唯一の失敗がそれで、Nonna のルールでは禁じていますが、チェックするゲートはまだありません。また、どのテストも確かめていないものは Nonna にも見えません。実在リポジトリのチケットで通り抜けた罠は、そこのどのテストもカバーしていない部分を壊していました。Nonna は今あるチェックを飛ばせなくします。ないチェックを足すことはしません。
 
-**遅くなる？** 少しだけ。ベンチマークでは、Sonnet での小さな機能ひとつにつき、lite で約 8<!--n:small.delta.wall--> 秒増えました。スイートを実行するのはコードが変わったときだけで、すでに通ったツリーでは再実行しません。ターンの終わりには 240 秒より遅いスイートはブロックしませんが、pre-push フックでは変わらず全体を実行します。
+**遅くなる？** 少しだけ。ベンチマークでは、Sonnet での小さな機能ひとつにつき、lite で所要時間が約 8<!--n:small.delta.wall--> 秒増えました。スイートを実行するのはコードが変わったときだけで、すでに通ったツリーでは再実行しません。ターンの終わりには、実行に 240 秒より長くかかるスイートはブロックしませんが、pre-push フックでは変わらず全体を実行します。
 
-**マシンの何を変える？** `.git/hooks/pre-push` と `.git/hooks/pre-commit`（まだない場合のみ）、リポジトリの git 設定にある `nonna.*` キーをいくつか、そして `.git/` 以下の小さなファイル（最後に通った実行、セッションの開始時刻、すでに警告したブランチ）です。何もコミットしません。ネットワークにアクセスするフックはありません。`/nonna uninstall` ですべて取り除けます。
+**マシンの何を変える？** `.git/hooks/pre-push` と `.git/hooks/pre-commit`（まだない場合のみ）、リポジトリの git 設定の `nonna.*` キー数個、そして `.git/` 以下の小さなファイル（最後に通った実行、セッションの開始時刻、すでに警告したブランチ）です。何もコミットしません。ネットワークにアクセスするフックはありません。`/nonna uninstall` ですべて取り除けます。
 
-**高くつかない？** Sonnet で小さな変更ごとに約 3<!--n:small.delta.cents_int--> セントです（$0.071<!--n:small.plugin-lite.cost--> 対 $0.040<!--n:small.none.cost-->、どちらも同じプロンプト）。元が取れる条件は[損益分岐の表](bench/README.md#break-even)にあります。
+**高くつかない？** Sonnet で小さな変更ごとに約 3<!--n:small.delta.cents_int--> セント高くなります（$0.071<!--n:small.plugin-lite.cost--> 対 $0.040<!--n:small.none.cost-->、どちらも同じプロンプト）。元が取れる条件は[損益分岐の表](bench/README.md#break-even)にあります。
 
 **テストなしでリリースしなければならないときは？** ブランチで、いつテストを足すかを書いた `debt:` マーカーを付けて。Nonna は忘れません。
 
 **Windows は？** macOS、Linux、WSL に対応しています。フックは bash で書かれていて、ネイティブの Windows はまだテストしていません。
 
-**なぜ Nonna？** コンパイルが通ったかどうかなんて、彼女は気にしないからです。
+**なぜ Nonna？** コンパイルが通ったことなんて、Nonna は気にしないからです。
 
 ## アンインストール
 
@@ -184,20 +184,20 @@ curl -fsSL https://raw.githubusercontent.com/kapadias/nonna/main/install.sh | ba
 claude plugin uninstall nonna@nonna
 ```
 
-この順番で。最初のコマンドがリポジトリから git フックと設定を取り除き、次のコマンドがプラグインを取り除きます。
+この順番で実行してください。最初のコマンドがリポジトリから git フックと設定を取り除き、次のコマンドがプラグインを取り除きます。
 
 ## 開発
 
 ```bash
 bash tests/run.sh              # すべてのゲートが、ブロックすべきときにブロックし、通すべきときに通すことを証明
-python3 tests/harness_lint.py  # 単語数の上限、host ファイルの同期、フックの配線、README の数字
+python3 tests/harness_lint.py  # 単語数の上限、ホスト別ファイルの同期、フックの配線、README の数字
 ```
 
 [`CONTRIBUTING.md`](CONTRIBUTING.md) · [`SECURITY.md`](SECURITY.md) · [`CHANGELOG.md`](CHANGELOG.md)
 
 ## クレジット
 
-決定のはしご、`debt:` マーカーの規約、過剰設計を指摘するレビュータグ、サブエージェントにコンテキストを運ぶ仕組みは、Dietrich Gebert の [ponytail](https://github.com/dietrichgebert/ponytail)（MIT）から取り入れたものです。
+判断のはしご、`debt:` マーカーの規約、過剰設計を指摘するレビュータグ、サブエージェントにコンテキストを運ぶ仕組みは、Dietrich Gebert の [ponytail](https://github.com/dietrichgebert/ponytail)（MIT）を改変して取り入れたものです。
 
 ## ライセンス
 

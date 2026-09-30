@@ -122,10 +122,11 @@ Your AI agent says "done"; Nonna makes it prove it.
   must be the image's own description.
 - **The README in Simplified Chinese, Korean, Japanese and Spanish** (`README.zh-CN.md`,
   `README.ko.md`, `README.ja.md`, `README.es.md`), linked from the top of `README.md` (#31). The
-  lint holds each to the English: it marks the numbers `README.md` marks, checked against the rows
-  like them, gives the scorecard the image's own alt text, and carries `README.md`'s code blocks
-  word for word but for a `#` comment. A number or a command changed in `README.md` fails the lint
-  until every translation follows. Each keeps the credit; none repeats the golden-test count.
+  lint holds each to the English: `README.md` must link it, it marks the numbers `README.md` marks,
+  checked against the rows like them, gives the scorecard the image's own alt text, and carries
+  `README.md`'s code blocks word for word but for the words of a shell comment. A number or a
+  command changed in `README.md` fails the lint until every translation follows. Each keeps the
+  credit; none repeats the golden-test count, and one left behind is checked like `README.md`'s.
 
 ### Changed
 

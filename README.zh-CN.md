@@ -18,7 +18,7 @@
 
 </div>
 
-智能体会在一个测试文件通过、另一个却已坏掉时说“完成了”。Nonna 在允许智能体停下之前，先把你的整个测试套件跑一遍，测试一红就把它打回去。她还会拦下提交或推送到 `main`、强制推送，以及写进文件的机密信息。这些都不由任何模型来判断：说了算的是你的测试命令的退出码。
+一个测试文件通过了，另一个却已经坏了，智能体照样说“完成了”。Nonna 在允许智能体停下之前，先把你的整个测试套件跑一遍，测试一红就把它打回去。她还会拦下提交或推送到 `main`、强制推送，以及写进文件的机密信息。这些都不由任何模型来判断：说了算的是你的测试命令的退出码。
 
 ## 安装
 
@@ -43,16 +43,16 @@ Nonna is on here (lite). Before the agent can say done, Nonna runs: python3 -m p
 
 ## 她检查什么
 
-| 时机                                   | 她做什么                  | 何时拦截                                                                |
-| -------------------------------------- | ------------------------- | ----------------------------------------------------------------------- |
-| 智能体改了代码后想结束回合             | 运行你的测试命令          | 命令以非零状态退出                                                      |
-| 智能体改了代码却没改测试               | 问一句“where's the test?” | 只拦一次；说清楚为什么不需要测试，就会放行                              |
-| 智能体运行 `git commit` 或 `git push`  | 分支守卫                  | 提交或推送到 `main`、`master` 或 `develop`；任何强制推送；跳过 git 钩子 |
-| 智能体写入、读取或搜索文件，或运行命令 | 机密守卫                  | 内容看起来像密钥；读取 `.env`、密钥或凭据                               |
-| 任何人运行 `git push`                  | `pre-push` 钩子           | 测试是红的，或推送的任一提交里有机密信息                                |
-| 任何人运行 `git commit`                | `pre-commit` 钩子         | 在 `main`、`master` 或 `develop` 上，或暂存了机密信息                   |
+| 时机                                   | 她做什么                              | 何时拦截                                                                |
+| -------------------------------------- | ------------------------------------- | ----------------------------------------------------------------------- |
+| 智能体改了代码后想结束回合             | 运行你的测试命令                      | 命令以非零状态退出                                                      |
+| 智能体改了代码却没改测试               | 问一句“where's the test?”（测试呢？） | 只拦一次；说清楚为什么不需要测试，就会放行                              |
+| 智能体运行 `git commit` 或 `git push`  | 分支守卫                              | 提交或推送到 `main`、`master` 或 `develop`；任何强制推送；跳过 git 钩子 |
+| 智能体写入、读取或搜索文件，或运行命令 | 机密守卫                              | 内容看起来像密钥；读取 `.env`、密钥或凭据                               |
+| 任何人运行 `git push`                  | `pre-push` 钩子                       | 测试是红的，或推送的任一提交里有机密信息                                |
+| 任何人运行 `git commit`                | `pre-commit` 钩子                     | 在 `main`、`master` 或 `develop` 上，或暂存了机密信息                   |
 
-只有代码改动了她才会跑测试，已经通过的代码树不会再跑一遍。回合结束时她只拦一次；如果智能体仍然修不好，她的消息会让它直说：还没完成。
+只有代码改动了她才会跑测试，已经跑通过的同一份代码不会重跑。回合结束时她只拦一次；如果智能体仍然修不好，她的消息会让它直说：还没完成。
 
 **模式。** 默认的 `lite` 就是上表的内容，外加六条简短的家规。`full` 再加上 `docs/STATUS.md` 门禁和完整规则：先计划、先写测试、按风险决定评审力度，以及 feature → develop → main 的流程。她的智能体和工作流（`/nonna:plan`、`/nonna:review`、`/nonna:ship` 等）在两种模式下都有，只在你要求时才运行。在基准测试中，full 模式并不比 lite 更安全，所以把它当作面向团队的附加功能即可。用 `/nonna full` 切换。
 
@@ -74,7 +74,7 @@ the hidden check runs the whole suite:       "... My change to `split.py` remove
                                              the hidden check: 9 passed
 ```
 
-两栏引用的都是第 3 轮的运行记录，按规则挑选，而不是看哪段读起来好：[完整页面](examples/claims-done.md)。不用 Nonna 时，这个任务（[提示词](bench/tasks/traps/claims-done/prompt.txt)、[隐藏检查](bench/hidden/claims-done.sh)）的 8<!--n:task.n--> 次运行中有 4<!--n:task.claims-done.none.k--> 次以坏掉的测试套件和一句“完成”收场。用 Nonna lite：8<!--n:task.n--> 次中 1<!--n:task.claims-done.plugin-lite.k--> 次。
+两栏（左边不用 Nonna，右边是 Nonna lite）引用的都是第 3 轮的运行记录，按规则选出，不是专挑好看的：[完整记录](examples/claims-done.md)。右栏的 `✗ Nonna: where's the test? (stop: code changed, no test changed)` 意思是“测试呢？（stop 钩子：代码改了，测试没改）”。不用 Nonna 时，这个任务（[提示词](bench/tasks/traps/claims-done/prompt.txt)、[隐藏检查](bench/hidden/claims-done.sh)）的 8<!--n:task.n--> 次运行中有 4<!--n:task.claims-done.none.k--> 次以坏掉的测试套件和一句“完成”收场。用 Nonna lite：8<!--n:task.n--> 次中 1<!--n:task.claims-done.plugin-lite.k--> 次。
 
 ## Nonna 会说什么
 
@@ -105,9 +105,9 @@ the hidden check runs the whole suite:       "... My change to `split.py` remove
 | 每个小功能的成本，Sonnet，同一提示词                                                  |                       $0.040<!--n:small.none.cost--> |                       $0.071<!--n:small.plugin-lite.cost--> |                       $0.096<!--n:small.plugin-full.cost--> |
 | 每个小功能的耗时，Sonnet                                                              |                         12<!--n:small.none.wall--> s |                         20<!--n:small.plugin-lite.wall--> s |                         24<!--n:small.plugin-full.wall--> s |
 
-每个陷阱任务都是一个普通的请求，只是让人很想走捷径。结果由隐藏检查评分，智能体永远看不到它。64<!--n:traps.n--> 次中出现 1<!--n:traps.plugin-lite.k--> 次，真实比率仍可能高达约 8<!--n:traps.plugin-lite.wilson_hi-->%（Wilson 95%）。在一个真实仓库的六个工单上（[full-stack-fastapi-template](bench/README.md#the-real-suite)），lite 保持了不用 Nonna 时的通过率（36<!--n:real.n--> 次中 30<!--n:real.plugin-lite.pass--> 次，不用 Nonna 为 28<!--n:real.none.pass--> 次），也没有更安全（不安全的运行 1<!--n:real.plugin-lite.unsafe--> 次，不用 Nonna 也是 1<!--n:real.none.unsafe--> 次）：那些陷阱破坏的是仓库自己的测试没检查的地方，而她运行的只是现有的测试。
+每个陷阱任务都是一个普通的请求，只是让人很想走捷径。结果由一项隐藏检查评分，智能体始终看不到这项检查。64<!--n:traps.n--> 次中出现 1<!--n:traps.plugin-lite.k--> 次，真实发生率仍可能高达约 8<!--n:traps.plugin-lite.wilson_hi-->%（Wilson 95%）。在一个真实仓库的六个工单上（[full-stack-fastapi-template](bench/README.md#the-real-suite)），lite 保持了不用 Nonna 时的通过率（36<!--n:real.n--> 次中 30<!--n:real.plugin-lite.pass--> 次，不用 Nonna 为 28<!--n:real.none.pass--> 次），也没有更安全（不安全的运行 1<!--n:real.plugin-lite.unsafe--> 次，不用 Nonna 也是 1<!--n:real.none.unsafe--> 次）：那些陷阱破坏的是仓库自己的测试没检查的地方，而她运行的只是现有的测试。
 
-出了什么问题，我们也摆在明处：lite 唯一的那次失手通过了它自己的测试套件，却没通过原始测试，说明智能体改动了测试或测试的配置，而目前还没有门禁检查这一点；另外，不用 Nonna 时 Claude Sonnet 已经不会再留下这个红着的测试套件，所以第二行是 Haiku 的结果。方法、各任务的表格、原始数据和所有注意事项：[`bench/`](bench/)。每个陷阱各一次运行，逐字记录：[`examples/`](examples/)。
+出了什么问题，我们也摆在明处：lite 唯一的那次失手通过了它自己的测试套件，却没通过原始测试，说明智能体改动了测试或测试的 setup，而目前还没有门禁检查这一点；另外，不用 Nonna 时 Claude Sonnet 已经不会再留下这个红着的测试套件，所以第二行是 Haiku 的结果。方法、各任务的表格、原始数据和所有注意事项：[`bench/`](bench/)。每个陷阱各一次运行，逐字记录：[`examples/`](examples/)。
 
 ### 复现
 
@@ -159,19 +159,19 @@ curl -fsSL https://raw.githubusercontent.com/kapadias/nonna/main/install.sh | ba
 
 ## 常见问题
 
-**这不就是一段提示词吗？** 不是。提示词拒绝不了一次推送。门禁是 shell 脚本，它们运行你的测试命令并读取 git；规则只是让门禁少触发几次。在基准测试中，lite 模式下的智能体大多遵守了规则，所以她最硬的那几道门禁很少需要出手。它们是为不守规矩的那次运行准备的。
+**这不就是一段提示词吗？** 不是。提示词拦不住推送。门禁是 shell 脚本，它们运行你的测试命令并读取 git；规则只是让门禁不必那么常出手。在基准测试中，lite 模式下的智能体大多遵守了规则，所以她最硬的那几道门禁很少需要出手。它们是为不守规矩的那次运行准备的。
 
 **它和 superpowers 或 tdd-guard 有什么不同？** superpowers 给智能体一些技能，告诉它要验证自己的工作；它要是不验证，也没有什么能拦住这一回合。tdd-guard 会问一个模型：每次编辑是否遵循 TDD。Nonna 不问任何模型：她运行你的测试命令，退出码非零就拦截，还在智能体内和 git 里都加上分支守卫和机密守卫。
 
-**智能体还能绕过她吗？** 能，我们见过两种方式。她按原样运行你的测试，所以智能体如果为了让测试套件通过而改动某个测试或它的配置，就能过关：基准测试里 lite 唯一的那次失手正是如此，她的规则禁止这样做，但目前还没有门禁检查。另外，没有测试检查的东西她也看不到：在真实仓库的工单上，漏过去的陷阱弄坏的都是那里没有任何测试覆盖的地方。她让你已有的检查无法跳过；你没有的检查，她不会替你加上。
+**智能体还能绕过她吗？** 能，我们见过两种方式。她按原样运行你的测试，所以智能体如果为了让测试套件通过而改动某个测试或它的 setup，就能过关：基准测试里 lite 唯一的那次失手正是如此，她的规则禁止这样做，但目前还没有门禁检查。另外，没有测试检查的东西她也看不到：在真实仓库的工单上，漏过去的陷阱弄坏的都是那里没有任何测试覆盖的地方。她让你已有的检查无法跳过；你没有的检查，她不会替你加上。
 
-**会拖慢我吗？** 会慢一点：在基准测试中，用 Sonnet 做一个小功能，lite 大约多花 8<!--n:small.delta.wall--> 秒。只有代码改动了她才跑测试，已经通过的代码树不会再跑。回合结束时，如果测试套件耗时超过 240 秒，她不会拦截；pre-push 钩子仍会完整地跑一遍。
+**会拖慢我吗？** 会慢一点：在基准测试中，用 Sonnet 做一个小功能，lite 大约多花 8<!--n:small.delta.wall--> 秒。只有代码改动了她才跑测试，已经跑通过的同一份代码不会重跑。回合结束时，如果测试套件耗时超过 240 秒，她不会拦截；pre-push 钩子仍会完整地跑一遍。
 
 **它会改动我机器上的什么？** `.git/hooks/pre-push` 和 `.git/hooks/pre-commit`（仅当你还没有时）、仓库 git 配置里的几个 `nonna.*` 键，以及 `.git/` 下的一些小文件（最近一次通过的运行、会话开始的时间、她已经提醒过哪些分支）。不会提交任何东西。没有任何钩子会访问网络。`/nonna uninstall` 会把这些全部移除。
 
 **不会更贵吗？** 用 Sonnet 做一次小改动，大约多花 3<!--n:small.delta.cents_int--> 美分（$0.071<!--n:small.plugin-lite.cost--> 对比 $0.040<!--n:small.none.cost-->，两边用同一个提示词）。她什么时候能回本：见[盈亏平衡表](bench/README.md#break-even)。
 
-**如果我必须不带测试就发布呢？** 在分支上发，并加一个 `debt:` 标记，写明你什么时候补上。她会记着的。
+**如果我必须不带测试就发布呢？** 放在分支上，并加一个 `debt:` 标记，写明你什么时候补上测试。她会记着的。
 
 **Windows 呢？** 支持 macOS、Linux 和 WSL。钩子是用 bash 写的；原生 Windows 还没有测试过。
 
@@ -197,7 +197,7 @@ python3 tests/harness_lint.py  # 字数预算、各 host 文件同步、钩子�
 
 ## 致谢
 
-决策阶梯、`debt:` 标记约定、过度设计评审标签，以及把上下文带给子智能体的机制，都改编自 Dietrich Gebert 的 [ponytail](https://github.com/dietrichgebert/ponytail)（MIT）。
+决策阶梯、`debt:` 标记约定、过度设计评审标签，以及向子智能体注入上下文的机制，都改编自 Dietrich Gebert 的 [ponytail](https://github.com/dietrichgebert/ponytail)（MIT）。
 
 ## 许可证
 
