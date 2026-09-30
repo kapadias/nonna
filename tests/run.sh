@@ -2990,17 +2990,21 @@ echo "== .gitattributes (text checks out as LF, whatever core.autocrlf says) =="
 # line end or compare bytes. So the repository says what a clone holds: LF, and the CRLF files it has stay so.
 GA="$ROOT/.gitattributes"
 rc=0; [ -f "$GA" ] || rc=1; check "gitattributes: the repository has one" 0 "$rc"
+# CRs are counted as bytes (tr), not looked for with grep, which on some platforms reads a text file as text. The
+# value checked is that count: a failure prints it as "got".
+ncr() { LC_ALL=C tr -cd '\r' < "$1" | wc -c | tr -d ' '; }
 TMP="$(mktemp -d)"; mkdir -p "$TMP/src"; "${GIT[@]}" -C "$TMP/src" init -q
+"${GIT[@]}" -C "$TMP/src" config core.autocrlf false # nothing converts what this test commits, whatever the machine's git config says
 printf 'a\tb\r\n' > "$TMP/src/old.tsv"; "${GIT[@]}" -C "$TMP/src" add -A; "${GIT[@]}" -C "$TMP/src" commit -qm old
 cp "$GA" "$TMP/src/.gitattributes" 2>/dev/null
 printf '#!/usr/bin/env bash\necho hi\n' > "$TMP/src/hook.sh"; printf 'BEGIN { print 1 }\n' > "$TMP/src/lib.awk"; printf '# Title\n\ntext\n' > "$TMP/src/README.md"
 "${GIT[@]}" -C "$TMP/src" add -A; "${GIT[@]}" -C "$TMP/src" commit -qm new
 "${GIT[@]}" clone -q -c core.autocrlf=true "$TMP/src" "$TMP/dst"
-# A CR in the word itself ($'\r'), not one read back through $(...), which can trim it.
-grep -q $'\r' "$TMP/dst/hook.sh"; check "gitattributes: a shell script is checked out with LF where core.autocrlf=true" 1 "$?"
-grep -q $'\r' "$TMP/dst/lib.awk"; check "gitattributes: ...and an awk file" 1 "$?"
-grep -q $'\r' "$TMP/dst/README.md"; check "gitattributes: ...and a markdown file" 1 "$?"
-grep -q $'\r' "$TMP/dst/old.tsv"; check "gitattributes: a file committed with CRLF stays as committed, not rewritten" 0 "$?"
+check "gitattributes: a shell script is checked out with LF where core.autocrlf=true" 0 "$(ncr "$TMP/dst/hook.sh")"
+check "gitattributes: ...and an awk file" 0 "$(ncr "$TMP/dst/lib.awk")"
+check "gitattributes: ...and a markdown file" 0 "$(ncr "$TMP/dst/README.md")"
+check "gitattributes: a file committed with CRLF has its CR in the repository" 1 "$("${GIT[@]}" -C "$TMP/src" cat-file -p HEAD:old.tsv | tr -cd '\r' | wc -c | tr -d ' ')"
+check "gitattributes: ...and keeps it in the clone, as committed, not rewritten" 1 "$(ncr "$TMP/dst/old.tsv")"
 rc=0; [ -z "$("${GIT[@]}" -C "$TMP/dst" status --porcelain)" ] || rc=1; check "gitattributes: ...and the clone is clean" 0 "$rc"
 rm -rf "$TMP"
 if git -C "$ROOT" rev-parse --is-inside-work-tree >/dev/null 2>&1; then

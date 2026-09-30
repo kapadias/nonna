@@ -44,7 +44,8 @@ say paths "pwd=$PWD | git top=$(git -C "$ROOT" rev-parse --show-toplevel 2>/dev/
 
 # 2. Line endings. A plugin is installed by git clone, and Git for Windows clones with core.autocrlf=true.
 if git -C "$ROOT" rev-parse --git-dir >/dev/null 2>&1; then
-  n=$(git -C "$ROOT" ls-files -z '*.sh' '*.awk' | xargs -0 grep -l "$(printf '\r')" 2>/dev/null | wc -l | tr -d ' ')
+  # git's own reading of the working tree (w/crlf, w/mixed), not a grep for a CR: a grep may not see one on Git Bash
+  n=$(git -C "$ROOT" ls-files --eol '*.sh' '*.awk' | grep -c -E ' w/(crlf|mixed) ' || true)
   say "eol of this checkout" "$n of $(git -C "$ROOT" ls-files '*.sh' '*.awk' | wc -l | tr -d ' ') tracked .sh and .awk files hold CRLF | $(git -C "$ROOT" ls-files --eol .claude/hooks/pre-commit.sh | tr -s ' \t' ' ')"
   if git clone -q --no-local -c core.autocrlf=true "$ROOT" "$tmp/crlf" 2>/dev/null; then
     say "eol of a clone with core.autocrlf=true" "$(git -C "$tmp/crlf" ls-files --eol .claude/hooks/guard-branch.sh | tr -s ' \t' ' ')"
