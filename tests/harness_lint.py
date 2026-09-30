@@ -11,7 +11,7 @@ Every check below fails the build (boundaries.md: deterministic gates decide):
   - slash refs: every `/name` named in the harness resolves to a command or skill.
   - domain leak: no domain-specific vocabulary in a domain-agnostic harness.
   - external names: a project whose ideas Nonna adapted is credited in README.md
-    and named nowhere else.
+    (and its translations) and named nowhere else.
   - the ladder: the seven rung keywords appear in both 00-core.md (always-on)
     and skills/lean/SKILL.md (depth), so the two copies cannot drift (ADR-0008).
   - debt gate wiring: /review and /sync invoke check-debt.sh (ADR-0008).
@@ -19,6 +19,8 @@ Every check below fails the build (boundaries.md: deterministic gates decide):
     review ask which adds code must name a failing input (ADR-0008).
   - README numbers: every number README.md marks (`<!--n:key-->`) equals the fact
     the lint computes from bench/results/round3/*.tsv.
+  - README translations: each README.<lang>.md marks the numbers README.md marks
+    and carries its code blocks word for word, so neither goes stale in a language.
 
 NONNA_LINT_ROOT points the linter at a different tree. It exists so tests/run.sh
 can golden-test the linter itself against mutated copies of this repo — a linter
@@ -314,6 +316,7 @@ md_files: list[str] = []
 for patt in (
     "CLAUDE.md",
     "README.md",
+    "README.*.md",
     "CONTRIBUTING.md",
     ".claude/**/*.md",
     "docs/**/*.md",
@@ -445,8 +448,16 @@ for rel, phrase in (
 # one place their names appear. Everything the harness ships stays brand-free. The
 # term is assembled at runtime so this file cannot trip its own check.
 EXTERNAL_NAMES = ("pony" + "tail",)
-# The credit line, and the one helper that must name the plugin to detect it (lib/ladder.sh).
-EXTERNAL_ALLOWED = {"README.md", ".claude/hooks/lib/ladder.sh"}
+# The credit line (README.md and each translation of it, by name: a new language is added on purpose),
+# and the one helper that must name the plugin to detect it (lib/ladder.sh).
+EXTERNAL_ALLOWED = {
+    "README.md",
+    "README.zh-CN.md",
+    "README.ko.md",
+    "README.ja.md",
+    "README.es.md",
+    ".claude/hooks/lib/ladder.sh",
+}
 EXTERNAL = re.compile("|".join(re.escape(t) for t in EXTERNAL_NAMES), re.IGNORECASE)
 SCAN_EXT = re.compile(r"\.(md|sh|py|json|ya?ml|txt)$")
 # Top-level directories that ship in neither the plugin nor install.sh. bench/ measures
@@ -469,7 +480,7 @@ for dirpath, dirnames, filenames in os.walk(ROOT):
             for n, line in enumerate(fh, 1):
                 if EXTERNAL.search(line):
                     bad(
-                        f"{rel}:{n}: external project name — credit belongs in README.md only"
+                        f"{rel}:{n}: external project name — credit belongs in README.md and its translations only"
                     )
 
 # --- bench/README.md quotes every task prompt word for word (D4) ---
@@ -893,20 +904,28 @@ try:
 except FileNotFoundError:
     README_TEXT = ""
 FACTS = readme_facts()
-seen_facts: set[str] = set()
-for n, line in enumerate(README_TEXT.splitlines(), 1):
-    for shown, key in README_FACT.findall(line):
-        seen_facts.add(key)
-        if key not in FACTS:
-            bad(f"README.md:{n}: number mark '{key}' is not a fact the lint computes")
-        elif shown != FACTS[key]:
-            bad(
-                f"README.md:{n}: {shown} marked {key}, but round 3's rows say {FACTS[key]}"
-            )
-    if "<!--n:" in line and len(README_FACT.findall(line)) != line.count("<!--n:"):
-        bad(f"README.md:{n}: a number mark with no number right before it")
+
+
+def check_marks(rel: str, text: str) -> list[str]:
+    """Hold each number a README marks to round 3's rows; return its marks, one per number."""
+    marks: list[str] = []
+    for n, line in enumerate(text.splitlines(), 1):
+        for shown, key in README_FACT.findall(line):
+            marks.append(key)
+            if key not in FACTS:
+                bad(f"{rel}:{n}: number mark '{key}' is not a fact the lint computes")
+            elif shown != FACTS[key]:
+                bad(
+                    f"{rel}:{n}: {shown} marked {key}, but round 3's rows say {FACTS[key]}"
+                )
+        if "<!--n:" in line and len(README_FACT.findall(line)) != line.count("<!--n:"):
+            bad(f"{rel}:{n}: a number mark with no number right before it")
+    return marks
+
+
+README_MARKS = check_marks("README.md", README_TEXT)
 if FACTS:
-    for key in sorted(HEADLINE_FACTS - seen_facts):
+    for key in sorted(HEADLINE_FACTS - set(README_MARKS)):
         bad(f"README.md: the headline number '{key}' is no longer marked")
 # An alt text cannot carry marks, so the scorecard's says what the image says: its <title> and
 # <desc>, which build.py writes from the same rows (and --check holds the image to them). The
@@ -914,43 +933,79 @@ if FACTS:
 # a markdown image, and every alt text it gives it is compared. The check cannot end silently: a
 # README that names the file and gets no alt text compared fails.
 SCORECARD = "assets/scorecard.svg"
-# Each place the README shows the scorecard: its offset in the README and its alt text (None: none).
-shown: list[tuple[int, str | None]] = []
-for tag in re.finditer(
-    r'<img\b[^>]*\bsrc="assets/scorecard\.svg"[^>]*>', README_TEXT, re.I
-):
-    alt = re.search(r'\balt="([^"]*)"', tag.group(0), re.I)
-    shown.append((tag.start(), alt.group(1) if alt else None))
-for md in re.finditer(r"!\[([^\]]*)\]\(assets/scorecard\.svg[^)]*\)", README_TEXT):
-    shown.append((md.start(), md.group(1)))
-if SCORECARD in README_TEXT:
-    try:
-        with open(f"{ROOT}/{SCORECARD}", encoding="utf-8") as fh:
-            svg = fh.read()
-    except FileNotFoundError:
-        bad(f"README.md: shows {SCORECARD}, which is missing")
-    else:
-        title = re.search(r"<title[^>]*>(.*?)</title>", svg, re.S)
-        desc = re.search(r"<desc[^>]*>(.*?)</desc>", svg, re.S)
-        says = (
-            f"{html.unescape(title.group(1))}. {html.unescape(desc.group(1))}"
-            if title and desc
-            else None
-        )
-        for at, alt in sorted(shown, key=lambda s: s[0]):
-            n = README_TEXT.count("\n", 0, at) + 1
-            if alt is None:
-                bad(
-                    f"README.md:{n}: the scorecard <img> has no alt text, which must be the image's own <title>. <desc>: {says!r}"
-                )
-            elif html.unescape(alt) != says:
-                bad(
-                    f"README.md:{n}: the scorecard's alt text is not the image's own <title>. <desc>: {says!r}"
-                )
-        if not shown:
-            bad(
-                f"README.md: names {SCORECARD}, but not in an <img> or a markdown image the lint can read, so it compared no alt text"
+
+
+def check_scorecard(rel: str, text: str) -> None:
+    # Each place the README shows the scorecard: its offset in the README and its alt text (None: none).
+    shown: list[tuple[int, str | None]] = []
+    for tag in re.finditer(
+        r'<img\b[^>]*\bsrc="assets/scorecard\.svg"[^>]*>', text, re.I
+    ):
+        alt = re.search(r'\balt="([^"]*)"', tag.group(0), re.I)
+        shown.append((tag.start(), alt.group(1) if alt else None))
+    for md in re.finditer(r"!\[([^\]]*)\]\(assets/scorecard\.svg[^)]*\)", text):
+        shown.append((md.start(), md.group(1)))
+    if SCORECARD in text:
+        try:
+            with open(f"{ROOT}/{SCORECARD}", encoding="utf-8") as fh:
+                svg = fh.read()
+        except FileNotFoundError:
+            bad(f"{rel}: shows {SCORECARD}, which is missing")
+        else:
+            title = re.search(r"<title[^>]*>(.*?)</title>", svg, re.S)
+            desc = re.search(r"<desc[^>]*>(.*?)</desc>", svg, re.S)
+            says = (
+                f"{html.unescape(title.group(1))}. {html.unescape(desc.group(1))}"
+                if title and desc
+                else None
             )
+            for at, alt in sorted(shown, key=lambda s: s[0]):
+                n = text.count("\n", 0, at) + 1
+                if alt is None:
+                    bad(
+                        f"{rel}:{n}: the scorecard <img> has no alt text, which must be the image's own <title>. <desc>: {says!r}"
+                    )
+                elif html.unescape(alt) != says:
+                    bad(
+                        f"{rel}:{n}: the scorecard's alt text is not the image's own <title>. <desc>: {says!r}"
+                    )
+            if not shown:
+                bad(
+                    f"{rel}: names {SCORECARD}, but not in an <img> or a markdown image the lint can read, so it compared no alt text"
+                )
+
+
+check_scorecard("README.md", README_TEXT)
+
+# --- README translations: each README.<lang>.md says what README.md says ---
+# A translation marks the numbers README.md marks (held to the rows above, in whatever order its
+# language puts them), gives the scorecard the image's own alt text (the image is in English), and
+# carries README.md's code blocks word for word: a command, a path or a line Nonna prints is not
+# translated, a shell comment may be. So a number or a command changed in README.md fails here until
+# every translation follows. The golden-test count is left out of them: only README.md's is checked.
+FENCE = re.compile(r"^[ \t]*```.*?^[ \t]*```", re.M | re.S)
+SHELL_COMMENT = re.compile(r"[ \t]*(?<!\S)#.*$", re.M)
+
+
+def code_blocks(text: str) -> list[str]:
+    return [SHELL_COMMENT.sub("", block) for block in FENCE.findall(text)]
+
+
+for path in sorted(glob.glob(f"{ROOT}/README.*.md")):
+    rel = os.path.basename(path)
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read()
+    marks = check_marks(rel, text)
+    for key in sorted(set(README_MARKS) | set(marks)):
+        if marks.count(key) != README_MARKS.count(key):
+            bad(
+                f"{rel}: number mark '{key}' appears {marks.count(key)} time(s), {README_MARKS.count(key)} in README.md"
+            )
+    check_scorecard(rel, text)
+    if code_blocks(text) != code_blocks(README_TEXT):
+        bad(
+            f"{rel}: its code blocks are not README.md's word for word (only a # comment may be translated)"
+        )
 
 if offenders:
     print("Harness lint FAILED:")
