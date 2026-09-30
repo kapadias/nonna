@@ -1147,8 +1147,10 @@ check_scorecard("README.md", README_TEXT)
 FENCE = re.compile(r"^[ \t]*```.*?^[ \t]*```", re.M | re.S)
 SHELL_FENCE = re.compile(r"[ \t]*```(?:bash|sh|shell)\b")
 SHELL_COMMENT = re.compile(r"[ \t]*(?<!\S)#.*$", re.M)
-CODE_SPAN = re.compile(r"`([^`\n]+)`")
+CODE_SPAN = re.compile(r"`([^`]+)`")
 HTML_TARGET = re.compile(r'\b(?:href|src|srcset)="([^"]+)"')
+AUTOLINK = re.compile(r"<(https?://[^>]+)>")
+REF_DEF = re.compile(r"^\s*\[[^\]]+\]:\s*(\S+)", re.M)
 
 
 def code_blocks(text: str) -> list[str]:
@@ -1160,14 +1162,20 @@ def code_blocks(text: str) -> list[str]:
 
 
 def refs(text: str) -> Counter[tuple[str, str]]:
-    # The link targets and inline code spans outside code blocks, counted. An in-page anchor is left
-    # out: a translation's headings, and so their anchors, are its own.
+    # The link targets (markdown and HTML links, autolinks, reference definitions) and inline code
+    # spans outside code blocks, counted. A span may wrap across lines: it is joined as CommonMark
+    # reads it. An in-page anchor is left out: a translation's headings, and so their anchors, are
+    # its own.
     prose = FENCE.sub("", text)
     targets = [t.split()[0] for t in LINK.findall(prose) if t.strip()]
-    targets += HTML_TARGET.findall(prose)
+    targets += HTML_TARGET.findall(prose) + AUTOLINK.findall(prose)
+    targets += REF_DEF.findall(prose)
     return Counter(
         [("link", t) for t in targets if not t.startswith("#")]
-        + [("inline code", f"`{s}`") for s in CODE_SPAN.findall(prose)]
+        + [
+            ("inline code", f"`{' '.join(s.split())}`")
+            for s in CODE_SPAN.findall(prose)
+        ]
     )
 
 
