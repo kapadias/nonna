@@ -2843,6 +2843,46 @@ printf '# Changelog\n\n## [1x0x0] - x\n\nwrong section\n' > "$TMP/CH2.md"
 bash "$RN" 1.0.0 "$TMP/CH2.md" >/dev/null 2>&1; check "version matches literally, not as a regex" 1 "$?"
 rm -rf "$TMP"
 
+echo "== release.yml (the tag must agree with every manifest) =="
+# The release job refuses a tag that disagrees with a manifest. `gemini extensions install` takes the
+# latest release's archive and lists the version in gemini-extension.json, so that manifest is held to
+# the tag too. The step's script is run here as GitHub runs it, on a copy of the three manifests.
+REL="$ROOT/.github/workflows/release.yml"
+rel_script() { # -> the run: script of the step that checks the manifests against the tag, dedented
+  python3 - "$REL" <<'PY'
+import sys
+lines = open(sys.argv[1], encoding="utf-8").read().split("\n")
+step = next(n for n, l in enumerate(lines) if "name: Verify the manifests agree with the tag" in l)
+run = next(n for n in range(step, len(lines)) if lines[n].strip() == "run: |")
+indent = len(lines[run + 1]) - len(lines[run + 1].lstrip())
+for l in lines[run + 1:]:
+    if l.strip() and len(l) - len(l.lstrip()) < indent:
+        break
+    print(l[indent:])
+PY
+}
+rel_repo() { # -> a directory holding the three manifests, as the release job sees them
+  local d; d="$(mktemp -d)"
+  mkdir -p "$d/.claude/.claude-plugin" "$d/.claude-plugin"
+  cp "$ROOT/.claude/.claude-plugin/plugin.json" "$d/.claude/.claude-plugin/"
+  cp "$ROOT/.claude-plugin/marketplace.json" "$d/.claude-plugin/"
+  cp "$ROOT/gemini-extension.json" "$d/"
+  printf '%s' "$d"
+}
+RV="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$ROOT/.claude/.claude-plugin/plugin.json" | head -n 1)"
+RS="$(mktemp)"; rel_script > "$RS"
+RD="$(rel_repo)"
+out="$(cd "$RD" && GITHUB_REF_NAME="v$RV" bash "$RS" 2>&1)"; check "release: a tag every manifest agrees with passes" 0 "$?"
+contains "release: ...and says so" "Manifests agree: $RV" "$out"
+sed_i 's/"version": "[^"]*"/"version": "9.9.9"/' "$RD/gemini-extension.json"
+out="$(cd "$RD" && GITHUB_REF_NAME="v$RV" bash "$RS" 2>&1)"; check "release: a tag the Gemini extension manifest disagrees with fails" 1 "$?"
+contains "release: ...and names that manifest" "gemini-extension.json says 9.9.9" "$out"
+rm -rf "$RD"
+RD="$(rel_repo)"
+out="$(cd "$RD" && GITHUB_REF_NAME="v9.9.9" bash "$RS" 2>&1)"; check "release: a tag none of the manifests agree with fails" 1 "$?"
+contains "release: ...and names the first manifest that disagrees" "plugin.json says $RV" "$out"
+rm -rf "$RD" "$RS"
+
 echo "== hook wiring (every command survives a path with a space) =="
 # Claude Code puts the plugin root or the project dir into each hook command and hands it to a
 # shell. Under an unquoted root, "/Users/a b/..." splits into words: the shell reports "not
@@ -2895,7 +2935,7 @@ lint_fixture() { # -> echoes a fresh copy of the harness
   local d; d="$(mktemp -d)"
   cp -R "$ROOT/.claude" "$ROOT/docs" "$ROOT/tests" "$ROOT/stacks" "$ROOT/.github" \
         "$ROOT/.claude-plugin" "$ROOT/hosts" "$ROOT/bench" "$ROOT/examples" "$ROOT/assets" "$d/" 2>/dev/null
-  cp "$ROOT"/*.md "$ROOT"/LICENSE "$d/" 2>/dev/null
+  cp "$ROOT"/*.md "$ROOT"/LICENSE "$ROOT/gemini-extension.json" "$d/" 2>/dev/null
   printf '%s' "$d"
 }
 FX="$(lint_fixture)"
@@ -3069,6 +3109,75 @@ sed_i 's/^## Never$/## Never\
 - One more never./' "$FX/.claude/rules/00-core.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks host rule files that drifted from 00-core.md" 1 "$?"
 contains "lint: names the stale host file" "hosts/AGENTS.md" "$out"
+rm -rf "$FX"
+# The Gemini CLI extension. `gemini extensions install` reads gemini-extension.json from the repository
+# root and loads the one file contextFileName names, and when that file is unusable it says nothing: a
+# missing file, an absolute path, a "..", even a directory installs cleanly and loads no rules. So the
+# lint holds the manifest to the CLI's own rules, to a real file that says what it must, and to the
+# plugin's version.
+gx_set() { # <manifest> <key> <json value, or - to drop the key>: change one key of the extension manifest
+  python3 - "$@" <<'PY'
+import json, sys
+path, key, value = sys.argv[1:4]
+cfg = json.load(open(path, encoding="utf-8"))
+if value == "-":
+    cfg.pop(key, None)
+else:
+    cfg[key] = json.loads(value)
+json.dump(cfg, open(path, "w", encoding="utf-8"), indent=2)
+PY
+}
+FX="$(lint_fixture)"
+rm -f "$FX/gemini-extension.json"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a repository with no gemini-extension.json" 1 "$?"
+contains "lint: names the missing manifest" "gemini-extension.json: missing" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+printf '{ "name": "nonna",\n' > "$FX/gemini-extension.json"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a gemini-extension.json that is not valid JSON" 1 "$?"
+contains "lint: says it is invalid JSON" "gemini-extension.json: invalid JSON" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+gx_set "$FX/gemini-extension.json" name '"nonna_rules"'
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks an extension name the CLI refuses" 1 "$?"
+contains "lint: says what a name may hold" "letters, digits and dashes" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+gx_set "$FX/gemini-extension.json" contextFileName -
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a manifest with no contextFileName" 1 "$?"
+contains "lint: says the CLI would look for a GEMINI.md at the root" "contextFileName must be one path" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+gx_set "$FX/gemini-extension.json" contextFileName '"hosts/../hosts/gemini-extension/GEMINI.md"'
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a contextFileName with .. in it, which the CLI skips" 1 "$?"
+contains "lint: says the path must stay inside the repository" "must be a relative path inside the repository" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+gx_set "$FX/gemini-extension.json" contextFileName "\"$FX/hosts/gemini-extension/GEMINI.md\""
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks an absolute contextFileName, which the CLI skips" 1 "$?"
+contains "lint: says the path must be relative" "must be a relative path inside the repository" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+gx_set "$FX/gemini-extension.json" contextFileName '"hosts/gemini-extension/NOPE.md"'
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a contextFileName that names no file" 1 "$?"
+contains "lint: says the CLI would load nothing from it" "is not a file" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+gx_set "$FX/gemini-extension.json" contextFileName '"hosts/gemini-extension"'
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a contextFileName that names a directory, which the CLI lists and loads nothing from" 1 "$?"
+contains "lint: says a directory is not a file" "is not a file" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+gx_set "$FX/gemini-extension.json" version '"9.9.9"'
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks an extension version that is not the plugin's" 1 "$?"
+contains "lint: says the version is not the plugin's" "is not the plugin's" "$out"
+rm -rf "$FX"
+# The CLI would load hosts/lite/GEMINI.md, but that is the file install.sh writes beside the git hooks
+# it links: its header says they refuse commits, and an extension installs none.
+FX="$(lint_fixture)"
+gx_set "$FX/gemini-extension.json" contextFileName '"hosts/lite/GEMINI.md"'
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a context file that does not say install.sh --host gemini adds the git hooks" 1 "$?"
+contains "lint: says what the loaded text must say" "install.sh --host gemini" "$out"
 rm -rf "$FX"
 # The context file is generated like every host's rules file: a hand edit is drift, and writing it again fixes it.
 FX="$(lint_fixture)"

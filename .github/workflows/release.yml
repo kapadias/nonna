@@ -40,11 +40,14 @@ jobs:
           fi
           echo "Extracted $(wc -l < notes.md) lines for $version"
 
+      # gemini-extension.json is checked too: `gemini extensions install` takes the latest release's
+      # archive and shows users the version in that file, so a release carrying another one is
+      # mislabelled.
       - name: Verify the manifests agree with the tag
         run: |
           set -euo pipefail
           version="${GITHUB_REF_NAME#v}"
-          for f in .claude/.claude-plugin/plugin.json .claude-plugin/marketplace.json; do
+          for f in .claude/.claude-plugin/plugin.json .claude-plugin/marketplace.json gemini-extension.json; do
             got="$(python3 -c "
           import json,sys
           d = json.load(open(sys.argv[1]))

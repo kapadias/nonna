@@ -17,6 +17,9 @@ Every check below fails the build (boundaries.md: deterministic gates decide):
   - debt gate wiring: /review and /sync invoke check-debt.sh (ADR-0008).
   - review inflation: dev-process §4 and the severity rubric keep the rule that a
     review ask which adds code must name a failing input (ADR-0008).
+  - Gemini CLI extension: gemini-extension.json is valid JSON, names a context file the
+    CLI can load (a relative path to a real file) that says `install.sh --host gemini`
+    adds the git hooks, and carries the plugin's version.
   - README numbers: every number README.md marks (`<!--n:key-->`) equals the fact
     the lint computes from bench/results/round3/*.tsv.
 
@@ -669,6 +672,62 @@ for jf in (plugin_manifest, marketplace, plugin_hooks):
             json.load(fh)
     except json.JSONDecodeError as exc:
         bad(f"plugin packaging: invalid JSON in {os.path.relpath(jf, ROOT)}: {exc}")
+
+# --- Gemini CLI extension: the manifest it reads, the file it loads, one version ---
+# `gemini extensions install https://github.com/kapadias/nonna` installs the latest release's
+# archive and reads gemini-extension.json from its root. When the context file is unusable the
+# CLI says nothing: a contextFileName that is missing, absolute, climbs out with "..", or names
+# a directory installs cleanly and loads no rules (`gemini extensions validate` catches the first
+# three). So the manifest is held to the CLI's own rules, to a real file that says the extension
+# installs no git hooks, and to the plugin's version, which `gemini extensions list` shows.
+EXT_MANIFEST = "gemini-extension.json"
+try:
+    with open(f"{ROOT}/{EXT_MANIFEST}", encoding="utf-8") as fh:
+        ext = json.load(fh)
+    if not isinstance(ext, dict):
+        raise ValueError("expected a JSON object")
+except FileNotFoundError:
+    bad(f"{EXT_MANIFEST}: missing — the Gemini CLI reads it from the repository root")
+except ValueError as exc:  # JSONDecodeError is one
+    bad(f"{EXT_MANIFEST}: invalid JSON: {exc}")
+else:
+    ext_name = ext.get("name")
+    if not (isinstance(ext_name, str) and re.fullmatch(r"[A-Za-z0-9-]+", ext_name)):
+        bad(
+            f"{EXT_MANIFEST}: name {ext_name!r} must be letters, digits and dashes, or the CLI refuses the extension"
+        )
+    try:
+        with open(plugin_manifest, encoding="utf-8") as fh:
+            plugin_version = json.load(fh).get("version")
+    except (OSError, ValueError, AttributeError):
+        plugin_version = None  # the packaging check above says why
+    if plugin_version and ext.get("version") != plugin_version:
+        bad(
+            f"{EXT_MANIFEST}: version {json.dumps(ext.get('version'))} is not the plugin's "
+            f"{json.dumps(plugin_version)} (.claude/.claude-plugin/plugin.json); release.yml holds both to the tag"
+        )
+    ctx = ext.get("contextFileName")
+    if not (isinstance(ctx, str) and ctx.strip()):
+        bad(
+            f"{EXT_MANIFEST}: contextFileName must be one path (a string): without it the CLI would "
+            f"load a GEMINI.md at the root, which this repository does not have, and load no rules"
+        )
+    elif re.match(r"[A-Za-z]:|[/\\]", ctx) or ".." in ctx:
+        bad(
+            f"{EXT_MANIFEST}: contextFileName {ctx!r} must be a relative path inside the repository, "
+            f"with no '..': the CLI skips any other without a word"
+        )
+    elif not os.path.isfile(os.path.join(ROOT, ctx)):
+        bad(
+            f"{EXT_MANIFEST}: contextFileName {ctx!r} is not a file: the CLI loads no rules from it, without a word"
+        )
+    else:
+        with open(os.path.join(ROOT, ctx), encoding="utf-8") as fh:
+            loaded = " ".join(fh.read().split())
+        if "install.sh --host gemini" not in loaded:
+            bad(
+                f"{ctx}: must say that install.sh --host gemini adds the git hooks, which the extension does not install"
+            )
 
 
 # --- hook wiring equivalence: two files declare the same gates, with no shared source ---
