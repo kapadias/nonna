@@ -31,7 +31,7 @@ for pair in pre-push:require-status-sync.sh pre-commit:pre-commit.sh; do
 done
 
 # Her settings in this repository's config, each named with its value (a test command shown only
-# when it carries no secret): the nonna section and each directory's own, nonna.<dir>.* (ADR-0012).
+# when it carries no secret): the nonna section and each directory's own, nonna.<dir>.* (ADR-0014).
 # Read NUL-separated, "<key>\n<value>": a directory's name may hold a space.
 secs=()             # each section once: nonna, nonna.<dir>
 settings=() sec_of=() # each setting as named, and its section

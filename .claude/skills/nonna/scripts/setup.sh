@@ -31,7 +31,7 @@ elif found="$(nonna_detect_test_cmd)" && [ -n "$found" ]; then
   git config nonna.testCmd "$found"
   echo "  test gate: $found, detected and recorded (git config nonna.testCmd). Change it: /nonna test '<command>'"
 else
-  echo "  test gate: no pytest, npm, go or cargo suite found. Set one: /nonna test '<command>'"
+  echo "  test gate: no pytest, Ruby, PHP, Java, .NET, Elixir, npm, go or cargo suite found (or its runner is not installed). Set one: /nonna test '<command>'"
 fi
 
 # 2. The git hooks: what every session start does, done now, through the plugin's data directory

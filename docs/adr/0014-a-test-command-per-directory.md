@@ -1,4 +1,4 @@
-# ADR 0012 — A test command per directory
+# ADR 0014 — A test command per directory
 
 - **Status:** Accepted
 - **Date:** 2026-09-30

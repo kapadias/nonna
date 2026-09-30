@@ -36,7 +36,7 @@ case "${1:-}" in
     ;;
   test)
     shift
-    # --dir: a directory's own command (ADR-0012), keyed by its name from the repository's top, as git
+    # --dir: a directory's own command (ADR-0014), keyed by its name from the repository's top, as git
     # names its files: ./, a trailing /, .. and links resolved. The top itself is the repository's.
     dir=""
     if [ "${1:-}" = --dir ]; then

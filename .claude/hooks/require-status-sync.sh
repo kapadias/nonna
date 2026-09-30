@@ -175,7 +175,7 @@ fi
 # "Done" means the suite passes: a code push runs the project's own tests (lib/tests.sh). No test
 # command (none recorded or detected, or an empty recorded one) means this check does not apply. The suite runs in the working tree, so it must BE what is pushed: HEAD, with no uncommitted
 # change to a tracked file that could hide a broken commit.
-# Where directories have commands of their own (ADR-0012), the same selection as at the end of a turn,
+# Where directories have commands of their own (ADR-0014), the same selection as at the end of a turn,
 # over the code the pushed tree combines: each that owns some runs once, in its directory, then the
 # repository's for code in none. The first red refuses the push. A push whose files cannot be listed
 # never gets here (unreadable, above).

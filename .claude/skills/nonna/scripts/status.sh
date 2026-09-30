@@ -58,7 +58,7 @@ if [ "$mode" = off ]; then
 else
   why="$(unhooked)"
   cmd="$(nonna_test_cmd)"
-  nonna_read_pkgs git-hook # each directory's own (ADR-0012), whatever NONNA_TEST_CMD says: pre-push runs them
+  nonna_read_pkgs git-hook # each directory's own (ADR-0014), whatever NONNA_TEST_CMD says: pre-push runs them
   if [ -n "$cmd" ]; then
     if [ "${NONNA_TEST_CMD+set}" = set ]; then src="NONNA_TEST_CMD"
     elif nonna_config nonna.testCmd >/dev/null; then src="git config nonna.testCmd"

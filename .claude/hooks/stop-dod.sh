@@ -57,7 +57,7 @@ reason=""
 # The cache key is the tree (tracked + untracked) and the command; git-ignored inputs, submodule
 # working trees and the environment are not in it. That is a convenience gate's trade: pre-push has
 # no cache.
-# Where directories have commands of their own (ADR-0012), each that owns a file changed this session
+# Where directories have commands of their own (ADR-0014), each that owns a file changed this session
 # runs once, in its directory, then the repository's for a file in none. They share the budget, the
 # first red blocks, and a directory's green run is remembered by the whole tree but the directories
 # beside it that have their own.
