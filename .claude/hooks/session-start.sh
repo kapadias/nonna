@@ -62,7 +62,15 @@ wire_hook() { # <git hook name> <script name>
     # Never create a dangling link: git would skip it without a word.
     case "$target" in /*) ;; *) [ -e "$hooks_dir/$target" ] || { hook_warns+=("$2 is missing from the harness, so the $1 gate is NOT enforced"); return 0; } ;; esac
     [ -e "$target" ] || [ "${target#/}" = "$target" ] || { hook_warns+=("$2 is missing from the harness, so the $1 gate is NOT enforced"); return 0; }
-    mkdir -p "$hooks_dir" 2>/dev/null && ln -s "$target" "$dest" 2>/dev/null && wired+=("$1")
+    if mkdir -p "$hooks_dir" 2>/dev/null && ln -s "$target" "$dest" 2>/dev/null; then
+      if [ -L "$dest" ]; then
+        wired+=("$1")
+      else # Git Bash's ln -s makes a copy, which cannot find the lib/ beside her script: git would run it, and it would wave everything through
+        rm -f "$dest"
+        hook_warns+=("ln -s made a copy of $2, not a link, and a copy cannot find its lib/, so the $1 gate is NOT enforced (Git Bash: turn on Developer Mode and set MSYS=winsymlinks:nativestrict, or use WSL)")
+        return 0
+      fi
+    fi
     [ -e "$dest" ] || hook_warns+=("could not install $dest, so that gate is NOT enforced")
   else
     if nonna_hook_is_hers "$(readlink "$dest" 2>/dev/null)" "$2" "$target"; then

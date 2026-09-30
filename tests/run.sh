@@ -1461,6 +1461,25 @@ out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a git h
 contains "install: ...and says which gate is not running" "pre-commit: could not link .git/hooks/pre-commit, so this gate is not running" "$out"
 printf '%s' "$out" | grep -qF '+ .git/hooks/pre-commit'; check "install: ...and does not claim the link" 1 "$?"
 rm -rf "$TMP"
+# Nor is a copy a link. Git Bash's ln -s makes one unless native symlinks are on (MSYS=winsymlinks:nativestrict),
+# and a copy of her hook cannot find the lib/ beside the real script: git runs it and it waves everything
+# through, which is worse than no hook, because nothing says so.
+copying_ln() { # -> a directory whose ln copies its target, as Git Bash's does by default
+  local d; d="$(mktemp -d)"
+  cat > "$d/ln" <<'SH'
+#!/bin/sh
+case "$1" in -s*) shift ;; *) exec /bin/ln "$@" ;; esac
+case "$1" in /*) src="$1" ;; *) src="$(dirname "$2")/$1" ;; esac
+cp -R "$src" "$2"
+SH
+  chmod +x "$d/ln"; printf '%s' "$d"
+}
+CL="$(copying_ln)"; TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
+out="$(cd "$TMP" && PATH="$CL:$PATH" NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: where ln -s makes a copy, a git hook is a failure, not a success" 1 "$?"
+contains "install: ...and says the copy is not a link, and that the gate is not running" "ln -s made a copy" "$out"
+rc=0; [ ! -e "$TMP/.git/hooks/pre-commit" ] && [ ! -e "$TMP/.git/hooks/pre-push" ] || rc=1; check "install: ...and leaves no copy of a hook behind" 0 "$rc"
+printf '%s' "$out" | grep -qF '+ .git/hooks/pre-commit'; check "install: ...and does not claim the link" 1 "$?"
+rm -rf "$TMP" "$CL"
 TMP="$(mktemp -d)"
 ( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" >/dev/null 2>&1 ); check "install: refuses outside a git repository" 1 "$?"
 ( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --host nosuchhost >/dev/null 2>&1 ); check "install: an unknown host is a usage error" 2 "$?"
@@ -1946,6 +1965,14 @@ printf '%s' "$out" | grep -q "is not Nonna's"; check "no warning when Nonna's ow
 if [ -e "$TMP/.git/hooks/pre-commit" ]; then rc=0; else rc=1; fi; check "copy-in: wires the pre-commit hook too" 0 "$rc"
 check "copy-in: links the repo's own script, relatively" "../../.claude/hooks/require-status-sync.sh" "$(readlink "$TMP/.git/hooks/pre-push")"
 rm -rf "$TMP"
+# Where ln -s makes a copy (Git Bash without native symlinks), a git hook is a copy that cannot find the lib/
+# beside the real script and waves everything through. Session start must not leave one, nor say it added one.
+CL="$(copying_ln)"; TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; copy_in "$TMP"
+out="$(printf '{}' | PATH="$CL:$PATH" CLAUDE_PROJECT_DIR="$TMP" "$TMP/.claude/hooks/session-start.sh")"; check "copy-in: where ln -s makes a copy, it still exits 0" 0 "$?"
+rc=0; [ ! -e "$TMP/.git/hooks/pre-push" ] && [ ! -e "$TMP/.git/hooks/pre-commit" ] || rc=1; check "copy-in: ...and leaves no copy of a git hook behind" 0 "$rc"
+contains "copy-in: ...and says the copy is not a link, and that the gate is NOT enforced" "ln -s made a copy" "$out"
+case "$out" in *"Added .git/hooks"*) rc=1 ;; *) rc=0 ;; esac; check "copy-in: ...and does not claim to have added a git hook" 0 "$rc"
+rm -rf "$TMP" "$CL"
 # A pre-existing foreign pre-push hook must never be overwritten — but going
 # silent about it means the DoD gate is off without anyone knowing. Warn.
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q

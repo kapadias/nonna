@@ -289,6 +289,13 @@ link_hook() { # <git hook name> <script under .claude/hooks>
       failed=1
       return 0
     }
+    # Git Bash's ln -s makes a copy, which cannot find the lib/ beside her script: git would run it, and it would wave everything through.
+    if [ ! -L "$dest" ]; then
+      rm -f "$dest"
+      warn_msgs+=("$1: ln -s made a copy of .claude/hooks/$2, not a link, and a copy cannot find its lib/, so this gate is not running: turn on Developer Mode and set MSYS=winsymlinks:nativestrict, or use WSL")
+      failed=1
+      return 0
+    fi
   else
     warn_msgs+=("$1: git hooks live in '$hooks_dir', not .git/hooks (a hook manager, or a linked worktree), so this gate is not running: point its $1 at .claude/hooks/$2")
     failed=1
