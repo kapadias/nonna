@@ -140,13 +140,36 @@ push that changes code. It comes from, in order: `NONNA_TEST_CMD` (Claude Code's
 detects the command each time instead.
 
 Under the plugin, while a repository has no `nonna.testCmd`, each session start detects one and
-records it, if `run_tests` is on: `python3 -m pytest -q` (pytest installed, and a `pytest.ini`,
-`tox.ini` or `conftest.py`, or test files such as `tests/test_*.py`), `npm test --silent` (a `test`
-script in `package.json`), `go test ./...` or `cargo test --quiet`. Once one is recorded, Nonna never
-changes it, not even an empty one; turning `run_tests` off later does not remove it. That is the
-consent: under the plugin, Nonna runs your tests only when `run_tests` allowed it or you set the
-command yourself, and a repository cannot set it for you, because `.git/config` is never cloned. No
-suite found means no gate, and the first-session notice says so.
+records it, if `run_tests` is on. Detection takes the first row of this table that matches:
+
+| Found in the repository                                                        | Recorded                | Needs                  |
+| ------------------------------------------------------------------------------ | ----------------------- | ---------------------- |
+| `pytest.ini`, `tox.ini`, `conftest.py` or test files such as `tests/test_*.py` | `python3 -m pytest -q`  | pytest installed       |
+| a `Gemfile`, and `.rspec` or `spec/`                                           | `bundle exec rspec`     | `bundle` on the `PATH` |
+| a `Gemfile` and a `Rakefile`, and `test/`                                      | `bundle exec rake test` | `bundle` on the `PATH` |
+| `phpunit.xml` or `phpunit.xml.dist`                                            | `vendor/bin/phpunit`    | that file, executable  |
+| `gradlew` (Java, Kotlin)                                                       | `./gradlew test`        | `gradlew` executable   |
+| a `pom.xml`                                                                    | `mvn test`              | `mvn` on the `PATH`    |
+| one `.sln`, `.slnx` or `.csproj` file                                          | `dotnet test`           | `dotnet` on the `PATH` |
+| a `mix.exs`                                                                    | `mix test`              | `mix` on the `PATH`    |
+| a `test` script in `package.json`                                              | `npm test --silent`     |                        |
+| a `go.mod`                                                                     | `go test ./...`         |                        |
+| a `Cargo.toml`                                                                 | `cargo test --quiet`    |                        |
+
+It records the command only when the runner is there: a missing one would read as a red suite and
+block every push. A row that matches and lacks its runner records nothing, and detection does not
+go on to the rows below it, so a Rails app without Bundler gets no gate, not the tests of its front
+end. The back ends come before `package.json` because in a Rails, Laravel or Phoenix app it usually
+serves the front end. A `Gemfile` alone is no Ruby suite, nor is a `spec/` or `test/` without one
+(Jasmine and mocha use them), and `dotnet test` cannot choose among several solution or project
+files, so a folder with more than one records nothing. Detection looks for a runner and never
+starts one, nor any code the repository ships.
+
+Once one is recorded, Nonna never changes it, not even an empty one; turning `run_tests` off later
+does not remove it. That is the consent: under the plugin, Nonna runs your tests only when
+`run_tests` allowed it or you set the command yourself, and a repository cannot set it for you,
+because `.git/config` is never cloned. No suite found means no gate, and the first-session notice
+says so.
 
 On red, the Stop hook sends the agent back once with the failing lines: it fixes them, or it tells
 you plainly that it is not done. What the suite prints is shown to the agent quoted, as the

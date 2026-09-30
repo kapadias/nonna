@@ -63,6 +63,15 @@ Your AI agent says "done"; Nonna makes it prove it.
   the Stop and pre-push hooks read it, and never overwrites one, an empty one included. The first
   session also tells you, once, what Nonna did there: the mode, the test command and the git hooks
   she added.
+- **The test gate finds Ruby, PHP, Java and Kotlin, .NET and Elixir suites**, as well as pytest, npm,
+  go and cargo: `bundle exec rspec` or `bundle exec rake test`, `vendor/bin/phpunit`,
+  `./gradlew test` or `mvn test`, `dotnet test` and `mix test`. A command is named only when its
+  runner is there (a missing one would read as a red suite and block every push), and detection
+  runs nothing. The back ends come before `package.json`, which in a Rails, Laravel or Phoenix app
+  usually serves the front end; pytest stays first, and `go.mod` and `Cargo.toml` keep their places.
+  Detection runs only while no `nonna.testCmd` is recorded, so a repository that has one is
+  unaffected. A copy-in install, which detects on each run, now names the back end's command in a
+  repository that has both a back end and a `package.json`: set `nonna.testCmd` to keep the old one.
 - **"Where's the test?"** When source changed and no test file did, Stop sends the agent back for a
   test that fails without the change, or a plain reason why none is needed. It asks once for a set of
   changes in a session.
