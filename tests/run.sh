@@ -1808,8 +1808,19 @@ chmod +x "$BADTOOL/awk"
 ( cd "$TMP" && PATH="$BADTOOL:$PATH" bash "$CD" src >/dev/null 2>&1 ); check "check-debt: an awk that fails to count the markers is a stop, not a clean ledger" 2 "$?"
 rm -f "$BADTOOL/awk"; printf '#!/bin/sh\ncat >/dev/null; exit 2\n' > "$BADTOOL/wc"; chmod +x "$BADTOOL/wc"
 ( cd "$TMP" && PATH="$BADTOOL:$PATH" bash "$CD" src >/dev/null 2>&1 ); check "check-debt: a wc that fails is a stop, not a clean ledger" 2 "$?"
-printf '#!/bin/sh\ncat >/dev/null; exit 0\n' > "$BADTOOL/wc"
-( cd "$TMP" && PATH="$BADTOOL:$PATH" bash "$CD" src >/dev/null 2>&1 ); check "check-debt: a count that is not a number is a stop, not a clean ledger" 2 "$?"
+# A wc that exits 0 and prints nothing on one call: the count of markers, then the count of those
+# with no trigger. Each is checked on its own, so each check has a test that needs it.
+REALWC="$(command -v wc)"
+cat > "$BADTOOL/wc" <<STUB
+#!/bin/sh
+n=\$(( \$(cat "$BADTOOL/calls" 2>/dev/null || echo 0) + 1 )); echo "\$n" > "$BADTOOL/calls"
+if [ "\$n" = "\$WC_EMPTY_ON" ]; then cat >/dev/null; exit 0; fi
+exec "$REALWC" "\$@"
+STUB
+chmod +x "$BADTOOL/wc"
+( cd "$TMP" && PATH="$BADTOOL:$PATH" WC_EMPTY_ON=1 bash "$CD" src >/dev/null 2>&1 ); check "check-debt: a count of the markers that is not a number is a stop" 2 "$?"
+rm -f "$BADTOOL/calls"
+( cd "$TMP" && PATH="$BADTOOL:$PATH" WC_EMPTY_ON=2 bash "$CD" src >/dev/null 2>&1 ); check "check-debt: a count of those with no trigger that is not a number is a stop" 2 "$?"
 rm -rf "$BADTOOL"
 rm -f "$TMP/src/nul.py" "$TMP/src/utf.py"
 printf 'x = 1  # %s single file\n' "$M" > "$TMP/src/single.py"
