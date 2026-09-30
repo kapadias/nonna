@@ -25,7 +25,7 @@ Nonna is on here (lite). Before the agent can say done, Nonna runs: python3 -m p
 When she finds no test suite, it says so:
 
 ```text
-Nonna is on here (lite). She found no test command here, so the test gate is off; set one with: /nonna test '<command>'. Added .git/hooks/pre-push and pre-commit. See or change it with /nonna.
+Nonna is on here (lite). She found no test command here (or its runner is not installed), so the test gate is off; set one with: /nonna test '<command>'. Added .git/hooks/pre-push and pre-commit. See or change it with /nonna.
 ```
 
 When a git hook could not be wired, a `Note:` says which gate is not enforced and why.

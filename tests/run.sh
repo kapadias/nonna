@@ -2843,6 +2843,13 @@ TMP="$(mktemp -d)"; PD="$CLAUDE_CONFIG_DIR/plugins/data/nonna-nonna"; mkdir -p "
 out="$(cd "$TMP" && env -u NONNA_MODE CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_DATA="$PD" bash "$SKILLS/nonna/scripts/nonna.sh" setup 2>&1)"
 contains "/nonna setup: finding no suite, names each one it looks for, and the missing runner" "no pytest, Ruby, PHP, Java, .NET, Elixir, npm, go or cargo suite found (or its runner is not installed)" "$out"
 rm -rf "$TMP" "$PD"
+# So does the first session, to the agent and to the user: no suite found, or a suite whose runner is missing.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
+out="$(CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$ROOT/.claude" "$HOOKS/session-start.sh")"
+um="$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("systemMessage",""))' 2>/dev/null)"
+contains "session-start: tells the agent the gate is off, and that a missing runner can be why" "no test command found here (or its runner is not installed)" "$out"
+contains "session-start: tells the user the same" "found no test command here (or its runner is not installed)" "$um"
+rm -rf "$TMP"
 
 echo "== subagent-start.sh (SubagentStart: the constitution reaches subagents) =="
 # SessionStart additionalContext is parent-only, so under a plugin install every
