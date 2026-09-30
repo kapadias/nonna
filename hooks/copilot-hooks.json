@@ -40,6 +40,20 @@
       },
       {
         "type": "command",
+        "matcher": "write_bash|write_powershell",
+        "bash": "\"${CLAUDE_PLUGIN_ROOT}\"/.claude/hooks/guard-branch.sh",
+        "env": { "NONNA_HOST": "copilot" },
+        "timeoutSec": 60
+      },
+      {
+        "type": "command",
+        "matcher": "write_bash|write_powershell",
+        "bash": "\"${CLAUDE_PLUGIN_ROOT}\"/.claude/hooks/secret-scan.sh",
+        "env": { "NONNA_HOST": "copilot" },
+        "timeoutSec": 60
+      },
+      {
+        "type": "command",
         "matcher": "Read|Grep",
         "bash": "\"${CLAUDE_PLUGIN_ROOT}\"/.claude/hooks/secret-scan.sh",
         "env": { "NONNA_HOST": "copilot" },

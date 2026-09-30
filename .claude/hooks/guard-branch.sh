@@ -83,8 +83,9 @@ payload="$(cat 2>/dev/null || true)"
 if [ "${NONNA_HOST:-}" = copilot ]; then # Copilot CLI: its payload and its reply (ADR-0012)
   # shellcheck source=/dev/null
   . "$here/lib/host-copilot.sh"
-  payload="$(printf '%s' "$payload" | nonna_copilot_payload)"
   nonna_copilot_reply
+  payload="$(printf '%s' "$payload" | nonna_copilot_payload)" || exit 2
+  nonna_copilot_each "$here/${BASH_SOURCE[0]##*/}" "$payload" # several targets: each judged alone
 fi
 tool="$(printf '%s' "$payload" | nonna_json_field '.tool_name')"
 [ -n "$tool" ] || tool="$(raw_tool)" # a parser that failed (jq, awk) leaves the name empty

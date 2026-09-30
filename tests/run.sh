@@ -2918,6 +2918,31 @@ cop PreToolUse 'Edit|Write' secret-scan.sh "$CPR" "$(pre Edit '"*** Begin Patch\
 check "copilot: an apply_patch that adds a key (raw patch text) exits 2" 2 "$?"
 cop PreToolUse 'Edit|Write' secret-scan.sh "$CPR" "$(pre Edit '"*** Begin Patch\n*** Update File: app.py\n@@\n-x = 1\n+x = 2\n*** End Patch\n"')" >/dev/null
 check "copilot: a clean apply_patch exits 0" 0 "$?"
+cop PreToolUse 'Edit|Write' secret-scan.sh "$CPR" "$(pre Edit '{"input":"*** Begin Patch\n*** Add File: settings.py\n+aws_id = \"'"$FAKE_AWS"'\"\n*** End Patch\n"}')" >/dev/null
+check "copilot: an apply_patch given as {input} that adds a key exits 2" 2 "$?"
+# Copilot's argument names are what its tools act on, so they are what the gates read: a Claude-named key
+# beside one (a decoy) never stands in for it, and every content key of a write is scanned.
+cop PreToolUse 'Edit|Write' secret-scan.sh "$CPR" "$(pre Write '{"path":"src/config.py","file_text":"aws_id = \"'"$FAKE_AWS"'\"","content":"x = 1"}')" >/dev/null
+check "copilot: a decoy content beside create's file_text does not hide its key" 2 "$?"
+cop PreToolUse 'Edit|Write' secret-scan.sh "$CPR" "$(pre Write '{"path":"src/config.py","file_text":"aws_id = \"'"$FAKE_AWS"'\"","file_path":"tests/fixtures/x.py"}')" >/dev/null
+check "copilot: a decoy fixture file_path beside create's path does not exempt its key" 2 "$?"
+cop PreToolUse 'Edit|Write' secret-scan.sh "$CPR" "$(pre Edit '{"path":"src/a.py","old_str":"a","new_str":"aws_id = \"'"$FAKE_AWS"'\"","new_string":"b"}')" >/dev/null
+check "copilot: a decoy new_string beside edit's new_str does not hide its key" 2 "$?"
+cop PreToolUse 'Edit|Write' guard-branch.sh "$CPR" "$(pre Edit '{"path":".git/config","old_str":"a","new_str":"b","file_path":"app.py"}')" >/dev/null
+check "copilot: a decoy file_path beside edit's path does not hide .git/config" 2 "$?"
+# A grep over several paths is judged path by path, a decoy path among them; any refusal refuses.
+out="$(cop PreToolUse 'Read|Grep' secret-scan.sh "$CPR" "$(pre Grep '{"pattern":".","paths":["src",".env"]}')")"
+check "copilot: a grep over several paths is refused when any is a secret file (src, .env)" 2 "$?"
+contains "copilot: and the agent is told why" "that drawer is private" "$out"
+cop PreToolUse 'Read|Grep' secret-scan.sh "$CPR" "$(pre Grep '{"pattern":".","paths":[".env"],"path":"src"}')" >/dev/null
+check "copilot: a decoy path beside grep's paths does not stand in for them" 2 "$?"
+cop PreToolUse 'Read|Grep' secret-scan.sh "$CPR" "$(pre Grep '{"pattern":".","paths":["src","docs"]}')" >/dev/null
+check "copilot: a grep over several ordinary paths exits 0" 0 "$?"
+# Input written to an async shell is a command too.
+cop PreToolUse 'write_bash|write_powershell' guard-branch.sh "$CPR" "$(pre write_bash '{"shellId":"7","input":"git commit --no-verify -m x"}')" >/dev/null
+check "copilot: a command written to an async shell (write_bash's input) is read: --no-verify exits 2" 2 "$?"
+cop PreToolUse 'write_bash|write_powershell' secret-scan.sh "$CPR" "$(pre write_bash '{"shellId":"7","input":"cat .env"}')" >/dev/null
+check "copilot: and the secret guard reads it (cat .env exits 2)" 2 "$?"
 # The host is whatever the hooks file says, never guessed from the payload; Claude Code's own payloads
 # go through the adapter byte for byte.
 printf '%s' "$(pre Write '{"path":"a.py","file_text":"aws_id = \"'"$FAKE_AWS"'\""}')" | CLAUDE_PROJECT_DIR="$CPR" "$HOOKS/secret-scan.sh" 2>/dev/null
@@ -2930,10 +2955,27 @@ NJC="$(mktemp -d)"
 for b in bash sh env cat grep sed head tail tr cut awk dirname basename git mktemp touch; do
   p="$(command -v "$b" 2>/dev/null || true)"; if [ -n "$p" ]; then ln -s "$p" "$NJC/$b" 2>/dev/null || true; fi
 done
-cmd="$(cop_cmd PreToolUse 'Edit|Write' guard-branch.sh)"
-pre Edit '{"path":"'"$CPR"'/.git/config","old_str":"[core]","new_str":"[core]"}' \
-  | (cd "$CPR" && PATH="$NJC" CLAUDE_PLUGIN_ROOT="$ROOT" CLAUDE_PROJECT_DIR="$CPR" bash -c "${cmd:-exit 99}" 2>/dev/null)
+njc() { # <matcher> <script> <tool_name> <tool_input>: that gate as the hooks file runs it, without jq
+  local c; c="$(cop_cmd PreToolUse "$1" "$2")"
+  pre "$3" "$4" | (cd "$CPR" && PATH="$NJC" CLAUDE_PLUGIN_ROOT="$ROOT" CLAUDE_PROJECT_DIR="$CPR" bash -c "${c:-exit 99}" 2>/dev/null)
+}
+njc 'Edit|Write' guard-branch.sh Edit '{"path":"'"$CPR"'/.git/config","old_str":"[core]","new_str":"[core]"}'
 check "copilot: without jq, an edit of .git/config still exits 2" 2 "$?"
+# What the text alone cannot read safely is refused: a decoy key, a list of paths, a shell's input.
+njc 'Edit|Write' guard-branch.sh Edit '{"file_path":"app.py","path":".git/config","old_str":"a","new_str":"b"}'
+check "copilot: without jq, a decoy file_path is refused, not read" 2 "$?"
+njc 'Read|Grep' secret-scan.sh Grep '{"pattern":".","paths":["src"]}'
+check "copilot: without jq, a grep over a list of paths is refused" 2 "$?"
+njc 'Read|Grep' secret-scan.sh Grep '{"pattern":".","paths":".env"}'
+check "copilot: without jq, grep's paths as one string is its path (.env exits 2)" 2 "$?"
+njc 'Read|Grep' secret-scan.sh Grep '{"pattern":".","paths":"src"}'
+check "copilot: without jq, grep's paths as one string is its path (src exits 0)" 0 "$?"
+njc 'write_bash|write_powershell' guard-branch.sh write_bash '{"shellId":"7","input":"ls"}'
+check "copilot: without jq, a shell's input is refused" 2 "$?"
+# A jq that reads JSON but cannot run the translation: the call is refused, not read untranslated.
+printf '#!/bin/sh\n[ "$*" = empty ] && exec "%s" empty\nexit 5\n' "$(command -v jq)" > "$NJC/jq"; chmod +x "$NJC/jq"
+njc 'Edit|Write' secret-scan.sh Write '{"path":"a.py","file_text":"x = 1"}'
+check "copilot: when jq cannot translate a payload, the call is refused" 2 "$?"
 rm -rf "$NJC"
 # Stop: the same Stop payload (stop_hook_active, decision/reason) as Claude Code's, a session_id in it.
 SR="$(mktemp -d)"; "${GIT[@]}" -C "$SR" init -q; printf 'x = 1\n' > "$SR/app.py"; "${GIT[@]}" -C "$SR" add -A >/dev/null; "${GIT[@]}" -C "$SR" commit -qm init
@@ -2956,6 +2998,79 @@ check "copilot: session start records where the session began" 0 \
   "$(if [ -f "$(git -C "$SSR" rev-parse --absolute-git-dir)/nonna/base-c0p1l07-5e55" ]; then echo 0; else echo 1; fi)"
 check "copilot: session start wires both git hooks, through the plugin's data directory" "$CPD/current/hooks/require-status-sync.sh $CPD/current/hooks/pre-commit.sh" \
   "$(readlink "$SSR/.git/hooks/pre-push") $(readlink "$SSR/.git/hooks/pre-commit")"
+# Equivalence, as the adapter sits on the critical surface: Claude Code's own golden payloads for Write,
+# Edit, Read and Grep, rewritten in Copilot's argument names, get the same exit code from each gate; and a
+# grep over several paths, in every order, is refused exactly when one of its paths is.
+EQ="$(mktemp -d)"; "${GIT[@]}" -C "$EQ" init -q; "${GIT[@]}" -C "$EQ" commit -q --allow-empty -m init
+"${GIT[@]}" -C "$EQ" checkout -q -b feature/x; mkdir -p "$EQ/src" "$EQ/docs"; printf 'x\n' > "$EQ/src/app.py"; printf 'K=1\n' > "$EQ/.env"
+EQC="$(mktemp)"
+cat > "$EQC" <<'EOF'
+{"tool_name":"Write","tool_input":{"file_path":"config.py","content":"aws_id = \"@AWS@\""}}
+{"tool_name":"Write","tool_input":{"file_path":"config.py","content":"x = 1"}}
+{"tool_name":"Write","tool_input":{"file_path":"tests/fixtures/keys.py","content":"aws_id = \"@AWS@\""}}
+{"tool_name":"Edit","tool_input":{"file_path":"app.js","old_string":"a","new_string":"const k = \"@AWS@\""}}
+{"tool_name":"Write","tool_input":{"file_path":"config.py","content":"k = \"@ANT@\""}}
+{"tool_name":"Write","tool_input":{"file_path":"config.py","content":"k = \"@OAI@\""}}
+{"tool_name":"Write","tool_input":{"file_path":"tests/fixtures/keys.py","content":"k = \"@ANT@\""}}
+{"tool_name":"Write","tool_input":{"file_path":"docs/keys.md","content":"Anthropic keys start with sk-ant- and OpenAI project keys with sk-proj-."}}
+{"tool_name":"Write","tool_input":{"file_path":"a.py"}}
+{"tool_name":"Edit","tool_input":{"file_path":"src/app.py","old_string":"x","new_string":"y = 2"}}
+{"tool_name":"Edit","tool_input":{"file_path":".git/config","old_string":"a","new_string":"b"}}
+{"tool_name":"Write","tool_input":{"file_path":".git/hooks/pre-push","content":"exit 0"}}
+{"tool_name":"Edit","tool_input":{"file_path":".git/nonna/base-x","old_string":"a","new_string":"b"}}
+{"tool_name":"Read","tool_input":{"file_path":"/repo/.env"}}
+{"tool_name":"Read","tool_input":{"file_path":".env.local"}}
+{"tool_name":"Read","tool_input":{"file_path":"/home/a/.ssh/id_ed25519"}}
+{"tool_name":"Read","tool_input":{"file_path":"certs/server.key"}}
+{"tool_name":"Read","tool_input":{"file_path":"config/secrets/db.yml"}}
+{"tool_name":"Read","tool_input":{"file_path":".env.example"}}
+{"tool_name":"Read","tool_input":{"file_path":"src/environment.py"}}
+{"tool_name":"Read","tool_input":{"file_path":".ENV"}}
+{"tool_name":"Grep","tool_input":{"pattern":".","path":".env","output_mode":"content"}}
+{"tool_name":"Grep","tool_input":{"pattern":"AKIA","path":".aws"}}
+{"tool_name":"Grep","tool_input":{"pattern":"def ","path":"src","glob":"*.py"}}
+{"tool_name":"Grep","tool_input":{"pattern":"X","path":".env.example"}}
+{"tool_name":"Grep","tool_input":{"pattern":"x","glob":"*"}}
+{"tool_name":"Grep","tool_input":{"pattern":"x","glob":"*.py"}}
+EOF
+eq_pairs="$(sed -e "s/@AWS@/$FAKE_AWS/g" -e "s/@ANT@/$FAKE_ANT/g" -e "s/@OAI@/$FAKE_OAI/g" "$EQC" | python3 -c 'import json, sys
+names = {"file_path": "path", "content": "file_text", "old_string": "old_str", "new_string": "new_str"}
+for line in sys.stdin:
+    p = json.loads(line)
+    tool, args = p["tool_name"], p["tool_input"]
+    if tool == "Grep":
+        cop = {("paths" if k == "path" else k): ([v] if k == "path" else v) for k, v in args.items()}
+    else:
+        cop = {names.get(k, k): v for k, v in args.items()}
+    env = {"hook_event_name": "PreToolUse", "session_id": "eq", "timestamp": "2026-09-30T12:00:00.000Z", "cwd": sys.argv[1], "tool_name": tool, "tool_input": cop}
+    print(json.dumps(p) + "\t" + json.dumps(env))' "$EQ")"
+rm -f "$EQC"
+eq_run() { # <script> <payload> [copilot]: that gate's exit on the payload, in $EQ
+  printf '%s' "$2" | (cd "$EQ" && NONNA_HOST="${3:-}" CLAUDE_PROJECT_DIR="$EQ" "$HOOKS/$1" >/dev/null 2>&1)
+  echo $?
+}
+eq_n=0; eq_bad=""
+while IFS="$(printf '\t')" read -r claude copilot; do
+  [ -n "$copilot" ] || continue
+  for s in secret-scan.sh guard-branch.sh; do
+    a="$(eq_run "$s" "$claude")"; b="$(eq_run "$s" "$copilot" copilot)"; eq_n=$((eq_n + 1))
+    [ "$a" = "$b" ] || eq_bad="$eq_bad [$s: $a vs $b on ${claude:0:70}]"
+  done
+done <<<"$eq_pairs"
+check "copilot: $eq_n verdicts on Claude Code's goldens rewritten in Copilot's names are the same${eq_bad:+ (differ:$eq_bad)}" "" "$eq_bad"
+EQP=(".env" "src" ".env.example" "docs")
+eq_one=()
+for i in 0 1 2 3; do eq_one[i]="$(eq_run secret-scan.sh "{\"tool_name\":\"Grep\",\"tool_input\":{\"pattern\":\"x\",\"path\":\"${EQP[i]}\"}}")"; done
+eq_n=0; eq_bad=""
+while IFS= read -r order; do
+  want=0; list=""
+  for i in $order; do [ "${eq_one[i]}" = 2 ] && want=2; list="$list${list:+,}\"${EQP[i]}\""; done
+  got="$(eq_run secret-scan.sh "{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"eq\",\"cwd\":\"$EQ\",\"tool_name\":\"Grep\",\"tool_input\":{\"pattern\":\"x\",\"paths\":[$list]}}" copilot)"
+  eq_n=$((eq_n + 1))
+  [ "$got" = "$want" ] || eq_bad="$eq_bad [$list: $got, want $want]"
+done <<<"$(python3 -c 'import itertools; [print(" ".join(map(str, p))) for r in (2, 3) for p in itertools.permutations(range(4), r)]')"
+check "copilot: a grep over several paths, in each of $eq_n orders, is refused exactly when one of them is${eq_bad:+ (not:$eq_bad)}" "" "$eq_bad"
+rm -rf "$EQ"
 rm -rf "$CPR" "$SR" "$SSR" "$CPD"
 # The files themselves: the hooks file, the plugin manifest and the marketplace entry.
 out="$(python3 -c 'import json, os, sys
@@ -2968,6 +3083,7 @@ except Exception as e:
 if cfg.get("version") != 1: bad.append("version is not 1")
 if sorted(cfg.get("hooks", {})) != ["PreToolUse", "SessionStart", "Stop"]: bad.append("events %s" % sorted(cfg.get("hooks", {})))
 want = {("PreToolUse", "Bash"): ["guard-branch.sh", "secret-scan.sh"], ("PreToolUse", "Edit|Write"): ["guard-branch.sh", "secret-scan.sh"],
+        ("PreToolUse", "write_bash|write_powershell"): ["guard-branch.sh", "secret-scan.sh"],
         ("PreToolUse", "Read|Grep"): ["secret-scan.sh"], ("Stop", "-"): ["stop-dod.sh"], ("SessionStart", "-"): ["session-start.sh"]}
 got = {}
 for ev, entries in cfg.get("hooks", {}).items():
