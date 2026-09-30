@@ -23,8 +23,8 @@ Every check below fails the build (boundaries.md: deterministic gates decide):
   - README numbers: every number README.md marks (`<!--n:key-->`) equals the fact
     the lint computes from bench/results/round3/*.tsv.
   - README translations: README.md links each README.<lang>.md, which marks the
-    numbers README.md marks and carries its code blocks word for word, so neither
-    goes stale in a language.
+    numbers README.md marks and carries its code blocks, link targets and inline
+    code, so none goes stale in a language.
 
 NONNA_LINT_ROOT points the linter at a different tree. It exists so tests/run.sh
 can golden-test the linter itself against mutated copies of this repo — a linter
@@ -40,6 +40,7 @@ import os
 import re
 import subprocess
 import sys
+from collections import Counter
 
 ROOT = os.environ.get("NONNA_LINT_ROOT") or os.path.dirname(
     os.path.dirname(os.path.abspath(__file__))
@@ -1139,11 +1140,15 @@ check_scorecard("README.md", README_TEXT)
 # A translation marks the numbers README.md marks (held to the rows above, in whatever order its
 # language puts them), gives the scorecard the image's own alt text (the image is in English), and
 # carries README.md's code blocks word for word: a command, a path or a line Nonna prints is not
-# translated, a comment in a shell block may be, where README.md has one. So a number or a command
-# changed in README.md fails here until every translation follows. README.md's top line links each.
+# translated, a comment in a shell block may be, where README.md has one. It also carries each link
+# target and inline code span README.md has, at least as often (it may add its own). So a number, a
+# command, a link or a passage README.md gains fails here until every translation follows; the
+# wording around them is a reviewer's to check. README.md's top line links each.
 FENCE = re.compile(r"^[ \t]*```.*?^[ \t]*```", re.M | re.S)
 SHELL_FENCE = re.compile(r"[ \t]*```(?:bash|sh|shell)\b")
 SHELL_COMMENT = re.compile(r"[ \t]*(?<!\S)#.*$", re.M)
+CODE_SPAN = re.compile(r"`([^`\n]+)`")
+HTML_TARGET = re.compile(r'\b(?:href|src|srcset)="([^"]+)"')
 
 
 def code_blocks(text: str) -> list[str]:
@@ -1152,6 +1157,21 @@ def code_blocks(text: str) -> list[str]:
         SHELL_COMMENT.sub(" #", block) if SHELL_FENCE.match(block) else block
         for block in FENCE.findall(text)
     ]
+
+
+def refs(text: str) -> Counter[tuple[str, str]]:
+    # The link targets and inline code spans outside code blocks, counted. An in-page anchor is left
+    # out: a translation's headings, and so their anchors, are its own.
+    prose = FENCE.sub("", text)
+    targets = [t.split()[0] for t in LINK.findall(prose) if t.strip()]
+    targets += HTML_TARGET.findall(prose)
+    return Counter(
+        [("link", t) for t in targets if not t.startswith("#")]
+        + [("inline code", f"`{s}`") for s in CODE_SPAN.findall(prose)]
+    )
+
+
+README_REFS = refs(README_TEXT)
 
 
 for path in sorted(glob.glob(f"{ROOT}/README.*.md")):
@@ -1168,6 +1188,13 @@ for path in sorted(glob.glob(f"{ROOT}/README.*.md")):
     if code_blocks(text) != code_blocks(README_TEXT):
         bad(
             f"{rel}: its code blocks are not README.md's word for word (only a # comment README.md's shell blocks have may be translated)"
+        )
+    missing = README_REFS - refs(text)
+    # A translation names itself in bold on its top line, not in a link.
+    del missing[("link", rel)]
+    for (kind, item), n in sorted(missing.items()):
+        bad(
+            f"{rel}: lacks README.md's {kind} {item} ({n} missing): every link target and inline code span in README.md must appear in each translation, at least as often"
         )
     if f"]({rel})" not in README_TEXT:
         bad(f"README.md: does not link {rel} (its top line links every translation)")

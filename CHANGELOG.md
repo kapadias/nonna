@@ -164,8 +164,9 @@ Your AI agent says "done"; Nonna makes it prove it.
   `README.ko.md`, `README.ja.md`, `README.es.md`), linked from the top of `README.md` (#31). The
   lint holds each to the English: `README.md` must link it, it marks the numbers `README.md` marks,
   checked against the rows like them, gives the scorecard the image's own alt text, and carries
-  `README.md`'s code blocks word for word but for the words of a shell comment. A number or a
-  command changed in `README.md` fails the lint until every translation follows. Each keeps the
+  `README.md`'s code blocks word for word but for the words of a shell comment, and each of its
+  link targets and inline code spans. A number, a command or a link changed in `README.md` fails
+  the lint until every translation follows. Each keeps the
   credit; none repeats the golden-test count, and one left behind is checked like `README.md`'s.
 - **Native Windows is measured, and it is not safe yet: use WSL 2** (#30). CI runs the gate tests
   under Git Bash on `windows-latest` in three legs (`core.autocrlf` true, false, and false with

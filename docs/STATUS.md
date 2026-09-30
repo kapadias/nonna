@@ -78,8 +78,9 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   (`README.<lang>.md` at the root, linked from the top of `README.md`; #31), for developers who
   read those more easily than English; each was reviewed against the English. The lint holds each
   translation to `README.md`: linked from it, the same marked numbers, checked against round 3's
-  rows, the scorecard's own alt text, and the code blocks word for word but for the words of a
-  shell comment, so no number or command goes stale in one language. The credit is allowed in each
+  rows, the scorecard's own alt text, the code blocks word for word but for the words of a shell
+  comment, and every link target and inline code span `README.md` has, so no number, command or
+  link goes stale in one language. The credit is allowed in each
   file by name; none repeats the golden-test count, and one left behind is checked all the same.
 
 - **2026-09-30** — Native Windows is measured, and it is not safe (#30). CI's `windows-latest` job
