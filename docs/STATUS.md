@@ -162,7 +162,11 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
     - the sample-word test of the patterns with no key window (an AWS access key id, a Google key,
       a quoted assignment) runs in the shell too, reading bytes whatever the locale: a 312 KB write
       of 12,000 sample ids before a NUL-cut key took 64 s to block, longer than a hook's timeout,
-      and now takes 1.5 s.
+      and now takes 1.5 s. A value over 512 characters goes to grep, in one pass: the regex tries
+      `<[^>]+>` from every `<`, and 240 KB of them took 104 s (0.26 s now);
+    - a string escape starts a token as `\n` and `\u0000` do (`\x01`, `\0`, `\000`, `\a`, `\e`,
+      `\v`): once the real-length rule read only lines with a NUL, a key in a byte literal
+      (`b"\x0a\xa4\x01sk-proj-…"`) had nothing else to find it, which the security re-review found.
   - **Secret scan:** it missed Anthropic keys and OpenAI's `sk-proj-`, `sk-svcacct-` and `sk-admin-`
     keys, which the docs said it caught. The write guard, pre-commit and pre-push now refuse them;
     golden tests hold each key type and a key given as a shell default, a property test holds the

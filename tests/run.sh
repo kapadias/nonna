@@ -171,6 +171,13 @@ printf 'see https://docs.acme.io/guides/how-to-mask-admin-credentials-in-logs-wh
 printf 'resource "aws_iam_role" "task-admin-role-for-the-billing-reconciliation-pipeline-in-the-eu-west-1-production-account-v2"' | scan; check "a long kebab-case resource name after a word ending in sk is not a key" 1 "$?"
 # ...and a NUL on one line does not make it read the others: the lines with no NUL read the same both ways.
 printf 'x\000y\nsee https://docs.acme.io/guides/how-to-mask-admin-credentials-in-logs-when-using-the-new-kubernetes-operator-for-postgres-clusters\n' | scan; check "a NUL on another line does not make a long slug a key" 1 "$?"
+# A string escape before a key is a gap too, as \n and \u0000 are: a byte literal, a C or shell string.
+printf 'PAYLOAD = b"%s%s"' '\x0a\xa4\x01' "$FAKE_OAI" | scan; check "detects an OpenAI key after a \\x01 escape" 0 "$?"
+printf 's = "%s%s"' '\0' "$FAKE_OAI" | scan; check "detects an OpenAI key after a \\0 escape" 0 "$?"
+printf 's = "%s%s"' '\000' "$FAKE_OAI" | scan; check "detects an OpenAI key after a \\000 escape" 0 "$?"
+printf 's = "%s%s"' '\a' "$FAKE_OAI" | scan; check "detects an OpenAI key after a \\a escape" 0 "$?"
+printf 's = "%s%s"' '\e' "$FAKE_OAI" | scan; check "detects an OpenAI key after a \\e escape" 0 "$?"
+printf 's = "%s%s"' '\v' "$FAKE_OAI" | scan; check "detects an OpenAI key after a \\v escape" 0 "$?"
 # Should picking those lines fail, the whole text is read: a tool gone missing reads more, never less.
 BADSEL="$(mktemp -d)"; REALGREP="$(command -v grep)"
 cat > "$BADSEL/grep" <<STUB
@@ -213,6 +220,12 @@ rm -rf "$CNTG"
 # <placeholder> leaves it a placeholder under a UTF-8 locale too.
 u8="$(locale -a 2>/dev/null | grep -i -m1 -E 'utf-?8$' || true)"
 printf 'password = "<mot de passe sp\351cial ici>"' | LC_ALL="${u8:-C}" scan; check "a Latin-1 byte in a <placeholder> leaves it one under a UTF-8 locale" 1 "$?"
+# ...and in one pass: a long quoted value full of "<" is read in bounded time (a regex that tries <[^>]+>
+# from every "<" took minutes on a few hundred KB, past a hook's timeout, and a hook that times out does
+# not block).
+big="$(head -c 60000 /dev/zero | LC_ALL=C tr '\0' '<')"
+start=$SECONDS; printf 'token = "%s fake"' "$big" | scan
+check "a long quoted value full of < is read in bounded time" 1 "$(( SECONDS - start < 4 ))"
 # macOS's grep reads its input in the user's locale and gives up on bytes that are not text there; a scan
 # that gave up would pass the key. The patterns are ASCII, so the scan reads bytes (LC_ALL=C).
 BSDGREP="$(mktemp -d)"; REALGREP="$(command -v grep)"

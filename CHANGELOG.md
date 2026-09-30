@@ -259,9 +259,9 @@ Your AI agent says "done"; Nonna makes it prove it.
   ends the scan), given as a shell or compose default (`${VAR:-key}`, `${?-key}`, `${!ref-key}`),
   after a NUL byte or cut by one, in UTF-16 text (what Windows PowerShell writes), and an Anthropic
   key even inside a compiled file. The tail must be 40 or more characters, and an OpenAI key must
-  start a word (in UTF-16 text, one as long as a real key need not), so `sk-ant-` in prose, a short
-  sample, a word like `task-admin-permissions-console` and a name like `sk-admin-panel-header` are
-  not keys.
+  start a word (a string escape such as `\x01` or `\0` ends one; in UTF-16 text, a key as long as a
+  real one need not), so `sk-ant-` in prose, a short sample, a word like
+  `task-admin-permissions-console` and a name like `sk-admin-panel-header` are not keys.
 - **A sample word next to a real key no longer made it a sample.** The placeholder rule (`XXXX`,
   `EXAMPLE`, `your-` and the like) read the whole match, so a key given as `${SAMPLE-key}`, or with
   `EXAMPLE` glued after it, passed. It reads only the key's own start now.
