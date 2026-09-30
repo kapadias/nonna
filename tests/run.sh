@@ -2664,15 +2664,15 @@ rm -rf "$PYSTUB"; if [ -n "$OLD_PYTHONPATH" ]; then PYTHONPATH="$OLD_PYTHONPATH"
 
 echo "== tests.sh (nonna_detect_test_cmd: the suite it names, and in which order) =="
 # A command is named only when its runner is there (a missing one reads as a red suite and blocks every
-# push), so these tests own PATH. DET_RUN holds stand-ins for bundle, mvn, dotnet and mix, and for a
-# python3 that finds pytest; DET_NONE holds no runner; both hold grep, which the package.json arm needs.
-# Nothing real runs: each stand-in, and the gradlew and vendor/bin/phpunit that fx writes, appends to
-# DET_LOG when run, and detection, which only looks, must leave that file unwritten.
-DET_RUN="$(mktemp -d)"; DET_NONE="$(mktemp -d)"; DET_LOG="$DET_NONE.log"
-for b in bundle mvn dotnet mix; do printf '#!/bin/sh\necho %s >> "%s"\n' "$b" "$DET_LOG" > "$DET_RUN/$b"; done
-printf '#!/bin/sh\nexit 0\n' > "$DET_RUN/python3"
-chmod +x "$DET_RUN"/*
-ln -s "$(command -v grep)" "$DET_RUN/grep"; ln -s "$(command -v grep)" "$DET_NONE/grep"
+# push), so these tests own PATH: a case names the runners it has installed, and detection finds those
+# and grep (which the package.json arm needs) on a PATH of their own, and nothing else. Every stand-in
+# runner, and the gradlew and vendor/bin/phpunit that fx writes, appends to DET_LOG when run, and
+# detection, which only looks, must leave that file unwritten. The python3 stand-in is one that finds pytest.
+RUNNERS="bundle mvn dotnet mix java php python3" # everything installed
+DET_STUBS="$(mktemp -d)"; DET_LOG="$DET_STUBS.log"
+for b in bundle mvn dotnet mix java php; do printf '#!/bin/sh\necho %s >> "%s"\n' "$b" "$DET_LOG" > "$DET_STUBS/$b"; done
+printf '#!/bin/sh\nexit 0\n' > "$DET_STUBS/python3"
+chmod +x "$DET_STUBS"/*
 fx() { # <repo> <name>...: the files of a fixture, empty; a name ending in / is a directory, package.json
   # has a test script, and gradlew and vendor/bin/phpunit are executable and log a run
   local d="$1" n; shift
@@ -2687,12 +2687,20 @@ fx() { # <repo> <name>...: the files of a fixture, empty; a name ending in / is 
     esac
   done
 }
-det() { # <repo> <bin>: what detection names for <repo>, finding runners in <bin> alone
-  ( cd "$1" && . "$HOOKS/lib/tests.sh" && PATH="$2" nonna_detect_test_cmd )
+det() { # <repo> <runner>...: what detection names for <repo> when only those runners are installed
+  local d="$1" bin r; shift
+  bin="$(mktemp -d)"; ln -s "$(command -v grep)" "$bin/grep"
+  for r in "$@"; do ln -s "$DET_STUBS/$r" "$bin/$r"; done
+  ( cd "$d" && . "$HOOKS/lib/tests.sh" && PATH="$bin" nonna_detect_test_cmd )
+  rm -rf "$bin"
 }
-named() { # <bin> <name>...: what detection names for a fresh repository made of those files
-  local bin="$1" d out; shift
-  d="$(mktemp -d)"; fx "$d" "$@"; out="$(det "$d" "$bin")"; rm -rf "$d"
+named() { # <runners> <name>...: what detection names for a fresh repository made of those files, with only
+  # those runners (a word list) installed
+  local runners="$1" d out; shift
+  d="$(mktemp -d)"; fx "$d" "$@"
+  # shellcheck disable=SC2086  # a word list on purpose
+  out="$(det "$d" $runners)"
+  rm -rf "$d"
   printf '%s' "$out"
 }
 shuffled() { # <seed> <name>...: the names, one per line, in an order the seed fixes (a Fisher-Yates shuffle
@@ -2706,80 +2714,82 @@ shuffled() { # <seed> <name>...: the names, one per line, in an order the seed f
   done
   printf '%s\n' "${a[@]}"
 }
-answers() { # <bin> <name>...: the distinct answers detection gives as the files are created in 12 orders
-  local bin="$1" seed d n; shift
+answers() { # <runners> <name>...: the distinct answers detection gives as the files are created in 12 orders
+  local runners="$1" seed d n; shift
   for ((seed = 1; seed <= 12; seed++)); do
     d="$(mktemp -d)"
     while IFS= read -r n; do fx "$d" "$n"; done < <(shuffled "$seed" "$@")
-    det "$d" "$bin"; printf '\n'
+    # shellcheck disable=SC2086  # a word list on purpose
+    det "$d" $runners; printf '\n'
     rm -rf "$d"
   done | sort -u
 }
 # The stand-ins and the fixtures' runners leave a mark when they run, or the last test here proves nothing.
-TMP="$(mktemp -d)"; fx "$TMP" gradlew vendor/bin/phpunit; "$TMP/gradlew"; "$TMP/vendor/bin/phpunit"; "$DET_RUN/bundle"
+TMP="$(mktemp -d)"; fx "$TMP" gradlew vendor/bin/phpunit; "$TMP/gradlew"; "$TMP/vendor/bin/phpunit"; "$DET_STUBS/bundle"
 check "tests.sh: (control) a stand-in or fixture runner that runs leaves its mark" 3 "$(wc -l < "$DET_LOG" | tr -d ' ')"
 rm -rf "$TMP" "$DET_LOG"
 # Ruby: bundle exec needs a Gemfile, and spec/ or test/ alone say little (Jasmine and mocha use them).
-check "tests.sh: Ruby: a Gemfile and .rspec: bundle exec rspec" "bundle exec rspec" "$(named "$DET_RUN" Gemfile .rspec)"
-check "tests.sh: Ruby: a Gemfile and spec/: bundle exec rspec" "bundle exec rspec" "$(named "$DET_RUN" Gemfile spec/)"
-check "tests.sh: Ruby: a Gemfile, a Rakefile and test/: bundle exec rake test" "bundle exec rake test" "$(named "$DET_RUN" Gemfile Rakefile test/)"
-check "tests.sh: Ruby: rspec before rake test (a Rails app that added rspec keeps its test/)" "bundle exec rspec" "$(named "$DET_RUN" Rakefile test/ Gemfile .rspec)"
-check "tests.sh: Ruby: spec/ without a Gemfile is no Ruby app (a Node project's Jasmine specs): npm test" "npm test --silent" "$(named "$DET_RUN" spec/ package.json)"
-check "tests.sh: Ruby: a Rakefile and test/ without a Gemfile (a mocha project) are no Ruby app: npm test" "npm test --silent" "$(named "$DET_RUN" Rakefile test/ package.json)"
-check "tests.sh: Ruby: a Gemfile alone (a Jekyll site) is no suite: npm test" "npm test --silent" "$(named "$DET_RUN" Gemfile package.json)"
-check "tests.sh: Ruby: bundle off PATH, rspec: nothing" "" "$(named "$DET_NONE" Gemfile .rspec)"
-check "tests.sh: Ruby: bundle off PATH, rake test: nothing" "" "$(named "$DET_NONE" Gemfile Rakefile test/)"
+check "tests.sh: Ruby: a Gemfile and .rspec: bundle exec rspec" "bundle exec rspec" "$(named "$RUNNERS" Gemfile .rspec)"
+check "tests.sh: Ruby: a Gemfile and spec/: bundle exec rspec" "bundle exec rspec" "$(named "$RUNNERS" Gemfile spec/)"
+check "tests.sh: Ruby: a Gemfile, a Rakefile and test/: bundle exec rake test" "bundle exec rake test" "$(named "$RUNNERS" Gemfile Rakefile test/)"
+check "tests.sh: Ruby: rspec before rake test (a Rails app that added rspec keeps its test/)" "bundle exec rspec" "$(named "$RUNNERS" Rakefile test/ Gemfile .rspec)"
+check "tests.sh: Ruby: spec/ without a Gemfile is no Ruby app (a Node project's Jasmine specs): npm test" "npm test --silent" "$(named "$RUNNERS" spec/ package.json)"
+check "tests.sh: Ruby: a Rakefile and test/ without a Gemfile (a mocha project) are no Ruby app: npm test" "npm test --silent" "$(named "$RUNNERS" Rakefile test/ package.json)"
+check "tests.sh: Ruby: a Gemfile alone (a Jekyll site) is no suite: npm test" "npm test --silent" "$(named "$RUNNERS" Gemfile package.json)"
+check "tests.sh: Ruby: bundle off PATH, rspec: nothing" "" "$(named "" Gemfile .rspec)"
+check "tests.sh: Ruby: bundle off PATH, rake test: nothing" "" "$(named "" Gemfile Rakefile test/)"
 # PHP: the runner is the project's own vendor/bin/phpunit.
-check "tests.sh: PHP: phpunit.xml and vendor/bin/phpunit: vendor/bin/phpunit" "vendor/bin/phpunit" "$(named "$DET_RUN" phpunit.xml vendor/bin/phpunit)"
-check "tests.sh: PHP: phpunit.xml.dist and vendor/bin/phpunit: vendor/bin/phpunit" "vendor/bin/phpunit" "$(named "$DET_RUN" phpunit.xml.dist vendor/bin/phpunit)"
-check "tests.sh: PHP: phpunit.xml but no vendor/bin/phpunit (composer install not run): nothing" "" "$(named "$DET_RUN" phpunit.xml)"
+check "tests.sh: PHP: phpunit.xml and vendor/bin/phpunit: vendor/bin/phpunit" "vendor/bin/phpunit" "$(named "$RUNNERS" phpunit.xml vendor/bin/phpunit)"
+check "tests.sh: PHP: phpunit.xml.dist and vendor/bin/phpunit: vendor/bin/phpunit" "vendor/bin/phpunit" "$(named "$RUNNERS" phpunit.xml.dist vendor/bin/phpunit)"
+check "tests.sh: PHP: phpunit.xml but no vendor/bin/phpunit (composer install not run): nothing" "" "$(named "$RUNNERS" phpunit.xml)"
 # Java and Kotlin: the Gradle wrapper is its own marker and runner; Maven needs mvn.
-check "tests.sh: Gradle: an executable gradlew: ./gradlew test" "./gradlew test" "$(named "$DET_RUN" gradlew)"
+check "tests.sh: Gradle: an executable gradlew: ./gradlew test" "./gradlew test" "$(named "$RUNNERS" gradlew)"
 TMP="$(mktemp -d)"; fx "$TMP" gradlew package.json; chmod -x "$TMP/gradlew"
-check "tests.sh: Gradle: a gradlew that cannot run (mode lost in a zip): nothing, not its package.json" "" "$(det "$TMP" "$DET_RUN")"
+# shellcheck disable=SC2086  # a word list on purpose
+check "tests.sh: Gradle: a gradlew that cannot run (mode lost in a zip): nothing, not its package.json" "" "$(det "$TMP" $RUNNERS)"
 rm -rf "$TMP"
-check "tests.sh: Maven: a pom.xml: mvn test" "mvn test" "$(named "$DET_RUN" pom.xml)"
-check "tests.sh: Maven: mvn off PATH: nothing" "" "$(named "$DET_NONE" pom.xml)"
-check "tests.sh: Gradle before Maven" "./gradlew test" "$(named "$DET_RUN" pom.xml gradlew)"
+check "tests.sh: Maven: a pom.xml: mvn test" "mvn test" "$(named "$RUNNERS" pom.xml)"
+check "tests.sh: Maven: mvn off PATH: nothing" "" "$(named "" pom.xml)"
+check "tests.sh: Gradle before Maven" "./gradlew test" "$(named "$RUNNERS" pom.xml gradlew)"
 # .NET: dotnet test in a folder with several solution or project files stops with MSB1011, a red.
-check "tests.sh: .NET: a .sln: dotnet test" "dotnet test" "$(named "$DET_RUN" App.sln)"
-check "tests.sh: .NET: a .slnx: dotnet test" "dotnet test" "$(named "$DET_RUN" App.slnx)"
-check "tests.sh: .NET: a .csproj: dotnet test" "dotnet test" "$(named "$DET_RUN" App.csproj)"
-check "tests.sh: .NET: dotnet off PATH: nothing" "" "$(named "$DET_NONE" App.sln)"
-check "tests.sh: .NET: two solutions, dotnet cannot choose: nothing" "" "$(named "$DET_RUN" App.sln Tools.sln)"
-check "tests.sh: .NET: a solution and a project of another name: nothing" "" "$(named "$DET_RUN" App.sln Tools.csproj)"
+check "tests.sh: .NET: a .sln: dotnet test" "dotnet test" "$(named "$RUNNERS" App.sln)"
+check "tests.sh: .NET: a .slnx: dotnet test" "dotnet test" "$(named "$RUNNERS" App.slnx)"
+check "tests.sh: .NET: a .csproj: dotnet test" "dotnet test" "$(named "$RUNNERS" App.csproj)"
+check "tests.sh: .NET: dotnet off PATH: nothing" "" "$(named "" App.sln)"
+check "tests.sh: .NET: two solutions, dotnet cannot choose: nothing" "" "$(named "$RUNNERS" App.sln Tools.sln)"
+check "tests.sh: .NET: a solution and a project of another name: nothing" "" "$(named "$RUNNERS" App.sln Tools.csproj)"
 # Elixir
-check "tests.sh: Elixir: a mix.exs: mix test" "mix test" "$(named "$DET_RUN" mix.exs)"
-check "tests.sh: Elixir: mix off PATH: nothing" "" "$(named "$DET_NONE" mix.exs)"
+check "tests.sh: Elixir: a mix.exs: mix test" "mix test" "$(named "$RUNNERS" mix.exs)"
+check "tests.sh: Elixir: mix off PATH: nothing" "" "$(named "" mix.exs)"
 # An arm that matches and finds no runner ends the search, as pytest's always has: a Rails app without
 # Bundler is not gated by the tests of its front end.
-check "tests.sh: a Rails app without bundle is not handed to its package.json: nothing" "" "$(named "$DET_NONE" Gemfile .rspec package.json)"
-check "tests.sh: nor a Laravel app without vendor/bin/phpunit" "" "$(named "$DET_RUN" phpunit.xml package.json)"
-check "tests.sh: nor a pytest config without pytest, beside a Rails app" "" "$(named "$DET_NONE" pytest.ini Gemfile .rspec)"
+check "tests.sh: a Rails app without bundle is not handed to its package.json: nothing" "" "$(named "" Gemfile .rspec package.json)"
+check "tests.sh: nor a Laravel app without vendor/bin/phpunit" "" "$(named "$RUNNERS" phpunit.xml package.json)"
+check "tests.sh: nor a pytest config without pytest, beside a Rails app" "" "$(named "" pytest.ini Gemfile .rspec)"
 # The order: pytest first, then the back ends, then package.json, go.mod and Cargo.toml. The name that
 # comes later in the order is listed first where it can be, to show the listing does not decide.
-check "tests.sh: order: pytest before Ruby" "python3 -m pytest -q" "$(named "$DET_RUN" Gemfile .rspec pytest.ini)"
-check "tests.sh: order: Ruby before package.json" "bundle exec rspec" "$(named "$DET_RUN" package.json Gemfile .rspec)"
-check "tests.sh: order: PHP before package.json" "vendor/bin/phpunit" "$(named "$DET_RUN" package.json phpunit.xml vendor/bin/phpunit)"
-check "tests.sh: order: Gradle before package.json" "./gradlew test" "$(named "$DET_RUN" package.json gradlew)"
-check "tests.sh: order: Maven before package.json" "mvn test" "$(named "$DET_RUN" package.json pom.xml)"
-check "tests.sh: order: .NET before package.json" "dotnet test" "$(named "$DET_RUN" package.json App.sln)"
-check "tests.sh: order: Elixir before package.json" "mix test" "$(named "$DET_RUN" package.json mix.exs)"
-check "tests.sh: order: Elixir before go.mod" "mix test" "$(named "$DET_RUN" go.mod mix.exs)"
-check "tests.sh: order: Ruby before Cargo.toml" "bundle exec rspec" "$(named "$DET_RUN" Cargo.toml Gemfile .rspec)"
-check "tests.sh: order: package.json before go.mod" "npm test --silent" "$(named "$DET_RUN" go.mod package.json)"
-check "tests.sh: order: go.mod before Cargo.toml" "go test ./..." "$(named "$DET_RUN" Cargo.toml go.mod)"
+check "tests.sh: order: pytest before Ruby" "python3 -m pytest -q" "$(named "$RUNNERS" Gemfile .rspec pytest.ini)"
+check "tests.sh: order: Ruby before package.json" "bundle exec rspec" "$(named "$RUNNERS" package.json Gemfile .rspec)"
+check "tests.sh: order: PHP before package.json" "vendor/bin/phpunit" "$(named "$RUNNERS" package.json phpunit.xml vendor/bin/phpunit)"
+check "tests.sh: order: Gradle before package.json" "./gradlew test" "$(named "$RUNNERS" package.json gradlew)"
+check "tests.sh: order: Maven before package.json" "mvn test" "$(named "$RUNNERS" package.json pom.xml)"
+check "tests.sh: order: .NET before package.json" "dotnet test" "$(named "$RUNNERS" package.json App.sln)"
+check "tests.sh: order: Elixir before package.json" "mix test" "$(named "$RUNNERS" package.json mix.exs)"
+check "tests.sh: order: Elixir before go.mod" "mix test" "$(named "$RUNNERS" go.mod mix.exs)"
+check "tests.sh: order: Ruby before Cargo.toml" "bundle exec rspec" "$(named "$RUNNERS" Cargo.toml Gemfile .rspec)"
+check "tests.sh: order: package.json before go.mod" "npm test --silent" "$(named "$RUNNERS" go.mod package.json)"
+check "tests.sh: order: go.mod before Cargo.toml" "go test ./..." "$(named "$RUNNERS" Cargo.toml go.mod)"
 # Property: the answer belongs to the set of files, not to the order they were created in (a directory
 # listing can follow creation order). Each pile is built in 12 seeded orders; the distinct answers must
 # be the one expected.
 ALL=(Gemfile .rspec spec/ Rakefile test/ phpunit.xml vendor/bin/phpunit gradlew pom.xml App.sln mix.exs package.json go.mod Cargo.toml)
-check "tests.sh: property: every ecosystem at once, 12 creation orders: always Ruby" "bundle exec rspec" "$(answers "$DET_RUN" "${ALL[@]}")"
-check "tests.sh: property: ...with no runner anywhere, always nothing" "" "$(answers "$DET_NONE" "${ALL[@]}")"
-check "tests.sh: property: Gradle, Maven, JavaScript, Go and Rust, 12 creation orders: always Gradle" "./gradlew test" "$(answers "$DET_RUN" gradlew pom.xml package.json go.mod Cargo.toml)"
-check "tests.sh: property: Elixir, JavaScript, Go and Rust, 12 creation orders: always Elixir" "mix test" "$(answers "$DET_RUN" mix.exs package.json go.mod Cargo.toml)"
+check "tests.sh: property: every ecosystem at once, 12 creation orders: always Ruby" "bundle exec rspec" "$(answers "$RUNNERS" "${ALL[@]}")"
+check "tests.sh: property: ...with no runner anywhere, always nothing" "" "$(answers "" "${ALL[@]}")"
+check "tests.sh: property: Gradle, Maven, JavaScript, Go and Rust, 12 creation orders: always Gradle" "./gradlew test" "$(answers "$RUNNERS" gradlew pom.xml package.json go.mod Cargo.toml)"
+check "tests.sh: property: Elixir, JavaScript, Go and Rust, 12 creation orders: always Elixir" "mix test" "$(answers "$RUNNERS" mix.exs package.json go.mod Cargo.toml)"
 check "tests.sh: property: ...and the 12 creation orders are 12 different orders" 12 "$(for ((s = 1; s <= 12; s++)); do shuffled "$s" "${ALL[@]}" | tr '\n' ' '; echo; done | sort -u | wc -l | tr -d ' ')"
 if [ -e "$DET_LOG" ]; then rc=1; else rc=0; fi; check "tests.sh: detection ran no runner, and nothing the repository ships" 0 "$rc"
-rm -rf "$DET_RUN" "$DET_NONE" "$DET_LOG"
+rm -rf "$DET_STUBS" "$DET_LOG"
 # /nonna setup names what it looked for when it found nothing.
 TMP="$(mktemp -d)"; PD="$CLAUDE_CONFIG_DIR/plugins/data/nonna-nonna"; mkdir -p "$PD"; "${GIT[@]}" -C "$TMP" init -q
 out="$(cd "$TMP" && env -u NONNA_MODE CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_DATA="$PD" bash "$SKILLS/nonna/scripts/nonna.sh" setup 2>&1)"
