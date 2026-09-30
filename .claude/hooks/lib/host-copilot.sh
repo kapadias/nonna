@@ -19,7 +19,8 @@
 #   shape Copilot sends is checked, and anything else is refused, never read untranslated: the payload
 #   must be a JSON object; its tool_input an object, or, for an Edit (apply_patch's raw text) alone, a
 #   string that does not hold JSON; path a string; paths one path or a flat, non-empty list of them;
-#   file_text, content, old_str, new_str, input and patch strings.
+#   file_text, content, old_str, new_str, input and patch strings; and a Write or an Edit names a path
+#   or carries a patch.
 #   Then Copilot's argument names, which its tools act on, win over any Claude-named key beside them
 #   (a decoy): path is file_path, old_str old_string; a write's content keys (file_text, content,
 #   input, patch) are joined into content, and new_str and new_string into new_string, so each is
@@ -99,7 +100,9 @@ nonna_copilot_payload() {
         else
           (if .tool_name == "Edit" and .tool_input.command == "view" then .tool_name = "Read" else . end)
           | .tool_name as $tool
-          | (if $tool == "Write" or $tool == "Edit" then
+          | (if ($tool == "Write" or $tool == "Edit") and (.tool_input.path | type) != "string" then
+              refuse("it is a file tool that names no path and carries no patch")
+            elif $tool == "Write" or $tool == "Edit" then
               [.tool_input |= (
                   (if (.path | type) == "string" then .file_path = .path else . end)
                 | (joined(["file_text", "content", "input", "patch"]) as $c | if $c == null then . else .content = $c end)

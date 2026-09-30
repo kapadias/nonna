@@ -3815,6 +3815,10 @@ cop PreToolUse 'Edit|Write' secret-scan.sh "$CPR" "$(pre Edit '{"path":"a.py","o
 check "copilot: an Edit whose new_str is an object exits 2" 2 "$?"
 cop PreToolUse 'Edit|Write' guard-branch.sh "$CPR" "$(pre Edit '{"path":"app.py","old_str":"x = 1","new_str":"x = 2","input":["*** Begin Patch\n*** Update File: .git/config\n@@\n+[core]\n*** End Patch\n"]}')" >/dev/null
 check "copilot: an Edit whose patch text (input) is a list exits 2" 2 "$?"
+# A file tool that names no path and carries no patch leaves the gates nothing to judge: no Copilot tool
+# sends that, so it is refused.
+cop PreToolUse 'Edit|Write' guard-branch.sh "$CPR" "$(pre Edit '{"command":"apply_patch","actions":[{"path":".git/config"}]}')" >/dev/null
+check "copilot: an Edit that names no path and carries no patch exits 2" 2 "$?"
 # Input written to an async shell is a command too.
 cop PreToolUse 'write_bash|write_powershell' guard-branch.sh "$CPR" "$(pre write_bash '{"shellId":"7","input":"git commit --no-verify -m x"}')" >/dev/null
 check "copilot: a command written to an async shell (write_bash's input) is read: --no-verify exits 2" 2 "$?"
