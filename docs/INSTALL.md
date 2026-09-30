@@ -31,7 +31,8 @@ Nonna is on here (lite). She found no test command here, so the test gate is off
 When a git hook could not be wired, a `Note:` says which gate is not enforced and why.
 
 Using another agent, or want the gates committed for your whole team? See
-[install.sh](#other-agents-installsh).
+[install.sh](#other-agents-installsh). Gemini CLI can also load the rules as
+[an extension](#gemini-cli-the-extension), without the hooks.
 
 ### `/nonna`
 
@@ -295,6 +296,31 @@ enforcement, so read that exit as a gate that is off. Once your hook or your hoo
 running it again exits 0. Pin a release with `curl … | NONNA_REF=<tag> bash`. Prefer to read before
 you pipe? `curl -fsSLO …/install.sh`, read it, then `bash install.sh`.
 
+### Gemini CLI: the extension
+
+Gemini CLI can also take the house rules as an extension, with nothing to pipe into a shell:
+
+```bash
+gemini extensions install https://github.com/kapadias/nonna
+```
+
+It carries lite's six house rules and nothing else. **An extension installs no git hooks**, so until
+you add them, nothing but the agent's own care stops a commit on `main`, a secret or a push on a red
+suite. Run `install.sh --host gemini` from the root of the repository for the hooks. That also
+writes `GEMINI.md` with the same rules, so with both the agent reads them twice, which does no harm.
+
+- **It applies everywhere.** Gemini CLI enables an extension in every repository you use it in;
+  `gemini extensions disable nonna --scope workspace` turns it off in one. It changes nothing in
+  your repositories: Gemini CLI keeps it in `~/.gemini/extensions/nonna`.
+- **It installs a release.** Gemini CLI takes the latest GitHub release's source archive, not
+  `main`. `--ref v2.0.0` pins one, and `gemini extensions update nonna` moves to a newer one. The
+  release workflow refuses a tag that differs from the `version` in `gemini-extension.json`, the
+  number `gemini extensions list` shows.
+- **Check it.** Restart Gemini CLI. `gemini extensions list` shows `nonna` and, under
+  `Context files:`, `hosts/gemini-extension/GEMINI.md`, the file the extension loads; ask the agent
+  for the house rules. From a clone, `gemini extensions link .` tries your own changes.
+- **Uninstall.** `gemini extensions uninstall nonna`.
+
 ## Copy-in install, for teams
 
 `install.sh` puts the gates in the repository itself. Commit what it adds, and everyone who clones
@@ -375,6 +401,12 @@ that still runs hers. It tells you when your global git config still has `nonna.
 Clean the repositories first: once the plugin is gone its git hooks point at nothing, and git skips
 a hook it cannot find without a word. Until then, a new session in a repository sets her up again;
 to keep the plugin but not in one repository, use `/nonna off`.
+
+### The Gemini CLI extension
+
+`gemini extensions uninstall nonna` removes it. It added nothing to your repositories; the git
+hooks and `GEMINI.md` that `install.sh --host gemini` adds come out as in
+[a copy-in install](#a-copy-in-install).
 
 ### A copy-in install
 

@@ -87,6 +87,13 @@ Exercises each deterministic gate with fixed inputs and asserts the exit code:
   bleed; fails closed on an absent version, an empty version, a missing
   changelog, a whitespace-only section, and a version matched literally
   rather than as a regex.
+- **release.yml** (the tag must agree with every manifest): the job's own script runs on a copy of
+  the plugin, marketplace and Gemini extension manifests. A tag all three agree with passes; a tag
+  one of them disagrees with fails, and the message names the first that does.
+- **gemini-extension.json** (what Gemini CLI loads): the file `contextFileName` names is generated
+  from the lite rules, says `install.sh --host gemini` adds the git hooks and that the extension
+  installs none, carries lite's rules, and holds no `@` (Gemini CLI reads `@path` in a context file
+  as an import). The cases that break the manifest are under the linter, below.
 - **assets/build.py** (the launch images): `run.sh` runs `test_assets.py`, then drives `--check` on
   the standard library alone (`python3 -I -S`, as CI's lint job would). It passes on the real
   tree, and on a copy that has had exactly one thing broken it fails, naming the file: an SVG
@@ -107,7 +114,8 @@ skills missing a trigger, a side-effecting workflow that does not set
 wired hooks absent on disk, `settings.json` and `hooks.json` disagreeing about
 which gates are wired, dead intra-repo markdown links, backticked `docs/`
 references that do not exist, domain-specific vocabulary in a domain-agnostic
-harness, malformed plugin manifests, five token budgets (CLAUDE.md, per-rule,
+harness, malformed plugin manifests, a Gemini extension manifest whose context file the CLI
+cannot load or whose version is not the plugin's, five token budgets (CLAUDE.md, per-rule,
 total always-on, `00-core.md`'s SessionStart-channel size, and the combined
 skill/agent description metadata), a ladder rung missing from either of its two
 copies, `/review` or `/sync` no longer wiring `check-debt.sh`, the review-inflation
