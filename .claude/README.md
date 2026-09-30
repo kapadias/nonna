@@ -51,7 +51,8 @@ discipline is **enforced by code, not prose**. Start with [`../CLAUDE.md`](../CL
   push time; use placeholder-classed values — and in full mode the Definition-of-Done),
   `pre-commit.sh` (git pre-commit: no commit on a protected branch, no staged secret),
   `session-start.sh` (installs both git hooks — through the plugin's data directory under a plugin
-  install, so they survive updates; warns instead of overwriting a foreign one — records the plugin's
+  install, so they survive updates; warns instead of overwriting a foreign one, and names a copy of
+  hers that is not a link — records the plugin's
   test command and mode in git config, carries the mode's rules into plugin installs, and tells the
   user once what it did), `stop-dod.sh` (**Stop** — code changed since the session began: runs the
   suite, or in a monorepo each changed directory's own command (ADR-0014), asks "where's the test?",

@@ -8,11 +8,12 @@ itself: if a gate is silently wrong, CI goes red.
 
 ## What runs
 
-| File                                 | What it proves                                                         | How                                            |
-| ------------------------------------ | ---------------------------------------------------------------------- | ---------------------------------------------- |
-| [`run.sh`](run.sh)                   | **Every gate blocks vs. allows correctly** — gate golden tests.        | golden tests over real hook/script invocations |
-| [`harness_lint.py`](harness_lint.py) | **The harness is internally consistent** — structural self-validation. | static checks over `.claude/` + docs           |
-| [`test_assets.py`](test_assets.py)   | **The launch images match the data** — numbers, lettering, SVGs.       | unit tests, standard library only              |
+| File                                   | What it proves                                                         | How                                            |
+| -------------------------------------- | ---------------------------------------------------------------------- | ---------------------------------------------- |
+| [`run.sh`](run.sh)                     | **Every gate blocks vs. allows correctly** — gate golden tests.        | golden tests over real hook/script invocations |
+| [`harness_lint.py`](harness_lint.py)   | **The harness is internally consistent** — structural self-validation. | static checks over `.claude/` + docs           |
+| [`test_assets.py`](test_assets.py)     | **The launch images match the data** — numbers, lettering, SVGs.       | unit tests, standard library only              |
+| [`windows-probe.sh`](windows-probe.sh) | **What native Windows does to the hooks** — facts, never a verdict.    | run in Git Bash; CI's Windows job prints it    |
 
 ### `run.sh` — gate golden tests
 
@@ -31,7 +32,16 @@ Exercises each deterministic gate with fixed inputs and asserts the exit code:
   update or that introduces a secret (no fixture exemption at push time); allows a
   synced push.
 - **session-start**: emits context, auto-installs the pre-push hook, and warns
-  instead of overwriting a foreign one.
+  instead of overwriting a foreign one. When `ln -s` only copies the script (Git Bash), it
+  removes the copy and says the gate is not enforced; `install.sh` does the same and exits 1. A
+  byte copy of her script already in `.git/hooks` is named as a copy (session start warns,
+  `install.sh` exits 1, `/nonna status` gives it no check mark, `/nonna uninstall` says to delete
+  it) and never deleted, and is not taken for a hook that chains hers: only a line of code that
+  runs her script is a chain, not a comment that names it (her pre-push script does, in its
+  install comment).
+- **.gitattributes**: a clone with `core.autocrlf=true` holds no CR in a script, an awk file or a
+  markdown file; a file committed with CRLF keeps it and the clone stays clean; every tracked
+  `*.sh` and `*.awk` resolves to `eol: lf`.
 - **check-review** (review verdict gate): blocks on `request_changes`, any
   CRITICAL/HIGH, or an out-of-schema verdict/severity; extracts one fenced json
   block; fails closed on invalid JSON — same on the jq and no-jq paths.
@@ -192,5 +202,7 @@ Both run in CI on every push and pull request (`.github/workflows/ci.yml`),
 alongside `shellcheck` over every script and `claude plugin validate --strict` on both
 manifests. `run.sh` also runs on a macOS runner under `/bin/bash` 3.2 with only Apple's tools on
 the PATH (no Homebrew), because the guards parse shell in bash and awk and those differ from
-Linux's. Adopters wire their own
+Linux's. It runs a third time under Git Bash on Windows, in three legs, and there it only
+reports: 112 of 1279 checks fail there without native symlinks and 50 with them (run 36771120623), and
+[`docs/INSTALL.md`](../docs/INSTALL.md#windows) says which gates that costs. Adopters wire their own
 lint/type/test/coverage gate as additional jobs — see [`stacks/`](../stacks/).

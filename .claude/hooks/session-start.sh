@@ -59,7 +59,8 @@ fi
 wired=()
 hook_warns=()
 wire_hook() { # <git hook name> <script name>
-  local dest="$hooks_dir/$1" target="$hooks_src/$2"
+  local dest="$hooks_dir/$1" target="$hooks_src/$2" real
+  case "$target" in /*) real="$target" ;; *) real="$hooks_dir/$target" ;; esac # where her script is, from here
   if [ -L "$dest" ] && [ ! -e "$dest" ] && nonna_hook_is_hers "$(readlink "$dest")" "$2" "$target"; then
     rm -f "$dest" # dangling and hers: repaired below
   fi
@@ -67,12 +68,24 @@ wire_hook() { # <git hook name> <script name>
     # Never create a dangling link: git would skip it without a word.
     case "$target" in /*) ;; *) [ -e "$hooks_dir/$target" ] || { hook_warns+=("$2 is missing from the harness, so the $1 gate is NOT enforced"); return 0; } ;; esac
     [ -e "$target" ] || [ "${target#/}" = "$target" ] || { hook_warns+=("$2 is missing from the harness, so the $1 gate is NOT enforced"); return 0; }
-    mkdir -p "$hooks_dir" 2>/dev/null && ln -s "$target" "$dest" 2>/dev/null && wired+=("$1")
+    if mkdir -p "$hooks_dir" 2>/dev/null && ln -s "$target" "$dest" 2>/dev/null; then
+      if [ -L "$dest" ]; then
+        wired+=("$1")
+      else # Git Bash's ln -s makes a copy, which cannot find the lib/ beside her script: git would run it, and it would wave everything through
+        rm -f "$dest"
+        hook_warns+=("ln -s made a copy of $2, not a link, and a copy cannot find its lib/, so the $1 gate is NOT enforced (Git Bash: turn on Developer Mode and set MSYS=winsymlinks:nativestrict, or use WSL)")
+        return 0
+      fi
+    fi
     [ -e "$dest" ] || hook_warns+=("could not install $dest, so that gate is NOT enforced")
   else
     if nonna_hook_is_hers "$(readlink "$dest" 2>/dev/null)" "$2" "$target"; then
       # Hers, but git skips a link that points at nothing without a word.
       [ -e "$dest" ] || hook_warns+=("$dest points at nothing, so her $1 gate is NOT enforced")
+    elif nonna_hook_is_copy "$dest" "$real"; then
+      # What an older session start left where ln -s copies (Git Bash): it runs, finds no lib/ beside itself
+      # and enforces nothing. Named and never deleted: it was there before me.
+      hook_warns+=("$dest is a copy of her $2, not a link, and a copy cannot find its lib/ (unless you copied its lib/ beside it), so her $1 gate is NOT enforced; delete it")
     else # the user's own, even when it shares her script's name, unless it chains hers
       nonna_hook_chains_hers "$dest" "$2" "$target" \
         || hook_warns+=("$dest is not Nonna's, so her $1 gate is NOT enforced; chain $target from it")
