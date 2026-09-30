@@ -192,6 +192,6 @@ nonna/
 │   ├── benchmarks/            # earlier dated benchmark runs and writeups
 │   └── adr/                   # Architecture Decision Records
 ├── .claude-plugin/            # marketplace.json (plugin distribution)
-├── assets/                    # the banner, the scorecard, the launch images (build.py), the demo
+├── assets/                    # the banner, the scorecard, the launch images (build.py)
 └── .github/                   # CI, release workflow, release scripts, PR and issue templates
 ```
