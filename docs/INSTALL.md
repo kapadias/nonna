@@ -403,8 +403,8 @@ What differs from Claude Code:
   and one over 256 KB or 200 files, too much to judge before the hook times out. A guard that
   crashes denies the tool call, as Copilot rules, where Claude Code lets it through. Without jq,
   what the text alone cannot show safely (a payload that does not close, arguments that are not an
-  object, a list of paths, a Claude-named key beside Copilot's, input to a shell, a patch beside
-  other arguments) is refused.
+  object or that hold one, more than one path, a list of paths, a Claude-named key beside Copilot's,
+  input to a shell, a patch beside other arguments) is refused.
 - **Copilot's own switches are the user's.** Under either agent, the branch guard refuses the agent
   writing `.github/copilot/settings*.json`, where one `disableAllHooks` line turns every hook off, or
   anything under `.github/hooks/`, by file tool or by shell.

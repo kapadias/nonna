@@ -35,14 +35,21 @@
 #   jq, "path" is renamed "file_path", and a "paths" that is one string "path", in the text, where the
 #   gates' own reader finds them, and a patch is read by lib/json.sh's own decoder; what the text
 #   cannot show with certainty is refused: a payload that does not close, arguments that are not an
-#   object, a file_path beside path, a path or paths that are not one string, a shell's input, a patch
-#   beside other arguments. A refusal is exit 2, her reason on stderr.
+#   object or that hold one, more than one path, a file_path beside path, a path or paths that are not
+#   one string, a shell's input, a patch beside other arguments. A refusal is exit 2, her reason on
+#   stderr.
 nonna_copilot_payload() {
   local in out why="" patch="" ti='"tool_input"[[:space:]]*:[[:space:]]*'
   in="$(cat 2>/dev/null | tr '\n' ' ')" # a raw newline in JSON is whitespace: one line per payload
   case "$in" in *[![:space:]]*) ;; *) _nonna_copilot_refuse unread "its payload is empty"; return 2 ;; esac
   if ! command -v jq >/dev/null 2>&1; then
-    if ! printf '%s' "$in" | _nonna_copilot_closes; then
+    local shape=0
+    printf '%s' "$in" | _nonna_copilot_shape || shape=$?
+    if [ "$shape" = 3 ]; then
+      why="an object inside its arguments"
+    elif [ "$shape" = 4 ]; then
+      why="more than one path"
+    elif [ "$shape" != 0 ]; then
       why="a payload that is not one JSON object that closes"
     elif printf '%s' "$in" | grep -qE "${ti}\""; then
       if ! printf '%s' "$in" | grep -qE '"tool_name"[[:space:]]*:[[:space:]]*"Edit"' \
@@ -174,26 +181,49 @@ _nonna_copilot_files() { # a payload whose tool_input.command is a patch, on std
   return 2
 }
 
-_nonna_copilot_closes() { # the text on stdin is one JSON object whose strings and brackets all close
-  # Split into characters once, as json.sh does (one-true-awk copies a string on every substr()).
+_nonna_copilot_shape() { # the text on stdin, read without jq: 0 when it can be read with certainty
+  # 1 when it is not one JSON object whose strings and brackets all close; 3 when its tool_input holds
+  # an object (Copilot's own arguments hold only strings, numbers, booleans and lists of them); 4 when
+  # it holds more than one "path". The gates' reader takes the first "path" in the text, so a decoy
+  # before the real one would be judged in its place. Split into characters once, as json.sh does
+  # (one-true-awk copies a string on every substr()), and a key name read from them only when it
+  # could be tool_input.
   LC_ALL=C awk '
     BEGIN { RS = sprintf("%c", 1) }
     { s = s (NR > 1 ? RS : "") $0 }
     END {
-      n = split(s, ch, ""); top = 0; str = 0; esc = 0; done = 0
+      n = split(s, ch, ""); top = 0; str = 0; esc = 0; done = 0; from = 0; last = ""; want = 0; inside = 0
+      nested = 0
       for (i = 1; i <= n; i++) {
         c = ch[i]
-        if (str) { if (esc) esc = 0; else if (c == "\\") esc = 1; else if (c == "\"") str = 0; continue }
+        if (str) {
+          if (esc) esc = 0
+          else if (c == "\\") esc = 1
+          else if (c == "\"") {
+            str = 0; last = ""
+            if (top == 1 && i - from == 10) for (j = from; j < i; j++) last = last ch[j]
+          }
+          continue
+        }
         if (c == " " || c == "\t" || c == "\r" || c == "\n") continue
         if (done || (top == 0 && c != "{")) exit 1
-        if (c == "\"") str = 1
-        else if (c == "{" || c == "[") stack[++top] = c
-        else if (c == "}" || c == "]") {
+        if (c == "\"") { str = 1; from = i + 1; continue }
+        if (c == ":") { want = (top == 1 && last == "tool_input"); last = ""; continue }
+        last = ""
+        if (c == "{" || c == "[") {
+          if (c == "{" && inside) nested = 1
+          stack[++top] = c
+          if (want && c == "{") inside = top
+        } else if (c == "}" || c == "]") {
           if (stack[top] != (c == "}" ? "{" : "[")) exit 1
+          if (top == inside) inside = 0
           if (--top == 0) done = 1
         }
+        want = 0
       }
-      exit (done ? 0 : 1)
+      if (!done) exit 1
+      if (nested) exit 3
+      exit (gsub(/"path"[ \t\r\n]*:/, "", s) > 1 ? 4 : 0)
     }' 2>/dev/null
 }
 

@@ -131,9 +131,11 @@ Exercises each deterministic gate with fixed inputs and asserts the exit code:
   or a list, JSON in a string, a path that is a list, paths that nest or are empty, a file_text,
   new_str or patch text that is not a string, an Edit with no path and no patch, truncated JSON) is
   refused. A Claude Code payload passes the adapter byte for byte, nothing is translated without
-  `NONNA_HOST=copilot`; without jq, what the text cannot show safely is refused, and so is JSON jq
-  cannot translate. A copy-in install's hooks under Copilot are pinned as they are (untranslated).
-  The hooks file, the manifests, and every command run from a path with a space are checked too.
+  `NONNA_HOST=copilot`. Without jq, what the text cannot show safely is refused, a decoy object
+  before a Write's, an Edit's or a view's real path included, while Copilot's own calls still pass;
+  so is JSON jq cannot translate. A copy-in install's hooks under Copilot are pinned as they are
+  (untranslated). The hooks file, the manifests, and every command run from a path with a space are
+  checked too.
 - **assets/build.py** (the launch images): `run.sh` runs `test_assets.py`, then drives `--check` on
   the standard library alone (`python3 -I -S`, as CI's lint job would). It passes on the real
   tree, and on a copy that has had exactly one thing broken it fails, naming the file: an SVG

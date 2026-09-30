@@ -4051,6 +4051,27 @@ njc 'Edit|Write' guard-branch.sh Edit '{"path":"app.py","old_str":"x = 1","new_s
 check "copilot: without jq, a patch beside an edit's own arguments is refused" 2 "$?"
 njc 'Edit|Write' secret-scan.sh Edit "$(cpatch raw '*** Frobnicate File: app.py' '+x = 2')"
 check "copilot: without jq, an apply_patch outside the patch grammar exits 2" 2 "$?"
+# Without jq the reader takes the first "path" in the text, so a decoy object before the real path would be
+# judged in its place: arguments holding an object, or a payload with two paths, are refused. Copilot's own
+# calls have neither (view_range and paths are lists), and they still pass.
+njc 'Edit|Write' guard-branch.sh Write '{"meta":{"path":"'"$CPR"'/app.py"},"path":"'"$CPR"'/.git/config","file_text":"x"}'
+check "copilot: without jq, a decoy object before a Write's path to .git/config is refused" 2 "$?"
+njc 'Edit|Write' guard-branch.sh Edit '{"meta":{"path":"'"$CPR"'/app.py"},"path":"'"$CPR"'/.git/hooks/pre-push","old_str":"a","new_str":"b"}'
+check "copilot: without jq, a decoy object before an Edit's path to .git/hooks/pre-push is refused" 2 "$?"
+njc 'Read|Grep' secret-scan.sh Read '{"meta":{"path":"'"$CPR"'/app.py"},"path":"'"$CPR"'/.env"}'
+check "copilot: without jq, a decoy object before a view's path to .env is refused" 2 "$?"
+njc Bash guard-branch.sh Bash '{"command":"ls -la","description":"List the files","mode":"sync","initial_wait":30}'
+check "copilot: without jq, bash's own call passes" 0 "$?"
+njc 'Edit|Write' secret-scan.sh Write '{"path":"'"$CPR"'/src/app.py","file_text":"x = 1\n"}'
+check "copilot: without jq, create's own call passes" 0 "$?"
+njc 'Edit|Write' guard-branch.sh Edit '{"path":"'"$CPR"'/src/app.py","old_str":"x = 1","new_str":"x = 2"}'
+check "copilot: without jq, edit's own call passes" 0 "$?"
+njc 'Read|Grep' secret-scan.sh Read '{"path":"'"$CPR"'/src/app.py","view_range":[1,20]}'
+check "copilot: without jq, view's own call, with its view_range, passes" 0 "$?"
+njc 'Edit|Write' secret-scan.sh Edit '{"command":"view","path":"'"$CPR"'/src/app.py","view_range":[1,-1]}'
+check "copilot: without jq, str_replace_editor's view passes" 0 "$?"
+njc 'Read|Grep' secret-scan.sh Grep '{"pattern":"TODO","paths":"src","glob":"*.py","output_mode":"content","-n":true}'
+check "copilot: without jq, grep's own call over one path passes" 0 "$?"
 # A jq that cannot run the translation: the call is refused, not read untranslated.
 printf '#!/bin/sh\nexit 5\n' > "$NJC/jq"; chmod +x "$NJC/jq"
 njc 'Edit|Write' secret-scan.sh Write '{"path":"a.py","file_text":"x = 1"}'

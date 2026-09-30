@@ -84,9 +84,10 @@ while a file in `.github/hooks/` adds hooks of its own.
    as a string, and never as JSON in one), a path that is not a string, paths that are not one path
    or a flat, non-empty list, a `file_text`, `content`, `old_str`, `new_str`, `input` or `patch`
    that is not a string, a Write or an Edit that names no path and carries no patch. Where the
-   payload cannot be read safely it is refused too: without jq, a payload that does not close, a
-   list of paths, a Claude-named key beside Copilot's, or input to a shell; with jq, JSON it cannot
-   translate.
+   payload cannot be read safely it is refused too: without jq, a payload that does not close,
+   arguments that hold an object or more than one path (the reader takes the first "path" in the
+   text, so a decoy before the real one would be judged in its place), a list of paths, a
+   Claude-named key beside Copilot's, or input to a shell; with jq, JSON it cannot translate.
 5. **Copilot's switches are the user's.** Under either agent, the branch guard refuses a write to
    `.github/copilot/settings*.json` or under `.github/hooks/`, by file tool or by shell, as it does
    `.git/config` and the git hooks.
