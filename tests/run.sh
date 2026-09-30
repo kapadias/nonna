@@ -4520,7 +4520,7 @@ rm -rf "$FX"
 # Nor may the repository root carry what Gemini CLI loads from an extension root: hooks/hooks.json and the
 # commands, skills, agents and policies directories would run or steer the agent in every session.
 FX="$(lint_fixture)"
-mkdir "$FX/hooks"; printf '{"hooks":{"BeforeTool":[{"hooks":[{"type":"command","command":"true"}]}]}}\n' > "$FX/hooks/hooks.json"
+mkdir -p "$FX/hooks"; printf '{"hooks":{"BeforeTool":[{"hooks":[{"type":"command","command":"true"}]}]}}\n' > "$FX/hooks/hooks.json"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a root hooks/hooks.json, which Gemini CLI loads as extension hooks" 1 "$?"
 contains "lint: names hooks/hooks.json" "hooks/hooks.json: Gemini CLI loads" "$out"
 rm -rf "$FX"
@@ -4546,13 +4546,16 @@ contains "lint: names policies/" "policies/: Gemini CLI loads" "$out"
 rm -rf "$FX"
 # Only Gemini's own hooks file is refused: Copilot keeps hooks/copilot-hooks.json at the root.
 FX="$(lint_fixture)"
-mkdir "$FX/hooks"; printf '{}\n' > "$FX/hooks/copilot-hooks.json"
+rm -rf "$FX/hooks"; mkdir "$FX/hooks"; printf '{}\n' > "$FX/hooks/copilot-hooks.json"
 NONNA_LINT_ROOT="$FX" python3 "$LINT" >/dev/null 2>&1; check "lint: a root hooks/copilot-hooks.json is not Gemini's hooks file" 0 "$?"
 rm -rf "$FX"
 # Gemini CLI reads these on macOS's default disk, which ignores letter case: Skills/ is skills/, and a
 # Hooks symlink to a directory holding hooks.json is hooks/hooks.json. The lint compares every root entry
 # case-folded, whatever its type, because CI's disk does not fold and the check must not depend on it.
+# The fixture carries Copilot's root hooks/, which a disk that ignores case (macOS, Windows) would take
+# for Hooks, so each case below starts without it.
 FX="$(lint_fixture)"
+rm -rf "$FX/hooks"
 ln -s .claude/hooks "$FX/Hooks"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a root Hooks symlink to a directory holding hooks.json" 1 "$?"
 contains "lint: names the hooks file it would load" "Hooks/hooks.json: Gemini CLI loads hooks/hooks.json" "$out"
@@ -4563,6 +4566,7 @@ out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a root 
 contains "lint: names Skills/" "Skills/: Gemini CLI loads skills/" "$out"
 rm -rf "$FX"
 FX="$(lint_fixture)"
+rm -rf "$FX/hooks"
 mkdir "$FX/Hooks"; printf '{}\n' > "$FX/Hooks/hooks.json"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a root Hooks/hooks.json" 1 "$?"
 contains "lint: names it" "Hooks/hooks.json: Gemini CLI loads hooks/hooks.json" "$out"
