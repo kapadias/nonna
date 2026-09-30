@@ -179,9 +179,9 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
     simulation now has each cause (Python 3.9 as `python3`, and a `sort` that stops at a byte that
     is not UTF-8), and each fix has a test that failed first:
     - `check-debt.sh` reads bytes throughout (`LC_ALL=C` for the whole script): macOS's `sort`
-      stopped at a byte that is not UTF-8, and the empty ledger it left passed the marker. A sort
-      or awk that fails while the markers are classified is now a stop (exit 2), not a clean
-      ledger;
+      stopped at a byte that is not UTF-8, and the empty ledger it left passed the marker. A tool
+      that fails while the markers are read, classified or counted is now a stop (exit 2), not a
+      clean ledger: both reviews found `tr`, `sed`, the diff's reader and the count unchecked too;
     - `bench/examples.py` runs on a stock Mac's Python 3.9: its `str | None` annotations needed
       3.10, and it now defers them (`from __future__ import annotations`), as the other scripts do.
   - **Secret scan:** it missed Anthropic keys and OpenAI's `sk-proj-`, `sk-svcacct-` and `sk-admin-`
@@ -442,6 +442,8 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   tests allowed a blocked command, three times in all and each passing on rerun, while three or
   four copies of the suite ran at once. Server-side branch protection is the wall either way; the
   guard is the speed bump (ADR-0011).
+- `check-debt.sh` counts a trigger made only of whitespace other than a space or a tab (`\r\r`,
+  `\v`, a no-break space) as a trigger; it should trim all of it (the security review's LOW).
 
 - A behavioural eval on the failures the gates exist for (a secret in a fixture, a push to a
   protected branch, an error hidden by a "fix"), scored on "did it get caught".

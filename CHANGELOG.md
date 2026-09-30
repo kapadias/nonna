@@ -251,8 +251,8 @@ Your AI agent says "done"; Nonna makes it prove it.
 - **On a Mac, `check-debt.sh` (and so `/review`) rejected every debt marker.** It asked grep for
   `-Z`, which is `--null` on Linux and `--decompress` on macOS; it asks for `--null`. It reads
   bytes throughout, so a marker in a file with a byte that is not UTF-8 is still found there
-  (macOS's `sort` dropped it), and a tool that fails while it classifies the markers is a stop,
-  not a clean ledger.
+  (macOS's `sort` dropped it), and a tool that fails while it reads, classifies or counts the
+  markers is a stop, not a clean ledger.
 - **The secret guard missed Anthropic keys and OpenAI's current ones.** Only `sk-` followed by an
   unbroken run of letters and digits counted as an OpenAI key, so `sk-ant-api03-`,
   `sk-ant-admin01-`, the OAuth tokens (`sk-ant-oat01-`, `sk-ant-ort01-`) and OpenAI's `sk-proj-`,

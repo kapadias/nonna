@@ -1702,6 +1702,16 @@ printf 'w = 4  # %s cache never expires\n' "$M" >> "$TMP/src/new.py"
 "${GIT[@]}" -C "$TMP" add -A; "${GIT[@]}" -C "$TMP" commit -qm rot
 out="$(cd "$TMP" && bash "$CD" --range main...HEAD 2>&1)"; check "check-debt: --range blocks a new no-trigger marker" 1 "$?"
 contains "check-debt: --range names path:line of the new offender" "src/new.py:2" "$out"
+# A reader of the diff that fails is a stop, never an empty diff.
+BADAWK="$(mktemp -d)"; REALAWK="$(command -v awk)"
+cat > "$BADAWK/awk" <<STUB
+#!/bin/sh
+case "\$*" in *'rem > 0'*) cat >/dev/null; exit 2 ;; esac
+exec "$REALAWK" "\$@"
+STUB
+chmod +x "$BADAWK/awk"
+( cd "$TMP" && PATH="$BADAWK:$PATH" bash "$CD" --range main...HEAD >/dev/null 2>&1 ); check "check-debt: --range fails closed when the diff cannot be read" 2 "$?"
+rm -rf "$BADAWK"
 ( cd "$TMP" && bash "$CD" --range nosuchref...HEAD 2>/dev/null ); check "check-debt: unresolvable range fails closed" 2 "$?"
 # An option-shaped range must never reach git: --output=<path> would write the diff over any
 # file, exec bit intact, from a pre-approved gate call (security review, 2026-09-22).
@@ -1779,8 +1789,26 @@ chmod +x "$BSDSORT/sort"
 out="$(cd "$TMP" && PATH="$BSDSORT:$PATH" LC_ALL=C.UTF-8 bash "$CD" src 2>&1)"
 contains "check-debt: an invalid UTF-8 byte does not hide a marker where sort reads the locale (macOS)" "src/utf.py:1: no-trigger" "$out"
 printf '#!/bin/sh\nexit 2\n' > "$BSDSORT/sort"
-( cd "$TMP" && PATH="$BSDSORT:$PATH" bash "$CD" src >/dev/null 2>&1 ); check "check-debt: a sort that fails is a stop, not a clean ledger" 2 "$?"
+out="$(cd "$TMP" && PATH="$BSDSORT:$PATH" bash "$CD" src 2>&1)"; check "check-debt: a sort that fails is a stop, not a clean ledger" 2 "$?"
+contains "check-debt: ...and says it cannot classify the markers" "cannot classify the markers" "$out"
 rm -rf "$BSDSORT"
+# So is any other tool that reads the markers or counts them.
+BADTOOL="$(mktemp -d)"; REALAWK="$(command -v awk)"
+printf '#!/bin/sh\ncat >/dev/null; exit 1\n' > "$BADTOOL/tr"; chmod +x "$BADTOOL/tr"
+( cd "$TMP" && PATH="$BADTOOL:$PATH" bash "$CD" src >/dev/null 2>&1 ); check "check-debt: a tr that fails is a stop, not a clean ledger" 2 "$?"
+mv "$BADTOOL/tr" "$BADTOOL/sed"
+( cd "$TMP" && PATH="$BADTOOL:$PATH" bash "$CD" src >/dev/null 2>&1 ); check "check-debt: a sed that fails is a stop, not a clean ledger" 2 "$?"
+rm -f "$BADTOOL/sed"
+cat > "$BADTOOL/awk" <<STUB
+#!/bin/sh
+case "\$*" in "-F"*'\$3 == 0') cat >/dev/null; exit 2 ;; esac
+exec "$REALAWK" "\$@"
+STUB
+chmod +x "$BADTOOL/awk"
+( cd "$TMP" && PATH="$BADTOOL:$PATH" bash "$CD" src >/dev/null 2>&1 ); check "check-debt: an awk that fails to count the markers is a stop, not a clean ledger" 2 "$?"
+rm -f "$BADTOOL/awk"; printf '#!/bin/sh\ncat >/dev/null; exit 2\n' > "$BADTOOL/wc"; chmod +x "$BADTOOL/wc"
+( cd "$TMP" && PATH="$BADTOOL:$PATH" bash "$CD" src >/dev/null 2>&1 ); check "check-debt: a wc that fails is a stop, not a clean ledger" 2 "$?"
+rm -rf "$BADTOOL"
 rm -f "$TMP/src/nul.py" "$TMP/src/utf.py"
 printf 'x = 1  # %s single file\n' "$M" > "$TMP/src/single.py"
 out="$(cd "$TMP" && bash "$CD" src/single.py 2>&1)"; contains "check-debt: a single-file operand keeps its filename" "src/single.py:1: no-trigger" "$out"

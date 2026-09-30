@@ -75,9 +75,10 @@ collect() {
         next
       }
       rem > 0 && /^\+/ { if (file != "/dev/null" && substr($0, 2) ~ pat) printf "%s\t%d:%s\n", file, ln, substr($0, 2); ln++; rem--; next }
-      /^\+\+\+ / { file = substr($0, 5); sub(/\t$/, "", file); rem = 0; next }'
+      /^\+\+\+ / { file = substr($0, 5); sub(/\t$/, "", file); rem = 0; next }' \
+      || { printf 'check-debt: cannot read the diff — refusing to pass the markers\n' >&2; return 2; }
   else
-    local args=() d p rc
+    local args=() d p st=()
     local i
     for i in "${!paths[@]}"; do
       p="${paths[$i]}"
@@ -100,8 +101,11 @@ collect() {
     # --null, not -Z, which macOS's grep reads as --decompress and so writes no NUL at all.
     LC_ALL=C grep -rnHaE --null "${args[@]}" --exclude='*.md' -- "$PATTERN" "${paths[@]}" \
       | LC_ALL=C tr '\0' '\t' | LC_ALL=C sed 's#^\./##'
-    rc=${PIPESTATUS[0]}
-    [ "$rc" -le 1 ] || { printf 'check-debt: grep failed (%s)\n' "$rc" >&2; return 2; }
+    st=("${PIPESTATUS[@]}")
+    [ "${st[0]}" -le 1 ] || { printf 'check-debt: grep failed (%s)\n' "${st[0]}" >&2; return 2; }
+    if [ "${st[1]}" -ne 0 ] || [ "${st[2]}" -ne 0 ]; then
+      printf 'check-debt: tr or sed failed — refusing to pass the markers\n' >&2; return 2
+    fi
   fi
   return 0
 }
@@ -131,8 +135,10 @@ rows="$(printf '%s\n' "$hits" | awk -v pat="$PATTERN" '
 
 total=0; bad=0
 if [ -n "$rows" ]; then
-  total="$(printf '%s\n' "$rows" | wc -l | tr -d ' ')"
-  bad="$(printf '%s\n' "$rows" | awk -F'\t' '$3 == 0' | wc -l | tr -d ' ')"
+  if ! total="$(printf '%s\n' "$rows" | wc -l | tr -d ' ')" \
+    || ! bad="$(printf '%s\n' "$rows" | awk -F'\t' '$3 == 0' | wc -l | tr -d ' ')"; then
+    printf 'check-debt: cannot count the markers — refusing to pass them\n' >&2; exit 2
+  fi
 fi
 
 if [ "$ledger" -eq 1 ]; then
