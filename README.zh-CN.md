@@ -1,4 +1,4 @@
-<!-- Translated from README.md at db686eb. -->
+<!-- Translated from README.md at c5a1e93. -->
 <div align="center">
 
 [English](README.md) · **简体中文** · [한국어](README.ko.md) · [日本語](README.ja.md) · [Español](README.es.md)
@@ -139,21 +139,27 @@ curl -fsSL https://raw.githubusercontent.com/kapadias/nonna/main/install.sh | ba
 | Codex、Zed、Amp、opencode、Roo Code、Jules、Junie（`AGENTS.md`） | `agents`                      |
 | Cursor                                                           | `cursor`                      |
 | GitHub Copilot                                                   | `copilot`                     |
-| Gemini CLI                                                       | `gemini`                      |
+| Gemini CLI                                                       | `gemini` · 或扩展             |
 | Windsurf · Cline · Kiro                                          | `windsurf` · `cline` · `kiro` |
 | 以上全部                                                         | `all`                         |
 
 `install.sh` 安装的是 lite：各项门禁、git 钩子、`/nonna` 和家规。加上 `--mode full` 可安装整套 harness：完整规则、智能体、工作流和 `docs/STATUS.md`。再次运行时，会保留仓库已有的模式。
 
+Codex 也可以把她作为插件安装，这样还会加上她的钩子：运行 `codex plugin marketplace add kapadias/nonna`，在 `/plugins` 中安装 Nonna，再在 `/hooks` 中信任她的钩子（[`docs/INSTALL.md`](docs/INSTALL.md#codex-the-plugin)）。
+
 每种智能体能得到什么：
 
-|                                                      | Claude Code | 其他所有智能体 |
-| ---------------------------------------------------- | :---------: | :------------: |
-| Nonna 的家规                                         |     有      |       有       |
-| Git 钩子：不许在 `main` 上提交，不许暂存机密信息     |     有      |       有       |
-| Git 钩子：测试红着或含机密信息时不许推送             |     有      |       有       |
-| 测试红着就不能结束回合；“where's the test?”          |     有      |       无       |
-| 每次写入和读取文件都有机密守卫，每条命令都有分支守卫 |     有      |       无       |
+|                                                      | Claude Code | Codex（插件） | 其他所有智能体 |
+| ---------------------------------------------------- | :---------: | :-----------: | :------------: |
+| Nonna 的家规                                         |     有      |      有       |       有       |
+| Git 钩子：不许在 `main` 上提交，不许暂存机密信息     |     有      |      有       |       有       |
+| Git 钩子：测试红着或含机密信息时不许推送             |     有      |      有       |       有       |
+| 测试红着就不能结束回合；“where's the test?”          |     有      |    已接入¹    |       无       |
+| 每次写入和读取文件都有机密守卫，每条命令都有分支守卫 |     有      |    已接入¹    |       无       |
+
+¹ 同一套脚本，在 Codex 的事件上运行，并用 Codex 文档所列的钩子载荷测试过。它们还没有在 Codex 会话中端到端地跑过，基准测试里也没有 Codex 这一组，所以这里并不声称它们在 Codex 上能起到在 Claude Code 上的作用。Codex 通过 shell 读取文件，机密守卫就在这一层检查命令读取的内容。它们看不到发给已在运行的 shell 的输入，也不扫描 shell 写出的内容；这些地方由 git 钩子兜底（[`docs/INSTALL.md`](docs/INSTALL.md#codex-the-plugin)）。
+
+从 v2.0.0 起，Gemini CLI 也可以把家规作为扩展加载：`gemini extensions install https://github.com/kapadias/nonna`。扩展只带规则，不带 git 钩子；`install.sh --host gemini` 会加上钩子（[详情](docs/INSTALL.md#gemini-cli-the-extension)）。
 
 你已有的东西一概不会被覆盖。更多内容：[`docs/INSTALL.md`](docs/INSTALL.md)。
 

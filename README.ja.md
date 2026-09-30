@@ -1,4 +1,4 @@
-<!-- Translated from README.md at db686eb. -->
+<!-- Translated from README.md at c5a1e93. -->
 <div align="center">
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [한국어](README.ko.md) · **日本語** · [Español](README.es.md)
@@ -139,21 +139,27 @@ curl -fsSL https://raw.githubusercontent.com/kapadias/nonna/main/install.sh | ba
 | Codex、Zed、Amp、opencode、Roo Code、Jules、Junie（`AGENTS.md`） | `agents`                      |
 | Cursor                                                           | `cursor`                      |
 | GitHub Copilot                                                   | `copilot`                     |
-| Gemini CLI                                                       | `gemini`                      |
+| Gemini CLI                                                       | `gemini` · または拡張機能     |
 | Windsurf · Cline · Kiro                                          | `windsurf` · `cline` · `kiro` |
 | すべて                                                           | `all`                         |
 
 `install.sh` がインストールするのは lite です：ゲート、git フック、`/nonna`、ハウスルール。`--mode full` を付けるとハーネス一式が入ります：完全なルール、エージェント、ワークフロー、`docs/STATUS.md`。再実行しても、リポジトリがすでに使っているモードはそのままです。
 
+Codex では、Nonna をプラグインとして入れることもでき、その場合は Nonna のフックも加わります：`codex plugin marketplace add kapadias/nonna` を実行し、`/plugins` から Nonna をインストールして、`/hooks` で Nonna のフックを信頼してください（[`docs/INSTALL.md`](docs/INSTALL.md#codex-the-plugin)）。
+
 エージェントごとに入るもの：
 
-|                                                                                        | Claude Code | ほかのすべてのエージェント |
-| -------------------------------------------------------------------------------------- | :---------: | :------------------------: |
-| Nonna のハウスルール                                                                   |    あり     |            あり            |
-| Git フック：`main` でコミットさせない、シークレットをステージさせない                  |    あり     |            あり            |
-| Git フック：テストが赤かシークレットがあればプッシュさせない                           |    あり     |            あり            |
-| テストが赤のままではターンを終えられない／「where's the test?」                        |    あり     |            なし            |
-| ファイルの書き込み・読み込みのたびにシークレットガード、コマンドのたびにブランチガード |    あり     |            なし            |
+|                                                                                        | Claude Code | Codex（プラグイン） | ほかのすべてのエージェント |
+| -------------------------------------------------------------------------------------- | :---------: | :-----------------: | :------------------------: |
+| Nonna のハウスルール                                                                   |    あり     |        あり         |            あり            |
+| Git フック：`main` でコミットさせない、シークレットをステージさせない                  |    あり     |        あり         |            あり            |
+| Git フック：テストが赤かシークレットがあればプッシュさせない                           |    あり     |        あり         |            あり            |
+| テストが赤のままではターンを終えられない／「where's the test?」                        |    あり     |      接続済み¹      |            なし            |
+| ファイルの書き込み・読み込みのたびにシークレットガード、コマンドのたびにブランチガード |    あり     |      接続済み¹      |            なし            |
+
+¹ 同じスクリプトを Codex のイベントで実行し、Codex が公開しているフックのペイロードでテストしています。まだ Codex のセッションでエンドツーエンドに動かしたことはなく、ベンチマークにも Codex での計測はないため、Claude Code でしていることを Codex でもしているとは、ここでは言っていません。Codex はシェル経由でファイルを読み、シークレットガードはそこでコマンドが読むものをチェックします。すでに動いているシェルに送られた入力は見えず、シェルが書き出す内容もスキャンしません。そこは git フックが最後の砦です（[`docs/INSTALL.md`](docs/INSTALL.md#codex-the-plugin)）。
+
+v2.0.0 からは、Gemini CLI でもハウスルールを拡張機能として読み込めます：`gemini extensions install https://github.com/kapadias/nonna`。入るのはルールだけで、git フックは付きません。フックは `install.sh --host gemini` で追加します（[詳細](docs/INSTALL.md#gemini-cli-the-extension)）。
 
 既存のものは何も上書きしません。詳しくは [`docs/INSTALL.md`](docs/INSTALL.md) へ。
 

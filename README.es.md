@@ -1,4 +1,4 @@
-<!-- Translated from README.md at db686eb. -->
+<!-- Translated from README.md at c5a1e93. -->
 <div align="center">
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [한국어](README.ko.md) · [日本語](README.ja.md) · **Español**
@@ -177,7 +177,7 @@ Para otro agente, añade `-s -- --host <name>`:
 | Codex, Zed, Amp, opencode, Roo Code, Jules, Junie (`AGENTS.md`) | `agents`                      |
 | Cursor                                                          | `cursor`                      |
 | GitHub Copilot                                                  | `copilot`                     |
-| Gemini CLI                                                      | `gemini`                      |
+| Gemini CLI                                                      | `gemini` · o la extensión     |
 | Windsurf · Cline · Kiro                                         | `windsurf` · `cline` · `kiro` |
 | todos ellos                                                     | `all`                         |
 
@@ -185,15 +185,31 @@ Para otro agente, añade `-s -- --host <name>`:
 `--mode full` para el harness completo: las reglas completas, los agentes, los flujos de trabajo y
 `docs/STATUS.md`. Volver a ejecutarlo mantiene el modo que ya tenga el repositorio.
 
+Codex también puede instalarla como plugin, lo que añade sus hooks: ejecuta
+`codex plugin marketplace add kapadias/nonna`, instala Nonna desde `/plugins` y confía en sus hooks
+desde `/hooks` ([`docs/INSTALL.md`](docs/INSTALL.md#codex-the-plugin)).
+
 Qué recibe cada agente:
 
-|                                                                                                 | Claude Code | Cualquier otro agente |
-| ----------------------------------------------------------------------------------------------- | :---------: | :-------------------: |
-| Las reglas de la casa de Nonna                                                                  |     sí      |          sí           |
-| Hooks de git: ningún commit en `main`, ningún secreto en staging                                |     sí      |          sí           |
-| Hooks de git: ningún push con pruebas en rojo o con un secreto                                  |     sí      |          sí           |
-| No puede terminar su turno con la suite en rojo; "where's the test?"                            |     sí      |          no           |
-| Guardián de secretos en cada escritura y lectura de archivos, guardián de ramas en cada comando |     sí      |          no           |
+|                                                                                                 | Claude Code | Codex (plugin) | Cualquier otro agente |
+| ----------------------------------------------------------------------------------------------- | :---------: | :------------: | :-------------------: |
+| Las reglas de la casa de Nonna                                                                  |     sí      |       sí       |          sí           |
+| Hooks de git: ningún commit en `main`, ningún secreto en staging                                |     sí      |       sí       |          sí           |
+| Hooks de git: ningún push con pruebas en rojo o con un secreto                                  |     sí      |       sí       |          sí           |
+| No puede terminar su turno con la suite en rojo; "where's the test?"                            |     sí      |   conectado¹   |          no           |
+| Guardián de secretos en cada escritura y lectura de archivos, guardián de ramas en cada comando |     sí      |   conectado¹   |          no           |
+
+¹ Los mismos scripts, ejecutados en los eventos de Codex y probados con los payloads de hooks que
+Codex documenta. Todavía no se han ejecutado de principio a fin en una sesión de Codex, y el
+benchmark no incluye Codex, así que nada aquí afirma que hagan en Codex lo que hacen en Claude Code.
+Codex lee archivos a través de la shell, donde el guardián de secretos comprueba lo que lee un
+comando. No ven la entrada enviada a una shell que ya está en marcha, ni escanean lo que escribe la
+shell; ahí la red de seguridad son los hooks de git
+([`docs/INSTALL.md`](docs/INSTALL.md#codex-the-plugin)).
+
+A partir de la v2.0.0, Gemini CLI también puede cargar las reglas de la casa como extensión:
+`gemini extensions install https://github.com/kapadias/nonna`. Solo lleva las reglas, sin hooks de
+git; `install.sh --host gemini` los añade ([detalles](docs/INSTALL.md#gemini-cli-the-extension)).
 
 No se sobrescribe nada de lo que ya tengas. Más: [`docs/INSTALL.md`](docs/INSTALL.md).
 
