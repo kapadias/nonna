@@ -15,9 +15,6 @@
 
 </div>
 
-<p align="center"><img src="assets/demo.gif" width="860" alt="A real Claude Code session with Nonna, sped up 3 times. Claude Haiku fixes div_cents() and split_bill(), runs the whole suite and says done. Nonna's Stop hook asks where's the test; the agent shows the existing test fails without its fix, and finishes."></p>
-<p align="center"><sub>A real session, sped up 3×: <a href="assets/demo.cast">the raw take</a> · <a href="docs/demo.md">how it was recorded</a></sub></p>
-
 Agents say "done" when one test file passes and another is broken. Nonna runs your whole test
 suite before the agent is allowed to stop, and sends it back when the suite is red. She also stops
 commits and pushes to `main`, force pushes, and secrets written into files. No model decides any of

@@ -68,6 +68,16 @@ never offered to the model, so it is not counted.
 
 History lives in `CHANGELOG.md` and `git log`. Entries here describe the current unit of work.
 
+- **2026-09-30** — No demo video in the repository's tree. The README's demo (a gif, an mp4 and the
+  raw recording of one session, and the page on how it was recorded) is removed with its block in
+  the README, and the split-screen film on `chore/17-demo` is not merged: both are launch
+  material. The maintainer keeps a bundle of the film's branch, which stays on GitHub until they
+  delete it. A file-by-file review of that branch found nothing `develop` was missing: its README
+  numbers and scorecard were an earlier draft of round 3's, which the launch unit carries with
+  every number checked by the lint, and its tagline change belonged to the film. The removed files
+  stay in `develop`'s history (about 5 MB), so a squash merge for the release keeps them out of
+  `main`'s.
+
 - **2026-09-29** — The launch, the fifth unit of the launch plan (#17), from round 3's numbers.
   - **README:** the plugin install first, what the first session prints, what she checks, the
     modes (full mode as extras for teams, as D3 row 4 requires), a before/after from the
@@ -80,10 +90,10 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
     (`bench/examples.py`, rep 1 on Haiku); `--check` runs with the gate self-tests.
   - **Images:** `assets/build.py` builds the scorecard, the social preview and a card per trap task
     from the rows, lettered from Space Grotesk's own outlines (OFL); `--check` fails on a stale
-    image. The demo (`assets/demo.{gif,mp4,cast}`, `docs/demo.md`) is a real Haiku session, 4
-    takes, take 4 used; it shows her "where's the test?" block, not a failing-test block. A
-    split-screen film (bare against Nonna, every pair recorded) is being finished on its own branch
-    (`chore/17-demo`) and lands as its own PR.
+    image. The demo (a gif, an mp4 and the raw recording, with a page on how it was recorded) was a
+    real Haiku session, 4 takes, take 4 used; it showed her "where's the test?" block, not a
+    failing-test block. A split-screen film (bare against Nonna, every pair recorded) was made on
+    its own branch (`chore/17-demo`); neither it nor this demo was kept in the tree (above).
   - **Docs:** INSTALL, OVERVIEW and CONTRIBUTING reordered for the plugin and cleared of em dashes;
     `bench/README.md` has round 3's results and a new break-even table; CHANGELOG 2.0.0 opens with
     the release notes' five lines; ADR 0011 records what round 3 decided.
@@ -435,9 +445,9 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
 
 ## Next / open
 
-- The rest of the launch plan (#17), once this unit merges: the film, as its own PR from
-  `chore/17-demo`; then the v2.0.0 release and the go/no-go checks. `/nonna` ran headless in
-  default and auto mode during the smoke runs; an interactive check stays on the go/no-go list.
+- The rest of the launch plan (#17): the v2.0.0 release, by squash merge so the removed demo media
+  stays out of `main`'s history, and the go/no-go checks. `/nonna` ran headless in default and
+  auto mode during the smoke runs; an interactive check stays on the go/no-go list.
 - The branch guard should fail closed when a check cannot run. A `git` or `grep` that fails to
   start reads as "nothing found" today, so the command is allowed: the likely reason two guard
   tests allowed a blocked command, three times in all and each passing on rerun, while three or
