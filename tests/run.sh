@@ -3022,7 +3022,7 @@ LINT="$ROOT/tests/harness_lint.py"
 lint_fixture() { # -> echoes a fresh copy of the harness
   local d; d="$(mktemp -d)"
   cp -R "$ROOT/.claude" "$ROOT/docs" "$ROOT/tests" "$ROOT/stacks" "$ROOT/.github" \
-        "$ROOT/.claude-plugin" "$ROOT/hosts" "$ROOT/bench" "$ROOT/examples" "$ROOT/assets" "$d/" 2>/dev/null
+        "$ROOT/.claude-plugin" "$ROOT/hosts" "$ROOT/bench" "$ROOT/examples" "$ROOT/assets" "$ROOT/hooks" "$d/" 2>/dev/null
   cp "$ROOT"/*.md "$ROOT"/LICENSE "$d/" 2>/dev/null
   printf '%s' "$d"
 }
