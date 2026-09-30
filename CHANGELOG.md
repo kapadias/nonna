@@ -120,6 +120,15 @@ Your AI agent says "done"; Nonna makes it prove it.
 - **The launch README** leads with the plugin install and round 3's numbers. Each benchmark number
   carries a mark the lint checks against the rows (`harness_lint.py`), and the scorecard's alt text
   must be the image's own description.
+- **A Codex plugin** (#25, ADR-0012). Codex reads the same marketplace and installs the same
+  `.claude/`; `.codex-plugin/plugin.json` points it at `hooks/codex-hooks.json`, which runs her
+  scripts with `NONNA_HOST=codex` on Codex's events: the test gate and "where's the test?" at
+  `Stop`, both guards on `Bash` and on `apply_patch`, the git hooks and her rules at
+  `SessionStart` and `SubagentStart`. `lib/host-codex.sh` reads an `apply_patch` as Claude Code's
+  Write and Edit, a file at a time with the lines it adds, so a patch that adds a key or edits
+  `.git/config` is refused. Golden-tested against Codex's documented payloads and installed by
+  Codex 0.159.2; not yet run in a Codex session end to end. The lint holds the file to its own
+  form and core gates, and the release checks its version.
 
 ### Changed
 

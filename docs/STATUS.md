@@ -68,6 +68,19 @@ never offered to the model, so it is not counted.
 
 History lives in `CHANGELOG.md` and `git log`. Entries here describe the current unit of work.
 
+- **2026-09-30** — A Codex plugin (#25, ADR-0012), because Codex could end a turn on a red suite and
+  its edits passed both guards: an `apply_patch` adding a key or editing `.git/config` exited 0.
+  Codex installs the marketplace's `.claude/` (checked with Codex 0.159.2: its legacy
+  `.claude-plugin/marketplace.json` resolves there), so `.claude/.codex-plugin/plugin.json` points it
+  at `hooks/codex-hooks.json` instead of Claude Code's `hooks.json`. That file runs her scripts
+  with `NONNA_HOST=codex` on `SessionStart`, `PreToolUse` (`Bash`, `apply_patch`), `Stop` and
+  `SubagentStart`; the host comes from the file, never from the payload. `lib/host-codex.sh`
+  turns an `apply_patch` into Claude Code's Write and Edit, one per file with the lines it adds, and
+  the gate checks each; a patch it cannot read is refused. Codex's `Stop` and `SessionStart`
+  payloads and answers already match. 38 golden tests (Codex's documented payloads, the lint's
+  new checks) and the release's version check. Not yet run in a Codex session end to end, and no
+  Codex arm in `bench/`, so the README makes no parity claim.
+
 - **2026-09-30** — No demo video in the repository's tree. The README's demo (a gif, an mp4 and the
   raw recording of one session, and the page on how it was recorded) is removed with its block in
   the README, and the split-screen film on `chore/17-demo` is not merged: both are launch
@@ -462,6 +475,9 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   also reads only the first marker on a line, so one inside a string before it, or a file with
   CR-only line endings, hides a marker with no trigger later on that line (also LOW).
 
+- The Codex plugin (#25) in a real Codex session: install it from `/plugins`, trust its hooks in
+  `/hooks`, and see a red suite send the agent back and a patch with a key refused; then a Codex
+  arm in `bench/` before the README says what it does for Codex.
 - A behavioural eval on the failures the gates exist for (a secret in a fixture, a push to a
   protected branch, an error hidden by a "fix"), scored on "did it get caught".
 - A statusline showing branch and gate state.
