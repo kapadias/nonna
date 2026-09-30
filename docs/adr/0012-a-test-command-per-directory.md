@@ -64,9 +64,11 @@ should have forgotten.
    signer's verifier prints lines before each commit's names, which would move a package's file out
    of its package, or hide a STATUS update. They read every submodule (`--ignore-submodules=none`,
    which beats a committed `.gitmodules` `ignore = all` where a config pin does not), so a submodule
-   bump inside a package runs its command. Each command gets the full 600 seconds, and the first red
-   refuses the push, named. The hook already refuses a push whose files it cannot list. That is
-   stricter than running every command, so this case needs no rule of its own.
+   bump inside a package runs its command. And the hook reads with replace refs off
+   (`GIT_NO_REPLACE_OBJECTS`): a replace ref changes what git reads, not what a push sends, so what
+   the hook lists, checks and scans is what the push sends. Each command gets the full 600 seconds,
+   and the first red refuses the push, named. The hook already refuses a push whose files it cannot
+   list. That is stricter than running every command, so this case needs no rule of its own.
 6. **`NONNA_TEST_CMD`** still overrides everything at the end of a turn with one command, and the
    pre-push hook still ignores it. With no directory keys, both hooks behave as before, but for the
    merge fix in 5, which holds for every repository: a clean merge used to push with no tests.

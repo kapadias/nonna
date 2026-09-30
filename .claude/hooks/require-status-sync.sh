@@ -6,6 +6,8 @@
 #   ln -sf ../../.claude/hooks/require-status-sync.sh .git/hooks/pre-push
 # Bypass (only when you truly changed no code): git push --no-verify
 set -uo pipefail
+# Replace refs change what git reads, not what a push sends: every git call below reads the pushed objects.
+export GIT_NO_REPLACE_OBJECTS=1
 # Resolve through symlinks: this hook is installed AS a .git/hooks/pre-push
 # symlink, so BASH_SOURCE points at the link, not the real script beside its lib/.
 self="${BASH_SOURCE[0]}"
