@@ -1,7 +1,8 @@
 """Property: for seeded random piles of marker files and installed runners, nonna_detect_test_cmd names what
 the first matching row of TABLE says. Prints three lines for tests/run.sh: how many piles disagreed with the
 table; which answers no pile reached (an answer nothing reaches is a row nothing tests); and how many piles
-are gated less than the four rows develop had would gate them."""
+are gated less than the four rows develop had would gate them. If bash itself fails, most likely on the
+source, the one line says its status and the first line of its stderr."""
 
 import fnmatch
 import os
@@ -148,7 +149,7 @@ try:
 
     # One bash, the library sourced once; each pile is detected in a subshell with PATH its own and nothing else.
     script = (
-        '. "$1/lib/tests.sh"; while IFS= read -r line; do repo="${line%%|*}"; bin="${line#*|}"; '
+        '. "$1/lib/tests.sh" || exit $?; while IFS= read -r line; do repo="${line%%|*}"; bin="${line#*|}"; '
         '( cd "$repo" && PATH="$bin" nonna_detect_test_cmd ) </dev/null; printf "\\n"; done'
     )
     env = {k: v for k, v in os.environ.items() if k != "JAVA_HOME"}
@@ -160,6 +161,9 @@ try:
         universal_newlines=True,
         env=env,
     )
+    if run.returncode:
+        print("bash rc=%d: %s" % (run.returncode, (run.stderr.splitlines() or [""])[0]))
+        sys.exit(1)
     got = run.stdout.split("\n")[:-1]
 
     seen, bad, less = set(), [], 0

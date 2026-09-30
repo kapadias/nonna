@@ -2818,6 +2818,10 @@ prop="$(python3 "$ROOT/tests/detect_property.py" "$HOOKS" "$DET_LOG" 2>&1)"
 check "tests.sh: property: 312 seeded piles of marker files and runners: detection names the first matching row of the table" "piles=312 mismatches=0" "$(printf '%s\n' "$prop" | sed -n 1p)"
 check "tests.sh: property: ...and the piles reach every answer, nothing included" "unreached=" "$(printf '%s\n' "$prop" | sed -n 2p)"
 check "tests.sh: property: ...and no pile is gated less than develop's four rows (pytest, npm, go, cargo) gate it" "gated_less=0" "$(printf '%s\n' "$prop" | sed -n 3p)"
+# A source that will not load says why on the property's first line, not only that the piles disagreed.
+BROKEN="$(mktemp -d)"; mkdir "$BROKEN/lib"; printf 'echo boom >&2\nreturn 7\n' > "$BROKEN/lib/tests.sh"
+check "tests.sh: property: a source that fails to load says so on its first line, with its status and its stderr" "bash rc=7: boom" "$(python3 "$ROOT/tests/detect_property.py" "$BROKEN" "$DET_LOG" 2>&1 | sed -n 1p)"
+rm -rf "$BROKEN"
 if [ -e "$DET_LOG" ]; then rc=1; else rc=0; fi; check "tests.sh: detection ran no runner, and nothing the repository ships" 0 "$rc"
 rm -rf "$DET_STUBS" "$DET_LOG"
 # /nonna setup names what it looked for when it found nothing.
