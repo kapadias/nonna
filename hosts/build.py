@@ -6,7 +6,8 @@ The constitution is the part of Nonna that ports: it is what steered models away
 main and writing secrets in the benchmark. The Claude-only routing section is dropped; links point
 at the installed .claude/rules/. Deterministic enforcement on every host is the git hooks.
 
-  python3 hosts/build.py           write hosts/<target path> and hosts/lite/<target path>
+  python3 hosts/build.py           write hosts/<target path>, hosts/lite/<target path> and the
+                                   Gemini CLI extension's hosts/gemini-extension/GEMINI.md
   python3 hosts/build.py --check   exit 1 if any generated file drifted from its source
 """
 
@@ -48,6 +49,19 @@ This repository runs Nonna in lite mode. Git hooks refuse a commit on main, mast
 secret in a commit or a push, and a push with a red test suite; `--no-verify` is not yours to use.
 """
 LITE_CLAUDE_ONLY = " Her agents and workflows run only when the user asks for them."
+
+# The Gemini CLI extension (gemini-extension.json, at the repository root) loads one file from its own
+# directory, which is this repository. It carries the lite rules and no git hook, so it cannot load
+# hosts/lite/GEMINI.md: install.sh writes that one beside the hooks it links, and its header says they
+# refuse commits. Nor a GEMINI.md at the root, which Gemini CLI would load for anyone working here.
+EXTENSION_OUT = os.path.join(OUT, "gemini-extension", "GEMINI.md")
+EXTENSION_HEADER = """# Nonna (lite) — house rules
+
+This extension loads Nonna's house rules and installs no git hooks. The user adds them with
+`install.sh --host gemini`; the hooks then refuse a commit on main, master or develop, a secret in
+a commit or a push, and a push with a red test suite, and `--no-verify` is not yours to use. Until
+they are in place, nothing but you enforces these rules.
+"""
 
 # host key -> (target path, frontmatter or "")
 HOSTS: dict[str, tuple[str, str]] = {
@@ -98,6 +112,10 @@ def render_lite(frontmatter: str) -> str:
     return frontmatter + LITE_HEADER + "\n" + lite_body()
 
 
+def render_extension() -> str:
+    return EXTENSION_HEADER + "\n" + lite_body()
+
+
 def main() -> int:
     check = "--check" in sys.argv[1:]
     bad = []
@@ -114,6 +132,14 @@ def main() -> int:
         )
         for path, fm in HOSTS.values()
     ]
+    targets.append(
+        (
+            EXTENSION_OUT,
+            "hosts/gemini-extension/GEMINI.md",
+            render_extension(),
+            "hooks/lib/lite.md",
+        )
+    )
     for dest, shown, want, src in targets:
         if len(want) > MAX_CHARS:
             bad.append(
@@ -123,7 +149,7 @@ def main() -> int:
             try:
                 with open(dest, encoding="utf-8") as fh:
                     have = fh.read()
-            except FileNotFoundError:
+            except (FileNotFoundError, UnicodeDecodeError):
                 have = None
             if have != want:
                 bad.append(
