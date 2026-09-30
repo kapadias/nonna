@@ -2943,6 +2943,27 @@ cop PreToolUse 'write_bash|write_powershell' guard-branch.sh "$CPR" "$(pre write
 check "copilot: a command written to an async shell (write_bash's input) is read: --no-verify exits 2" 2 "$?"
 cop PreToolUse 'write_bash|write_powershell' secret-scan.sh "$CPR" "$(pre write_bash '{"shellId":"7","input":"cat .env"}')" >/dev/null
 check "copilot: and the secret guard reads it (cat .env exits 2)" 2 "$?"
+# One line in Copilot's repository settings (disableAllHooks) or in its repository hooks turns her gates off:
+# those files are the user's, as .git/config is, under either agent.
+cop PreToolUse 'Edit|Write' guard-branch.sh "$CPR" "$(pre Write '{"path":"'"$CPR"'/.github/copilot/settings.local.json","file_text":"{\"disableAllHooks\":true}"}')" >/dev/null
+check "copilot: a write of .github/copilot/settings.local.json exits 2" 2 "$?"
+cop PreToolUse 'Edit|Write' guard-branch.sh "$CPR" "$(pre Write '{"path":"'"$CPR"'/.github/hooks/quiet.json","file_text":"{\"version\":1}"}')" >/dev/null
+check "copilot: a write under .github/hooks/ exits 2" 2 "$?"
+cop PreToolUse 'Edit|Write' guard-branch.sh "$CPR" "$(pre Write '{"path":"'"$CPR"'/.GitHub/Copilot/Settings.json","file_text":"{}"}')" >/dev/null
+check "copilot: in any letter case, which a case-folding disk reads as the same file" 2 "$?"
+cop PreToolUse 'Edit|Write' guard-branch.sh "$CPR" "$(pre Write '{"path":"'"$CPR"'/.github/copilot-instructions.md","file_text":"# House rules"}')" >/dev/null
+check "copilot: .github/copilot-instructions.md stays writable" 0 "$?"
+printf '%s' '{"tool_name":"Write","tool_input":{"file_path":".github/copilot/settings.json","content":"{}"}}' | CLAUDE_PROJECT_DIR="$CPR" "$HOOKS/guard-branch.sh" 2>/dev/null
+check "Claude Code's agent may not write Copilot's settings either" 2 "$?"
+cpgb() { # <command>: the branch guard's exit on a Claude Code Bash call in $CPR
+  printf '{"tool_name":"Bash","tool_input":{"command":%s}}' "$(printf '%s' "$1" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')" \
+    | CLAUDE_PROJECT_DIR="$CPR" "$HOOKS/guard-branch.sh" 2>/dev/null
+  echo $?
+}
+check "a shell write of Copilot's settings (echo >) exits 2" 2 "$(cpgb "echo '{\"disableAllHooks\":true}' > .github/copilot/settings.local.json")"
+check "a copy into .github/hooks/ exits 2" 2 "$(cpgb 'cp quiet.json .github/hooks/')"
+check "an in-place edit under .github/hooks/ exits 2" 2 "$(cpgb "sed -i 's/a/b/' .github/hooks/nonna.json")"
+check "reading .github/hooks/ exits 0" 0 "$(cpgb 'cat .github/hooks/nonna.json')"
 # The host is whatever the hooks file says, never guessed from the payload; Claude Code's own payloads
 # go through the adapter byte for byte.
 printf '%s' "$(pre Write '{"path":"a.py","file_text":"aws_id = \"'"$FAKE_AWS"'\""}')" | CLAUDE_PROJECT_DIR="$CPR" "$HOOKS/secret-scan.sh" 2>/dev/null

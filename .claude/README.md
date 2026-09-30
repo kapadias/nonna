@@ -42,8 +42,8 @@ discipline is **enforced by code, not prose**. Start with [`../CLAUDE.md`](../CL
   or `full`, ADR-0011) and `off` is silent, but for the branch guard, which still keeps her
   settings. `guard-branch.sh` (blocks commits/pushes to
   `main`/`master`/`develop`, `--all`/`--mirror`, force pushes in `+refspec` and flag form,
-  `--no-verify` and hook-path overrides, and the agent's own changes to her settings or git hooks
-  or runs of her `/nonna` scripts;
+  `--no-verify` and hook-path overrides, and the agent's own changes to her settings or git hooks,
+  to Copilot CLI's repository hooks and settings, or runs of her `/nonna` scripts;
   it reads a command the way the shell will run it), `secret-scan.sh` (blocks writes that introduce
   a secret, and reads of secret files by Read, Grep or Bash, by any name that leads to one — parity
   with the Read deny list, linted), `format.sh` (post-edit auto-format, copy-in installs only),

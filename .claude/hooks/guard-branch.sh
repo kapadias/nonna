@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # PreToolUse gate — protect main/master/develop, and the gates themselves. Dual-mode by tool:
 #   • Edit|Write|MultiEdit on a protected branch  -> WARN once (exit 0).
-#       Editing is fine; committing is what's forbidden. Editing .git/config or .git/hooks -> BLOCK.
+#       Editing is fine; committing is what's forbidden. Editing .git/config or .git/hooks -> BLOCK,
+#       and Copilot CLI's repository hooks and settings (.github/hooks, .github/copilot/settings*.json).
 #   • Bash `git commit`/`git merge` on a protected branch, or any `git push`
 #     that is on/targets a protected branch (or pushes --all/--mirror) -> BLOCK. So is a force
 #     push, skipping the git hooks, changing what Nonna's gates read, and running her /nonna
@@ -98,6 +99,12 @@ case "$tool" in
     case "/${file#./}" in
       */.git/config | */.git/hooks/* | */.git/nonna/* | */.git/nonna-green)
         recipe "refusing to edit ${file}: her settings and git hooks live there." ;;
+    esac
+    # So are Copilot CLI's repository hooks and settings, where one line (disableAllHooks) turns every
+    # hook off. A case-folding disk reads them in any case.
+    case "$(printf '/%s' "${file#./}" | tr '[:upper:]' '[:lower:]')" in
+      */.github/hooks/* | */.github/copilot/settings*.json)
+        recipe "refusing to edit ${file}: Copilot's hooks and settings live there, and one line can turn every hook off." ;;
     esac
     [ "$off" = 0 ] || exit 0
     if is_protected "$branch"; then
@@ -238,17 +245,18 @@ case "$tool" in
       fi
     done <<<"$cfg"
 
-    # The same files by hand: .git/config and the git hooks, as the target of a write. Reading them
+    # The same files by hand: .git/config and the git hooks, and Copilot CLI's repository hooks and
+    # settings (.github/hooks, .github/copilot/settings*.json), as the target of a write. Reading them
     # (cat, grep, sed -n, awk, cp from) is fine. A copy's target is its last word once redirections
     # are set aside, or the directory given to -t / --target-directory.
-    GITF='(^|[^A-Za-z0-9_.-])\.git/(hooks([/[:space:]]|$)|config([[:space:]]|$))'
-    if printf '%s\n' "$segs" | grep -qiE '>[[:space:]]*[^[:space:]]*\.git/(hooks|config)' \
+    GITF='(^|[^A-Za-z0-9_.-])\.git(/(hooks([/[:space:]]|$)|config([[:space:]]|$))|hub/(hooks([/[:space:]]|$)|copilot/settings[^/[:space:]]*([[:space:]]|$)))'
+    if printf '%s\n' "$segs" | grep -qiE '>[[:space:]]*[^[:space:]]*\.git(/(hooks|config)|hub/(hooks|copilot/settings))' \
       || printf '%s\n' "$segs" | grep -iE "$GITF" \
       | grep -qiE '(^|[[:space:]])(rm|unlink|chmod|chown|truncate|touch|shred|patch|ed|ex|vi|vim|nano|emacs|python3?|ruby|node|perl|tee|dd)([[:space:]]|$)|(^|[[:space:]])(sed|awk|gawk)[[:space:]](.*[[:space:]])?(-[A-Za-z]*i|--in-place)' \
       || printf '%s\n' "$segs" | grep -iE '(^|[[:space:]])(cp|mv|ln|install|rsync)[[:space:]]' \
       | sed -E "s/[[:space:]]+${RD}[0-9]*[<>]+([[:space:]]+${RD}[<>]+)*[[:space:]]+[^[:space:]]+//g" \
-      | grep -qiE '(^|[^A-Za-z0-9_.-])\.git/(hooks(/[^[:space:]]*)?|config)[[:space:]]*$|(^|[[:space:]])(-[A-Za-z]*t[[:space:]]*|--ta[a-z-]*[=[:space:]]+)[^[:space:]]*\.git/(hooks|config)'; then
-      recipe "refusing to change .git/config or .git/hooks by hand."
+      | grep -qiE '(^|[^A-Za-z0-9_.-])\.git(/(hooks(/[^[:space:]]*)?|config)|hub/(hooks(/[^[:space:]]*)?|copilot/?|copilot/settings[^/[:space:]]*))[[:space:]]*$|(^|[[:space:]])(-[A-Za-z]*t[[:space:]]*|--ta[a-z-]*[=[:space:]]+)[^[:space:]]*\.git(/(hooks|config)|hub/(hooks|copilot))'; then
+      recipe "refusing to change .git/config, the git hooks, or Copilot's hooks and settings by hand."
     fi
 
     # Her /nonna scripts are the user's switch, run by the skill when a person types /nonna: they
