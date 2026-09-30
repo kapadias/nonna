@@ -249,9 +249,12 @@ and [`host-copilot.sh`](../.claude/hooks/lib/host-copilot.sh) translates what st
 tools' argument names (`path`, `file_text`, `old_str`, `new_str`, grep's `paths`, `write_bash`'s
 `input`), which win over any Claude-named key beside them, and her replies. A grep over several paths
 is judged path by path, and any refusal refuses; more than 32, too many to judge before the hook
-times out, are refused up front. A refusal also goes out as
-`permissionDecision: "deny"` with her message as the reason, the form Copilot shows the agent, and
-session start's context as `additionalContext` ([ADR 0012](adr/0012-copilot-cli-plugin.md)).
+times out, are refused up front. A call not in the shape Copilot sends (arguments that are not an
+object, where only `apply_patch`'s raw text comes as a string; a path that is not a string; paths
+that are not one path or a flat, non-empty list) is refused, never read untranslated. A refusal
+also goes out as `permissionDecision: "deny"` with her message as the reason, the form Copilot
+shows the agent, and session start's context as `additionalContext`
+([ADR 0012](adr/0012-copilot-cli-plugin.md)).
 
 What differs from Claude Code:
 
@@ -263,8 +266,9 @@ What differs from Claude Code:
 - **An `apply_patch` is read whole.** Its text is scanned for keys, so a patch that only removes a
   key is refused too, but the branch guard does not yet read the files it names: a patch can still
   change `.git/config`. A guard that crashes denies the tool call, as Copilot rules, where Claude
-  Code lets it through. Without jq, what the text alone cannot show safely (a list of paths, a
-  Claude-named key beside Copilot's, input to a shell) is refused.
+  Code lets it through. Without jq, what the text alone cannot show safely (a payload that does not
+  close, arguments that are not an object, a list of paths, a Claude-named key beside Copilot's,
+  input to a shell) is refused.
 - **Copilot's own switches are the user's.** Under either agent, the branch guard refuses the agent
   writing `.github/copilot/settings*.json`, where one `disableAllHooks` line turns every hook off, or
   anything under `.github/hooks/`, by file tool or by shell.

@@ -10,33 +10,45 @@
 # form (docs.github.com/en/copilot/reference/hooks-reference).
 
 # nonna_copilot_payload
-#   Reads a payload on stdin and prints it in Claude Code's shape, one payload per line. Copilot's
-#   argument names are what its tools act on, so they win over any Claude-named key beside them (a
-#   decoy): path is file_path, old_str old_string; a write's content keys (file_text, content, and
+#   Reads a payload on stdin and prints it in Claude Code's shape, one payload per line. First the
+#   shape Copilot sends is checked, and anything else is refused, never read untranslated: the payload
+#   must be a JSON object; its tool_input an object, or, for an Edit (apply_patch's raw text) alone, a
+#   string that does not hold JSON; path a string; paths one path or a flat, non-empty list of them.
+#   Then Copilot's argument names, which its tools act on, win over any Claude-named key beside them
+#   (a decoy): path is file_path, old_str old_string; a write's content keys (file_text, content, and
 #   apply_patch's text, raw or as input or patch) are joined into content, and new_str and new_string
 #   into new_string, so each is scanned; a patch is scanned whole. write_bash's input is a Bash
 #   command, and str_replace_editor's view, which arrives as an Edit, a Read. A grep is one payload per
 #   path it names, in paths or beside them, for nonna_copilot_each; more than 32 paths, which could not
 #   all be judged before the hook times out (and Copilot lets a timed-out call through), are refused
-#   up front. A payload with nothing to translate, or no JSON at all, passes unchanged, on one line.
-#   Without jq, "path" is renamed
-#   "file_path", and a "paths" that is one string "path", in the text, where the gates' own reader
-#   finds them; what the text cannot be trusted to show (a file_path beside path, a list of paths, a
-#   shell's input) is refused: exit 2, her reason on stderr.
+#   up front. A payload with nothing to translate passes unchanged, on one line. Without jq, "path" is
+#   renamed "file_path", and a "paths" that is one string "path", in the text, where the gates' own
+#   reader finds them, and what the text cannot show with certainty is refused: a payload that does not
+#   close, arguments that are not an object, a file_path beside path, a path or paths that are not one
+#   string, a shell's input. A refusal is exit 2, her reason on stderr.
 nonna_copilot_payload() {
-  local in out why=""
+  local in out why="" ti='"tool_input"[[:space:]]*:[[:space:]]*'
   in="$(cat 2>/dev/null | tr '\n' ' ')" # a raw newline in JSON is whitespace: one line per payload
+  case "$in" in *[![:space:]]*) ;; *) _nonna_copilot_refuse unread "its payload is empty"; return 2 ;; esac
   if ! command -v jq >/dev/null 2>&1; then
-    if printf '%s' "$in" | grep -qE '"file_path"[[:space:]]*:'; then
+    if ! printf '%s' "$in" | _nonna_copilot_closes; then
+      why="a payload that is not one JSON object that closes"
+    elif printf '%s' "$in" | grep -qE "${ti}\""; then
+      if ! printf '%s' "$in" | grep -qE '"tool_name"[[:space:]]*:[[:space:]]*"Edit"' \
+        || printf '%s' "$in" | grep -qE "${ti}\"[[:space:]]*\\{"; then
+        why="arguments given as a string"
+      fi
+    elif ! printf '%s' "$in" | grep -qE "${ti}\\{"; then
+      why="arguments that are not an object"
+    elif printf '%s' "$in" | grep -qE '"file_path"[[:space:]]*:'; then
       why="a file_path beside Copilot's own path"
-    elif printf '%s' "$in" | grep -qE '"paths"[[:space:]]*:[[:space:]]*\['; then
-      why="a list of paths"
+    elif printf '%s' "$in" | grep -qE '"paths?"[[:space:]]*:[[:space:]]*[^"[:space:]]'; then
+      why="a path or paths that are not one string"
     elif printf '%s' "$in" | grep -qE '"tool_name"[[:space:]]*:[[:space:]]*"write_(bash|powershell)"'; then
       why="input to a shell"
     fi
     if [ -n "$why" ]; then
-      echo "✗ Nonna: I can't taste what I can't read. (Copilot CLI: without jq, ${why} cannot be read, so it is refused.)" >&2
-      echo "  Run it again once jq is installed, or tell the user plainly why you cannot." >&2
+      _nonna_copilot_refuse unread "without jq, ${why} cannot be read"
       return 2
     fi
     printf '%s' "$in" | sed -e 's/"path"\([[:space:]]*:\)/"file_path"\1/g' -e 's/"paths"\([[:space:]]*:\)/"path"\1/g'
@@ -44,40 +56,45 @@ nonna_copilot_payload() {
   fi
   out="$(printf '%s' "$in" | jq -c --argjson most 32 '
     def joined($keys): [$keys[] as $k | .[$k] | strings] | if length > 0 then join("\n") else null end;
+    def refuse($why): [{nonna_copilot_refuse: "unread", why: $why}];
+    def paths_ok: type == "string" or (type == "array" and length > 0 and all(.[]; type == "string"));
+    def holds_json: explode | map(select(. > 32)) | .[0] == 123;
+    def translate:
+      (if .tool_name == "write_bash" or .tool_name == "write_powershell" then
+          .tool_name = "Bash" | .tool_input.command = .tool_input.input
+        else . end)
+      | (if .tool_name == "Edit" and (.tool_input | type) == "string" then .tool_input = {content: .tool_input} else . end)
+      | (if .tool_name == "Edit" and .tool_input.command == "view" then .tool_name = "Read" else . end)
+      | .tool_name as $tool
+      | if $tool == "Write" or $tool == "Edit" then
+          [.tool_input |= (
+              (if (.path | type) == "string" then .file_path = .path else . end)
+            | (joined(["file_text", "content", "input", "patch"]) as $c | if $c == null then . else .content = $c end)
+            | (joined(["new_str", "new_string"]) as $n | if $n == null then . else .new_string = $n end)
+            | (if (.old_str | type) == "string" then .old_string = .old_str else . end))]
+        elif $tool == "Read" then
+          [.tool_input |= (if (.path | type) == "string" then .file_path = .path else . end)]
+        elif $tool == "Grep" then
+          ([.tool_input.path, (.tool_input.paths | if type == "array" then .[] else . end)] | map(strings) | unique) as $each
+          | if ($each | length) > $most then
+              [{nonna_copilot_refuse: "too_long", why: "a grep over more than \($most) paths is refused: each path is judged on its own, and so many would outrun the timeout of the hook"}]
+            elif ($each | length) == 0 then [.]
+            else [. as $call | $each[] | . as $one | $call | .tool_input.path = $one] end
+        else [.] end;
     . as $in
-    | if type != "object" then [.]
-      else
-        (if .tool_name == "write_bash" or .tool_name == "write_powershell" then
-            .tool_name = "Bash" | if (.tool_input | type) == "object" then .tool_input.command = .tool_input.input else . end
-          else . end)
-        | (if .tool_name == "Edit" and (.tool_input | type) == "string" then .tool_input = {content: .tool_input} else . end)
-        | (if .tool_name == "Edit" and (.tool_input | type) == "object" and .tool_input.command == "view" then .tool_name = "Read" else . end)
-        | .tool_name as $tool
-        | if (.tool_input | type) != "object" then [.]
-          elif $tool == "Write" or $tool == "Edit" then
-            [.tool_input |= (
-                (if (.path | type) == "string" then .file_path = .path else . end)
-              | (joined(["file_text", "content", "input", "patch"]) as $c | if $c == null then . else .content = $c end)
-              | (joined(["new_str", "new_string"]) as $n | if $n == null then . else .new_string = $n end)
-              | (if (.old_str | type) == "string" then .old_string = .old_str else . end))]
-          elif $tool == "Read" then
-            [.tool_input |= (if (.path | type) == "string" then .file_path = .path else . end)]
-          elif $tool == "Grep" then
-            ([.tool_input.path, (.tool_input.paths | if type == "array" then .[] else . end)] | map(strings) | unique) as $each
-            | if ($each | length) > $most then
-                [{nonna_copilot_refuse: "too_long", why: "a grep over more than \($most) paths is refused: each path is judged on its own, and so many would outrun the timeout of the hook"}]
-              elif ($each | length) == 0 then [.]
-              else [. as $call | $each[] | . as $one | $call | .tool_input.path = $one] end
-          else [.] end
-      end
+    | if type != "object" then refuse("its payload is not a JSON object")
+      elif (.tool_input | type) == "string" then
+        if .tool_name == "Edit" and (.tool_input | holds_json | not) then translate
+        else refuse("its arguments are a string where Copilot sends an object") end
+      elif (.tool_input | type) != "object" then refuse("its arguments are not an object")
+      elif (.tool_input | has("path")) and (.tool_input.path | type) != "string" then refuse("its path is not a string")
+      elif (.tool_input | has("paths")) and (.tool_input.paths | paths_ok | not) then
+        refuse("its paths are neither one path nor a flat, non-empty list of them")
+      else translate end
     | if . == [$in] then empty else .[] end' 2>/dev/null)" || {
-    # No JSON at all goes on, for the gate's own reader to judge. JSON that jq could not translate would
-    # reach the gate with Copilot's names unread: refused.
-    if printf '%s' "$in" | jq empty >/dev/null 2>&1; then
-      echo "✗ Nonna: I can't taste what I can't read. (Copilot CLI: jq could not translate this call, so it is refused.)" >&2
-      return 2
-    fi
-    out=""
+    # Not JSON that jq reads, or a jq that cannot run this: refused, never read with Copilot's names unread.
+    _nonna_copilot_refuse unread "its payload is not JSON that jq can translate"
+    return 2
   }
   case "$out" in
     '{"nonna_copilot_refuse":'*)
@@ -86,6 +103,29 @@ nonna_copilot_payload() {
       ;;
   esac
   if [ -n "$out" ]; then printf '%s' "$out"; else printf '%s' "$in"; fi
+}
+
+_nonna_copilot_closes() { # the text on stdin is one JSON object whose strings and brackets all close
+  # Split into characters once, as json.sh does (one-true-awk copies a string on every substr()).
+  LC_ALL=C awk '
+    BEGIN { RS = sprintf("%c", 1) }
+    { s = s (NR > 1 ? RS : "") $0 }
+    END {
+      n = split(s, ch, ""); top = 0; str = 0; esc = 0; done = 0
+      for (i = 1; i <= n; i++) {
+        c = ch[i]
+        if (str) { if (esc) esc = 0; else if (c == "\\") esc = 1; else if (c == "\"") str = 0; continue }
+        if (c == " " || c == "\t" || c == "\r" || c == "\n") continue
+        if (done || (top == 0 && c != "{")) exit 1
+        if (c == "\"") str = 1
+        else if (c == "{" || c == "[") stack[++top] = c
+        else if (c == "}" || c == "]") {
+          if (stack[top] != (c == "}" ? "{" : "[")) exit 1
+          if (--top == 0) done = 1
+        }
+      }
+      exit (done ? 0 : 1)
+    }' 2>/dev/null
 }
 
 _nonna_copilot_refuse() { # <too_long|unread> <why>: her refusal, on stderr, as the branch guard says one

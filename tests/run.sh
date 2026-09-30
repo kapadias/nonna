@@ -2950,6 +2950,33 @@ check "copilot: a grep over 32 paths, the last .env, is judged and exits 2" 2 "$
 out="$(cop PreToolUse 'Read|Grep' secret-scan.sh "$CPR" "$(pre Grep '{"pattern":".","paths":'"$(cp_paths 33)"'}')")"
 check "copilot: a grep over 33 paths is refused up front" 2 "$?"
 contains "copilot: and the refusal names the cap" "more than 32 paths" "$out"
+# A call that is not the shape Copilot sends is refused, not read untranslated: arguments that are not an
+# object (only apply_patch's raw text comes as a string, and never as JSON in one), a path that is not a
+# string, paths that are not one path or a flat, non-empty list, and a payload that is not JSON.
+cop PreToolUse Bash guard-branch.sh "$CPR" "$(pre Bash '"git commit -m x"')" >/dev/null
+check "copilot: a Bash call whose arguments are a string exits 2" 2 "$?"
+# Each JSON string is set first: inside "$(...)", bash 3.2 brace-expands '"{..,..}"' into several words.
+jstr='"{\"path\":\"a.py\",\"file_text\":\"x = 1\"}"'
+cop PreToolUse 'Edit|Write' secret-scan.sh "$CPR" "$(pre Write "$jstr")" >/dev/null
+check "copilot: a Write whose arguments are JSON in a string exits 2" 2 "$?"
+jstr='"{\"path\":\".env\"}"'
+cop PreToolUse 'Read|Grep' secret-scan.sh "$CPR" "$(pre Read "$jstr")" >/dev/null
+check "copilot: a Read whose arguments are JSON in a string exits 2" 2 "$?"
+jstr='"{\"path\":\".git/config\",\"old_str\":\"a\",\"new_str\":\"b\"}"'
+cop PreToolUse 'Edit|Write' guard-branch.sh "$CPR" "$(pre Edit "$jstr")" >/dev/null
+check "copilot: an Edit whose arguments are JSON in a string exits 2" 2 "$?"
+cop PreToolUse 'Read|Grep' secret-scan.sh "$CPR" "$(pre Read '[".env"]')" >/dev/null
+check "copilot: a Read whose arguments are a list exits 2" 2 "$?"
+cop PreToolUse 'Read|Grep' secret-scan.sh "$CPR" "$(pre Read '{"path":[".env"]}')" >/dev/null
+check "copilot: a Read whose path is a list exits 2" 2 "$?"
+cop PreToolUse 'Read|Grep' secret-scan.sh "$CPR" "$(pre Grep '{"pattern":".","paths":[[".env"]]}')" >/dev/null
+check "copilot: a grep whose paths nest a list exits 2" 2 "$?"
+cop PreToolUse 'Read|Grep' secret-scan.sh "$CPR" "$(pre Grep '{"pattern":".","paths":[]}')" >/dev/null
+check "copilot: a grep over an empty list of paths exits 2" 2 "$?"
+cop PreToolUse 'write_bash|write_powershell' guard-branch.sh "$CPR" "$(pre write_bash '"git commit --no-verify -m x"')" >/dev/null
+check "copilot: a write_bash whose arguments are a string exits 2" 2 "$?"
+cop PreToolUse 'Edit|Write' secret-scan.sh "$CPR" "$(pre Write '{"path":"a.py","file_text":"aws_id = \"'"$FAKE_AWS"'\""')" >/dev/null
+check "copilot: truncated JSON holding a key exits 2" 2 "$?"
 # Input written to an async shell is a command too.
 cop PreToolUse 'write_bash|write_powershell' guard-branch.sh "$CPR" "$(pre write_bash '{"shellId":"7","input":"git commit --no-verify -m x"}')" >/dev/null
 check "copilot: a command written to an async shell (write_bash's input) is read: --no-verify exits 2" 2 "$?"
@@ -3005,8 +3032,20 @@ njc 'Read|Grep' secret-scan.sh Grep '{"pattern":".","paths":"src"}'
 check "copilot: without jq, grep's paths as one string is its path (src exits 0)" 0 "$?"
 njc 'write_bash|write_powershell' guard-branch.sh write_bash '{"shellId":"7","input":"ls"}'
 check "copilot: without jq, a shell's input is refused" 2 "$?"
-# A jq that reads JSON but cannot run the translation: the call is refused, not read untranslated.
-printf '#!/bin/sh\n[ "$*" = empty ] && exec "%s" empty\nexit 5\n' "$(command -v jq)" > "$NJC/jq"; chmod +x "$NJC/jq"
+njc Bash guard-branch.sh Bash '"git commit -m x"'
+check "copilot: without jq, a Bash call whose arguments are a string exits 2" 2 "$?"
+njc 'Read|Grep' secret-scan.sh Read '[".env"]'
+check "copilot: without jq, a Read whose arguments are a list exits 2" 2 "$?"
+njc 'Edit|Write' guard-branch.sh Edit '"{\"path\":\".git/config\",\"old_str\":\"a\",\"new_str\":\"b\"}"'
+check "copilot: without jq, an Edit whose arguments are JSON in a string exits 2" 2 "$?"
+njc 'Read|Grep' secret-scan.sh Read '{"path":[".env"]}'
+check "copilot: without jq, a path that is not a string exits 2" 2 "$?"
+njc 'Edit|Write' secret-scan.sh Write '{"path":"a.py","file_text":"x = 1"'
+check "copilot: without jq, a payload that never closes exits 2" 2 "$?"
+njc 'Edit|Write' secret-scan.sh Edit '"*** Begin Patch\n*** Update File: app.py\n@@\n-x = 1\n+x = 2\n*** End Patch\n"'
+check "copilot: without jq, apply_patch's raw text is still read (a clean patch exits 0)" 0 "$?"
+# A jq that cannot run the translation: the call is refused, not read untranslated.
+printf '#!/bin/sh\nexit 5\n' > "$NJC/jq"; chmod +x "$NJC/jq"
 njc 'Edit|Write' secret-scan.sh Write '{"path":"a.py","file_text":"x = 1"}'
 check "copilot: when jq cannot translate a payload, the call is refused" 2 "$?"
 rm -rf "$NJC"
