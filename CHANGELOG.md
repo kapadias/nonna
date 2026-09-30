@@ -160,6 +160,14 @@ Your AI agent says "done"; Nonna makes it prove it.
 - **The launch README** leads with the plugin install and round 3's numbers. Each benchmark number
   carries a mark the lint checks against the rows (`harness_lint.py`), and the scorecard's alt text
   must be the image's own description.
+- **The README in Simplified Chinese, Korean, Japanese and Spanish** (`README.zh-CN.md`,
+  `README.ko.md`, `README.ja.md`, `README.es.md`), linked from the top of `README.md` (#31). The
+  lint holds each to the English: `README.md` must link it, it marks the numbers `README.md` marks,
+  checked against the rows like them, gives the scorecard the image's own alt text, and carries
+  `README.md`'s code blocks word for word but for the words of a shell comment, and each of its
+  link targets and inline code spans. A number, a command or a link changed in `README.md` fails
+  the lint until every translation follows. Each keeps the
+  credit; none repeats the golden-test count, and one left behind is checked like `README.md`'s.
 - **Native Windows is measured, and it is not safe yet: use WSL 2** (#30). CI runs the gate tests
   under Git Bash on `windows-latest` in three legs (`core.autocrlf` true, false, and false with
   native symlinks), and `tests/windows-probe.sh` prints what Windows does to the hooks. The job reports and

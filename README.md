@@ -1,5 +1,7 @@
 <div align="center">
 
+**English** · [简体中文](README.zh-CN.md) · [한국어](README.ko.md) · [日本語](README.ja.md) · [Español](README.es.md)
+
 <img src="assets/nonna-banner.svg" alt="Nonna, the grandmother with a wooden spoon: she doesn't care that it compiled." width="100%">
 
 **Your AI agent says "done". Nonna makes it prove it.**
@@ -209,7 +211,7 @@ in a live Copilot session. An `apply_patch` is judged a file at a time, as Codex
 read its commands but not its file tools, and beside the plugin each gate runs twice. With Copilot,
 use the plugin.
 
-From v2.0.0, Gemini CLI can also load the house rules as an extension:
+From Nonna v2.0.0, Gemini CLI can also load the house rules as an extension:
 `gemini extensions install https://github.com/kapadias/nonna`. It carries the rules only, with no
 git hooks; `install.sh --host gemini` adds them
 ([details](docs/INSTALL.md#gemini-cli-the-extension)).
@@ -270,7 +272,7 @@ the plugin.
 ## Development
 
 ```bash
-bash tests/run.sh              # every gate proven to block and to allow (1703 golden tests)
+bash tests/run.sh              # every gate proven to block and to allow (1739 golden tests)
 python3 tests/harness_lint.py  # word budgets, host files in sync, hook wiring, README numbers
 ```
 

@@ -79,6 +79,15 @@ never offered to the model, so it is not counted.
 
 History lives in `CHANGELOG.md` and `git log`. Entries here describe the current unit of work.
 
+- **2026-09-30** — The README in Simplified Chinese, Korean, Japanese and Spanish
+  (`README.<lang>.md` at the root, linked from the top of `README.md`; #31), for developers who
+  read those more easily than English; each was reviewed against the English. The lint holds each
+  translation to `README.md`: linked from it, the same marked numbers, checked against round 3's
+  rows, the scorecard's own alt text, the code blocks word for word but for the words of a shell
+  comment, and every link target and inline code span `README.md` has, so no number, command or
+  link goes stale in one language. The credit is allowed in each
+  file by name; none repeats the golden-test count, and one left behind is checked all the same.
+
 - **2026-09-30** — A GitHub Copilot CLI plugin (#26, ADR-0015), so Copilot's agent meets the stop
   gate and both guards in its own hooks, not only at the next push. `.github/plugin/` holds the
   marketplace and the manifest (the repository is the plugin), and `hooks/copilot-hooks.json` wires
