@@ -172,15 +172,27 @@ For another agent, add `-s -- --host <name>`:
 `--mode full` for the whole harness: the full rules, agents, workflows and `docs/STATUS.md`.
 Running it again keeps the mode a repository already has.
 
+GitHub Copilot CLI also takes her as a plugin, which runs her gates in the agent's own hooks:
+
+```bash
+copilot plugin marketplace add kapadias/nonna
+copilot plugin install nonna@nonna
+```
+
 What each agent gets:
 
-|                                                                          | Claude Code | Every other agent |
-| ------------------------------------------------------------------------ | :---------: | :---------------: |
-| Nonna's house rules                                                      |     yes     |        yes        |
-| Git hooks: no commit on `main`, no staged secret                         |     yes     |        yes        |
-| Git hooks: no push with red tests or a secret                            |     yes     |        yes        |
-| Can't end its turn on a red suite; "where's the test?"                   |     yes     |        no         |
-| Secret guard on every file write and read, branch guard on every command |     yes     |        no         |
+|                                                                          | Claude Code | Copilot CLI plugin | Every other agent |
+| ------------------------------------------------------------------------ | :---------: | :----------------: | :---------------: |
+| Nonna's house rules                                                      |     yes     |        yes¹        |        yes        |
+| Git hooks: no commit on `main`, no staged secret                         |     yes     |        yes         |        yes        |
+| Git hooks: no push with red tests or a secret                            |     yes     |        yes         |        yes        |
+| Can't end its turn on a red suite; "where's the test?"                   |     yes     |        yes¹        |        no         |
+| Secret guard on every file write and read, branch guard on every command |     yes     |        yes¹        |        no         |
+
+¹ Through Copilot's `sessionStart`, `preToolUse` and `agentStop` hooks, which Copilot CLI documents
+for plugins (1.0.72 or later). Golden-tested against Copilot's documented hook payloads; not yet run
+in a live Copilot session. [`docs/INSTALL.md`](docs/INSTALL.md#github-copilot-cli-the-plugin) says
+what differs.
 
 Nothing you already have is overwritten. More: [`docs/INSTALL.md`](docs/INSTALL.md).
 

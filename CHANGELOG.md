@@ -120,6 +120,14 @@ Your AI agent says "done"; Nonna makes it prove it.
 - **The launch README** leads with the plugin install and round 3's numbers. Each benchmark number
   carries a mark the lint checks against the rows (`harness_lint.py`), and the scorecard's alt text
   must be the image's own description.
+- **A GitHub Copilot CLI plugin** (#26, ADR-0012): `copilot plugin marketplace add kapadias/nonna`,
+  then `copilot plugin install nonna@nonna`. `.github/plugin/` holds its marketplace and manifest;
+  `hooks/copilot-hooks.json` runs her scripts from `.claude/hooks/` at `sessionStart`, `preToolUse`
+  and `agentStop`, with `NONNA_HOST=copilot`. Copilot's agent can no longer end its turn on a red
+  suite, commit to `main` or write a key into a file. PascalCase event names bring Copilot's
+  payload close to Claude Code's; `.claude/hooks/lib/host-copilot.sh` renames the file tools'
+  arguments and gives her replies in Copilot's form, a refusal's reason included. Golden-tested
+  against Copilot's documented payloads, not yet run in a live Copilot session.
 
 ### Changed
 
