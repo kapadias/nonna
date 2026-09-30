@@ -1,4 +1,4 @@
-<!-- Translated from README.md at c5a1e93. -->
+<!-- Translated from README.md at 20dc9ff. -->
 <div align="center">
 
 [English](README.md) · **简体中文** · [한국어](README.ko.md) · [日本語](README.ja.md) · [Español](README.es.md)
@@ -179,7 +179,7 @@ Codex 也可以把她作为插件安装，这样还会加上她的钩子：运�
 
 **如果我必须不带测试就发布呢？** 放在分支上，并加一个 `debt:` 标记，写明你什么时候补上测试。她会记着的。
 
-**Windows 呢？** 支持 macOS、Linux 和 WSL。钩子是用 bash 写的；原生 Windows 还没有测试过。
+**Windows 呢？** 请用 WSL 2（或 macOS、Linux）。在原生 Windows 上，有几道门禁拦不住它们把守的操作，有的根本不会启动：[实测结果](docs/INSTALL.md#windows)。
 
 **为什么叫 Nonna？** 因为编译通过了，她也不买账。
 

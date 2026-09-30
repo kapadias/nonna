@@ -1,4 +1,4 @@
-<!-- Translated from README.md at c5a1e93. -->
+<!-- Translated from README.md at 20dc9ff. -->
 <div align="center">
 
 [English](README.md) · [简体中文](README.zh-CN.md) · **한국어** · [日本語](README.ja.md) · [Español](README.es.md)
@@ -179,7 +179,7 @@ v2.0.0부터는 Gemini CLI도 집안 규칙을 확장 프로그램으로 불러�
 
 **테스트 없이 배포해야 하면요?** 브랜치에서, 언제 테스트를 추가할지 적은 `debt:` 마커를 달고 하세요. Nonna가 기억할 겁니다.
 
-**Windows는요?** macOS, Linux, WSL을 지원합니다. 훅은 bash로 되어 있고, 네이티브 Windows는 아직 테스트하지 않았습니다.
+**Windows는요?** WSL 2를 쓰세요(또는 macOS나 Linux). 네이티브 Windows에서는 여러 게이트가 지켜야 할 것을 막지 못하고, 일부는 아예 시작되지도 않습니다: [측정 결과](docs/INSTALL.md#windows).
 
 **왜 Nonna인가요?** 컴파일이 됐다고 해서 할머니가 봐주지는 않으니까요.
 

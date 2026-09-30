@@ -1,4 +1,4 @@
-<!-- Translated from README.md at c5a1e93. -->
+<!-- Translated from README.md at 20dc9ff. -->
 <div align="center">
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [한국어](README.ko.md) · **日本語** · [Español](README.es.md)
@@ -179,7 +179,7 @@ v2.0.0 からは、Gemini CLI でもハウスルールを拡張機能として�
 
 **テストなしでリリースしなければならないときは？** ブランチで、いつテストを足すかを書いた `debt:` マーカーを付けて。Nonna は忘れません。
 
-**Windows は？** macOS、Linux、WSL に対応しています。フックは bash で書かれていて、ネイティブの Windows はまだテストしていません。
+**Windows は？** WSL 2 を使ってください（または macOS か Linux）。ネイティブの Windows では、いくつかのゲートが守るべき操作を止められず、そもそも起動しないものもあります：[計測結果](docs/INSTALL.md#windows)。
 
 **なぜ Nonna？** コンパイルが通ったことなんて、Nonna は気にしないからです。
 

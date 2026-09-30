@@ -1,4 +1,4 @@
-<!-- Translated from README.md at c5a1e93. -->
+<!-- Translated from README.md at 20dc9ff. -->
 <div align="center">
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [한국어](README.ko.md) · [日本語](README.ja.md) · **Español**
@@ -251,7 +251,8 @@ prompt en ambos casos). Cuándo se paga sola: la [tabla de punto de equilibrio](
 **¿Y si necesito entregar un cambio sin prueba?** En una rama, detrás de un marcador `debt:` que diga
 cuándo la vas a añadir. Ella se acordará.
 
-**¿Windows?** macOS, Linux y WSL. Los hooks son bash; Windows nativo todavía no está probado.
+**¿Windows?** Usa WSL 2 (o macOS o Linux). En Windows nativo, varios controles no bloquean lo que
+vigilan, y algunos ni siquiera arrancan: [lo que se midió](docs/INSTALL.md#windows).
 
 **¿Por qué Nonna?** Porque le da igual que haya compilado.
 
