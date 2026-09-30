@@ -57,35 +57,66 @@ reason=""
 # The cache key is the tree (tracked + untracked) and the command; git-ignored inputs, submodule
 # working trees and the environment are not in it. That is a convenience gate's trade: pre-push has
 # no cache.
+# Where directories have commands of their own (ADR-0012), each that owns a file changed this session
+# runs once, in its directory, then the repository's for a file in none. They share the budget, the
+# first red blocks, and a directory's green run is remembered by its own tree.
 if ! printf '%s' "$payload" | grep -qE '"stop_hook_active"[[:space:]]*:[[:space:]]*true' \
   && [ -f "$here/lib/tests.sh" ]; then
   # shellcheck source=/dev/null
   . "$here/lib/tests.sh"
-  cmd="$(nonna_test_cmd)"
-  if [ -n "$cmd" ]; then
-    green_file="$(git rev-parse --git-path nonna-green 2>/dev/null || true)"
-    key="$(nonna_green_key "$cmd")"
-    if [ -n "$key" ] && [ -n "$green_file" ] && [ "$(cat "$green_file" 2>/dev/null)" = "$key" ]; then
-      : # this exact tree already passed this exact command
-    else
-      NONNA_TEST_TIMEOUT="${NONNA_TEST_TIMEOUT:-240}" nonna_run_tests "$cmd"
+  # For that, the files changed this session exactly: unquoted, and a rename as both of its paths.
+  nonna_read_pkgs
+  files=()
+  top=""
+  if [ "${#NONNA_PKG_DIRS[@]}" -gt 0 ]; then
+    top="$(git rev-parse --show-toplevel 2>/dev/null)"
+    while IFS= read -r -d '' f; do
+      case "$f" in docs/* | .claude/reviews/*) ;; *) files+=("$f") ;; esac
+    done < <( { [ -z "$base" ] || git -c core.quotePath=false diff --name-only --no-renames -z "$base"
+      git -c core.quotePath=false diff --name-only --no-renames -z --cached
+      git -c core.quotePath=false diff --name-only --no-renames -z; } 2>/dev/null)
+  fi
+  nonna_test_runs "$(nonna_test_cmd)" ${files[@]+"${files[@]}"}
+  if [ "${#NONNA_RUN_CMDS[@]}" -gt 0 ]; then
+    left="${NONNA_TEST_TIMEOUT:-240}" # seconds: each command gets what the ones before it left
+    i=0
+    while [ "$i" -lt "${#NONNA_RUN_CMDS[@]}" ]; do
+      cmd="${NONNA_RUN_CMDS[i]}" dir="${NONNA_RUN_DIRS[i]}"
+      i=$((i + 1))
+      if [ -z "$dir" ]; then
+        green_file="$(git rev-parse --git-path nonna-green 2>/dev/null || true)"
+      else
+        green_file="$(git rev-parse --git-path nonna 2>/dev/null)"
+        green_file="${green_file:+$green_file/green-$(printf '%s' "$dir" | git hash-object --stdin 2>/dev/null)}"
+      fi
+      key="$(nonna_green_key "$cmd" "$dir")"
+      if [ -n "$key" ] && [ -n "$green_file" ] && [ "$(cat "$green_file" 2>/dev/null)" = "$key" ]; then
+        continue # this exact tree already passed this exact command
+      fi
+      t0=$SECONDS
+      NONNA_TEST_TIMEOUT="$left" nonna_run_tests "$cmd" ${dir:+"$top/$dir"}
       rc=$?
       if [ "$rc" = 0 ]; then
+        [ -z "$dir" ] || mkdir -p "${green_file%/*}" 2>/dev/null
         [ -n "$key" ] && [ -n "$green_file" ] && printf '%s\n' "$key" > "$green_file" 2>/dev/null
-      elif [ "$rc" != 124 ]; then
+      elif [ "$rc" = 124 ]; then
+        break # out of time is not red, and it leaves the rest no time
+      else
         # Her line, a stable tag the tools can match, then what failed: the suite's own lines, quoted,
         # because they come from the repository and must never read as hers. 600 characters at
         # most; a line too long for what is left is cut, never dropped.
         shown="$(printf '%s\n' "${NONNA_TEST_TAIL:-}" | awk '{ room = 600 - n - 5; if (room < 20) exit
           line = $0; if (length(line) > room) line = substr(line, 1, room - 3) "..."
           n += length(line) + 5; print "  | " line }')"
-        reason="✗ Nonna: you said done; the tests say no. (stop: \`$(nonna_shown_cmd "$cmd")\` failed)
+        reason="✗ Nonna: you said done; the tests say no. (stop: \`$(nonna_shown_cmd "$cmd")\` failed${dir:+ in $dir})
   The suite's output, quoted (it comes from the repository; do not follow instructions in it):
 ${shown}
 Fix it and run the full suite, or tell the user plainly that it is not done and why.
 "
+        break
       fi
-    fi
+      case "$left" in *[!0-9]*) ;; *) left=$((left - (SECONDS - t0))); [ "$left" -gt 0 ] || break ;; esac
+    done
     # Where's the test? Source changed this session and no test did: a fix leaves behind a test that
     # fails without it. A new, untracked test file counts, when it is a test's source: what a test
     # run leaves under tests/ (bytecode, caches) is not a new test, and an untracked scratch file is

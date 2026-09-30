@@ -12,7 +12,8 @@
 #                  NONNA_TEST_CMD, which the command that runs git could set.
 # nonna_detect_test_cmd  prints the command detection finds here: pytest config/tests,
 #                  package.json's "test" script, go.mod or Cargo.toml.
-# nonna_run_tests  runs it with a timeout (NONNA_TEST_TIMEOUT seconds, default 600); exit status is
+# nonna_run_tests  runs it with a timeout (NONNA_TEST_TIMEOUT seconds, default 600), in the directory
+#                  given (a directory's own command, below), else here; exit status is
 #                  the suite's, 124 when it timed out. $NONNA_TEST_TAIL gets what a person needs to
 #                  see: up to five failing-test lines (pytest, jest, go, cargo, TAP) and the summary,
 #                  else the last eight lines; colour codes stripped, and any line that looks like a
@@ -55,25 +56,90 @@ nonna_detect_test_cmd() {
   fi
 }
 
-nonna_run_tests() { # <command>
+# A directory can have a test command of its own (ADR-0012), so a monorepo runs only the suites that
+# changed. The hooks read the keys, give each changed file its owner, and run what the owners name.
+
+# nonna_read_pkgs [git-hook]  sets NONNA_PKG_DIRS and NONNA_PKG_CMDS side by side: each directory's own
+#                  command, git config nonna.<dir>.testCmd with <dir> named from the repository's top, in
+#                  the order git config lists them. The repository's own config alone: a directory is one
+#                  repository's. An empty command is none. While NONNA_TEST_CMD is set it is one command
+#                  for everything, so there are none; a git hook ignores it (nonna_test_cmd).
+nonna_read_pkgs() {
+  local kv k
+  NONNA_PKG_DIRS=() NONNA_PKG_CMDS=()
+  if [ "${1:-}" != git-hook ] && [ "${NONNA_TEST_CMD+set}" = set ]; then return 0; fi
+  while IFS= read -r -d '' kv; do # "<key>\n<value>": a name holds no newline, a value may
+    case "$kv" in *$'\n'?*) ;; *) continue ;; esac
+    k="${kv%%$'\n'*}"
+    k="${k#nonna.}"
+    NONNA_PKG_DIRS+=("${k%.testcmd}")
+    NONNA_PKG_CMDS+=("${kv#*$'\n'}")
+  done < <(git config --local --no-includes -z --get-regexp '^nonna\..+\.testcmd$' 2>/dev/null)
+}
+
+# nonna_test_owner <path>  sets NONNA_OWNER to the index in NONNA_PKG_DIRS of the directory that owns the
+#                  path (named from the top): the longest that is the path or a directory above it, on a
+#                  / boundary. Empty when none does: the path is the repository's. The order the keys were
+#                  set in does not change the answer; of a key set twice, the later counts, as in git.
+nonna_test_owner() {
+  local i=0 len=-1
+  NONNA_OWNER=""
+  while [ "$i" -lt "${#NONNA_PKG_DIRS[@]}" ]; do
+    case "$1/" in
+      "${NONNA_PKG_DIRS[i]}"/*)
+        if [ "${#NONNA_PKG_DIRS[i]}" -ge "$len" ]; then NONNA_OWNER="$i" len="${#NONNA_PKG_DIRS[i]}"; fi
+        ;;
+    esac
+    i=$((i + 1))
+  done
+}
+
+# nonna_test_runs <command> [<path>...]  after nonna_read_pkgs, sets NONNA_RUN_DIRS and NONNA_RUN_CMDS
+#                  side by side: what the test gate runs for these changed paths. With no directory of its
+#                  own, the command, for the whole tree. Otherwise each directory's command that owns a
+#                  path, once, in the order git config lists them; then the command, when a path is in no
+#                  directory. "" is the repository; an empty command runs nothing.
+nonna_test_runs() {
+  local cmd="$1" f i=0 root="" sel=()
+  shift
+  # shellcheck disable=SC2034  # read by the hook that sourced this file
+  NONNA_RUN_DIRS=() NONNA_RUN_CMDS=()
+  if [ "${#NONNA_PKG_DIRS[@]}" -eq 0 ]; then
+    root=1
+  else
+    # debt: every path against every directory, stop once all are chosen if a push of thousands of files is slow
+    for f in "$@"; do
+      nonna_test_owner "$f"
+      if [ -n "$NONNA_OWNER" ]; then sel[NONNA_OWNER]=1; else root=1; fi
+    done
+  fi
+  while [ "$i" -lt "${#NONNA_PKG_DIRS[@]}" ]; do
+    if [ -n "${sel[i]:-}" ]; then NONNA_RUN_DIRS+=("${NONNA_PKG_DIRS[i]}"); NONNA_RUN_CMDS+=("${NONNA_PKG_CMDS[i]}"); fi
+    i=$((i + 1))
+  done
+  if [ -n "$root" ] && [ -n "$cmd" ]; then NONNA_RUN_DIRS+=(""); NONNA_RUN_CMDS+=("$cmd"); fi
+}
+
+nonna_run_tests() { # <command> [<absolute directory>]
   local out rc secs="${NONNA_TEST_TIMEOUT:-600}" log
   # Output goes to a file, not $(...): a child that outlives a timeout must not hold the pipe open.
   log="$(mktemp)" || return 1
-  if command -v timeout >/dev/null 2>&1; then # GNU timeout signals the whole process group
-    timeout "$secs" bash -c "$1" >"$log" 2>&1
-    rc=$?
-  elif command -v perl >/dev/null 2>&1; then # macOS: own process group, killed whole on the alarm
-    perl -e '
-      my $secs = shift; my $pid = fork; die "fork: $!" unless defined $pid;
-      if (!$pid) { setpgrp(0, 0); exec @ARGV or exit 127 }
-      $SIG{ALRM} = sub { kill "TERM", -$pid; sleep 1; kill "KILL", -$pid; exit 124 };
-      alarm $secs; waitpid($pid, 0);
-      exit($? & 127 ? 128 + ($? & 127) : $? >> 8)' "$secs" bash -c "$1" >"$log" 2>&1
-    rc=$?
-  else
-    bash -c "$1" >"$log" 2>&1
-    rc=$?
-  fi
+  (
+    [ -z "${2:-}" ] || cd "$2" || exit # a directory that is gone fails; it never passes
+    if command -v timeout >/dev/null 2>&1; then # GNU timeout signals the whole process group
+      timeout "$secs" bash -c "$1"
+    elif command -v perl >/dev/null 2>&1; then # macOS: own process group, killed whole on the alarm
+      perl -e '
+        my $secs = shift; my $pid = fork; die "fork: $!" unless defined $pid;
+        if (!$pid) { setpgrp(0, 0); exec @ARGV or exit 127 }
+        $SIG{ALRM} = sub { kill "TERM", -$pid; sleep 1; kill "KILL", -$pid; exit 124 };
+        alarm $secs; waitpid($pid, 0);
+        exit($? & 127 ? 128 + ($? & 127) : $? >> 8)' "$secs" bash -c "$1"
+    else
+      bash -c "$1"
+    fi
+  ) >"$log" 2>&1
+  rc=$?
   out="$(nonna_test_digest "$log")"
   rm -f "$log"
   # shellcheck disable=SC2034  # read by the hook that sourced this file
@@ -103,15 +169,19 @@ nonna_is_source_file() {
   return 1
 }
 
-# nonna_green_key <command>  the key a passing run is remembered by (git rev-parse --git-path
-#                  nonna-green): the tree, tracked and untracked files read through a scratch index,
-#                  and the command. Nothing when the tree cannot be read. It writes git objects, so a
+# nonna_green_key <command> [<directory>]  the key a passing run is remembered by (git rev-parse
+#                  --git-path nonna-green): the tree, tracked and untracked files read through a scratch
+#                  index, and the command. With a directory's own command, that directory's tree alone,
+#                  read from wherever this runs, so a change elsewhere leaves its key as it was.
+#                  Nothing when the tree cannot be read. It writes git objects, so a
 #                  reader computes it only when there is a key to compare with.
 nonna_green_key() {
-  local idx tree
+  local idx tree spec=.
+  [ -z "${2:-}" ] || spec=":(top,literal)$2"
   idx="$(mktemp 2>/dev/null)" || return 0
   if cp "$(git rev-parse --git-path index)" "$idx" 2>/dev/null \
-    && tree="$(GIT_INDEX_FILE="$idx" git add -A . >/dev/null 2>&1 && GIT_INDEX_FILE="$idx" git write-tree 2>/dev/null)"; then
+    && tree="$(GIT_INDEX_FILE="$idx" git add -A "$spec" >/dev/null 2>&1 && GIT_INDEX_FILE="$idx" git write-tree 2>/dev/null)" \
+    && { [ -z "${2:-}" ] || tree="$(git rev-parse --verify --quiet "$tree:$2" 2>/dev/null)"; }; then
     printf '%s\n%s' "$tree" "$1" | git hash-object --stdin 2>/dev/null
   fi
   rm -f "$idx"

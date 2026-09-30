@@ -558,6 +558,10 @@ check "blocks cp --target-directory=.git/hooks" 2 "$(gb 'cp --target-directory=.
 check "blocks a >| write into .git/config" 2 "$(gb 'echo x >| .git/config')"
 check "blocks a >& write into .git/config" 2 "$(gb 'echo x >& .git/config')"
 check "blocks unsetting a Nonna key" 2 "$(gb 'git config --unset nonna.mode')"
+# A directory's own test command (nonna.<dir>.testCmd, ADR-0012) is hers too.
+check "blocks the agent setting a directory's test command" 2 "$(gb 'git config nonna.packages/api.testCmd true')"
+check "blocks the agent removing a directory's test command" 2 "$(gb 'git config --remove-section nonna.packages/api')"
+check "allows reading a directory's test command" 0 "$(gb 'git config --get nonna.packages/api.testCmd')"
 check "blocks a hooks path set after --" 2 "$(gb 'git config core.hooksPath -- -hooks')"
 # One key alone reads it; anything after the key is a value, an empty one included, and an
 # abbreviated action is still an action.
@@ -2661,6 +2665,153 @@ got="$(cd "$TMP" && unset NONNA_TEST_CMD && . .claude/hooks/lib/tests.sh && nonn
 rm -rf "$TMP"
 
 rm -rf "$PYSTUB"; if [ -n "$OLD_PYTHONPATH" ]; then PYTHONPATH="$OLD_PYTHONPATH"; else unset PYTHONPATH; fi
+
+echo "== per-directory test commands (monorepos: ownership, Stop, pre-push) =="
+# A directory can have its own test command, git config nonna.<dir>.testCmd (ADR-0012). A changed file
+# belongs to the longest configured directory that is its path or above it, on a / boundary; a file in
+# none, to the repository's command. Both hooks run each owning command once, in its directory.
+SD="$HOOKS/stop-dod.sh"; RS="$HOOKS/require-status-sync.sh"
+# shellcheck disable=SC2031  # NONNA_OWNER and NONNA_PKG_DIRS are set by lib/tests.sh in the same subshell
+own() { # <repo> <path>: the directory that owns the path there, or (root)
+  (cd "$1" || exit; . "$HOOKS/lib/tests.sh"; nonna_read_pkgs; nonna_test_owner "$2"
+    if [ -n "$NONNA_OWNER" ]; then printf '%s' "${NONNA_PKG_DIRS[NONNA_OWNER]}"; else printf '(root)'; fi)
+}
+MONO="$(mktemp -d)"; "${GIT[@]}" -C "$MONO" init -q
+git -C "$MONO" config nonna.packages/api.testCmd "pytest -q"
+git -C "$MONO" config nonna.packages/api/v2.testCmd "pytest -q v2"
+git -C "$MONO" config "nonna.packages/web ui.testCmd" "npm test"
+git -C "$MONO" config nonna.packages/empty.testCmd ""
+check "owner: a file in a directory with a command is that directory's" "packages/api" "$(own "$MONO" packages/api/app.py)"
+check "owner: the longest directory wins" "packages/api/v2" "$(own "$MONO" packages/api/v2/app.py)"
+check "owner: only on a / boundary" "(root)" "$(own "$MONO" packages/apix/app.py)"
+check "owner: a path that is the directory is its own (a submodule)" "packages/api" "$(own "$MONO" packages/api)"
+check "owner: a space in a directory's name" "packages/web ui" "$(own "$MONO" "packages/web ui/a.ts")"
+check "owner: an empty command is none, so the file goes to the next owner" "(root)" "$(own "$MONO" packages/empty/a.py)"
+check "owner: a file in no directory is the repository's" "(root)" "$(own "$MONO" README.md)"
+GC="$(mktemp)"; git config --file "$GC" nonna.packages/web.testCmd "npm test"
+check "owner: a directory's command comes from the repository's own config, never the global one" "(root)" "$(GIT_CONFIG_GLOBAL="$GC" own "$MONO" packages/web/a.ts)"
+check "owner: ...nor a git -c flag's (a push's own command cannot swap one in)" "(root)" "$(GIT_CONFIG_PARAMETERS="'nonna.packages/web.testcmd'='true'" own "$MONO" packages/web/a.ts)"
+rm -rf "$MONO" "$GC"
+# Property: for seeded, generated directories and paths, the owner is the longest directory that is the
+# path or above it on a / boundary, as python3 reads the rule (not her code), whatever order the keys
+# were set in: sorted, then reversed. Directories nest, and the names share prefixes, dots, spaces,
+# case and glob characters; a path is a directory, one under it, a near miss (its name run on) or any.
+# A failure replays from the seed.
+PROP="$(mktemp -d)"
+python3 - "$PROP" <<'PY'
+import random, sys
+rng, out = random.Random(20260930), sys.argv[1]
+parts = ["a", "ab", "a.b", "a b", "A", "a*", "[a]"]
+def path(n):
+    return "/".join(rng.choice(parts) for _ in range(n))
+for case in range(25):
+    dirs = {path(rng.randint(1, 2))}
+    for _ in range(rng.randint(1, 4)):
+        dirs.add(rng.choice(sorted(dirs)) + "/" + path(rng.randint(1, 2)))
+    dirs = sorted(dirs)
+    with open(f"{out}/{case}.sorted", "w") as f:
+        f.write("".join(d + "\n" for d in dirs))
+    with open(f"{out}/{case}.reversed", "w") as f:
+        f.write("".join(d + "\n" for d in reversed(dirs)))
+    with open(f"{out}/{case}.paths", "w") as f:
+        for _ in range(9):
+            d = rng.choice(dirs)
+            p = rng.choice([d, d + "/" + path(rng.randint(1, 2)), d + rng.choice(parts), path(rng.randint(1, 4))])
+            owners = [d for d in dirs if p == d or p.startswith(d + "/")]
+            f.write(p + "\t" + (max(owners, key=len) if owners else "(root)") + "\n")
+PY
+# shellcheck disable=SC2031  # NONNA_OWNER and NONNA_PKG_DIRS are set by lib/tests.sh in the same subshell
+res="$(n=0; bad=0; . "$HOOKS/lib/tests.sh"
+  for c in "$PROP"/*.paths; do
+    for order in sorted reversed; do
+      R="$(mktemp -d)"; git init -q "$R"
+      while IFS= read -r d; do git -C "$R" config "nonna.$d.testCmd" "run $d"; done < "${c%.paths}.$order"
+      cd "$R" && nonna_read_pkgs
+      while IFS=$'\t' read -r p want; do
+        nonna_test_owner "$p"; got="(root)"
+        [ -z "$NONNA_OWNER" ] || got="${NONNA_PKG_DIRS[NONNA_OWNER]}"
+        n=$((n + 1)); [ "$got" = "$want" ] || { bad=$((bad + 1)); echo "wrong: [$p] -> [$got], want [$want] ($order)" >&2; }
+      done < "$c"
+      cd / && rm -rf "$R"
+    done
+  done
+  echo "$n cases, $bad wrong")"
+check "property: the owner is the longest directory at or above a path, whatever order its keys were set in" "450 cases, 0 wrong" "$res"
+rm -rf "$PROP"
+# The Stop hook: a change in one package runs that package's command, in its directory, and nothing
+# else; a green package that no later change touched is not run again; a file in no package runs the
+# repository's command. Runs are counted in a file outside the repository, which they would change.
+MONO="$(mktemp -d)"; "${GIT[@]}" -C "$MONO" init -q; mkdir -p "$MONO/packages/api" "$MONO/packages/web"
+printf 'x = 1\n' > "$MONO/packages/api/app.py"; printf 'x = 1\n' > "$MONO/packages/api/lib.py"
+printf 'x = 1\n' > "$MONO/packages/web/app.py"; printf 'x = 1\n' > "$MONO/packages/web/ü x.py"; printf 'x = 1\n' > "$MONO/tool.py"
+"${GIT[@]}" -C "$MONO" add -A; "${GIT[@]}" -C "$MONO" commit -qm init
+CNT="$(mktemp)"
+git -C "$MONO" config nonna.testCmd "echo root >> $CNT"
+git -C "$MONO" config nonna.packages/web.testCmd "echo web >> $CNT"
+git -C "$MONO" config nonna.packages/api.testCmd "echo api >> $CNT; test -f app.py"
+printf 'x = 2\n' > "$MONO/packages/api/app.py"
+out="$(printf '{}' | CLAUDE_PROJECT_DIR="$MONO" "$SD")"
+check "stop: a change in one package runs its command" 1 "$(grep -c api "$CNT")"
+check "stop: ...and not the other package's, nor the repository's" 0 "$(grep -c -e web -e root "$CNT")"
+printf '%s' "$out" | grep -q 'the tests say no'; check "stop: ...in the package's own directory" 1 "$?"
+printf '{}' | CLAUDE_PROJECT_DIR="$MONO" "$SD" >/dev/null
+check "stop: an unchanged green package is not run again" 1 "$(grep -c api "$CNT")"
+printf 'x = 2\n' > "$MONO/packages/web/app.py"
+printf '{}' | CLAUDE_PROJECT_DIR="$MONO" "$SD" >/dev/null
+check "stop: a change in the other package runs that one" 1 "$(grep -c web "$CNT")"
+check "stop: ...and not the green package it did not touch" 1 "$(grep -c api "$CNT")"
+printf 'x = 2\n' > "$MONO/tool.py"
+printf '{}' | CLAUDE_PROJECT_DIR="$MONO" "$SD" >/dev/null
+check "stop: a file in no package runs the repository's command" 1 "$(grep -c root "$CNT")"
+# Names git would quote, and a file moved from one package to another, are read exactly: each reaches
+# its package's command.
+"${GIT[@]}" -C "$MONO" commit -qam one; : > "$CNT"
+printf 'x = 2\n' > "$MONO/packages/web/ü x.py"
+printf '{}' | CLAUDE_PROJECT_DIR="$MONO" "$SD" >/dev/null
+check "stop: a name git would quote still runs its package's command" "web" "$(cat "$CNT")"
+"${GIT[@]}" -C "$MONO" commit -qam two; : > "$CNT"
+"${GIT[@]}" -C "$MONO" mv packages/api/lib.py packages/web/lib.py
+printf '{}' | CLAUDE_PROJECT_DIR="$MONO" "$SD" >/dev/null
+check "stop: a file moved from one package to another runs both" 2 "$(grep -c -e api -e web "$CNT")"
+# In the order git config lists them (web was set first), the first red blocks, named with its directory,
+# and nothing after it runs. NONNA_TEST_CMD is one command for everything.
+"${GIT[@]}" -C "$MONO" commit -qm three; : > "$CNT"
+git -C "$MONO" config nonna.packages/web.testCmd "echo web >> $CNT; false"
+git -C "$MONO" config nonna.packages/api.testCmd "echo api >> $CNT; false"
+printf 'x = 3\n' > "$MONO/packages/api/app.py"; printf 'x = 3\n' > "$MONO/packages/web/app.py"
+out="$(printf '{}' | CLAUDE_PROJECT_DIR="$MONO" "$SD")"
+contains "stop: the first red blocks, named with its command and directory" '(stop: `echo web' "$(printf '%s' "$out" | jq -r .reason)"
+contains "stop: ...in the order git config lists them" 'failed in packages/web)' "$(printf '%s' "$out" | jq -r .reason)"
+check "stop: ...and nothing after it runs" 0 "$(grep -c api "$CNT")"
+: > "$CNT"; out="$(printf '{}' | NONNA_TEST_CMD="echo override >> $CNT" CLAUDE_PROJECT_DIR="$MONO" "$SD")"
+check "stop: NONNA_TEST_CMD is one command for everything" "override" "$(cat "$CNT")"
+# The commands share the Stop budget: each gets what the ones before it left, and running out is not red.
+: > "$CNT"
+git -C "$MONO" config nonna.packages/web.testCmd "sleep 2"
+git -C "$MONO" config nonna.packages/api.testCmd "sleep 3; echo late >> $CNT"
+out="$(printf '{}' | NONNA_TEST_TIMEOUT=4 CLAUDE_PROJECT_DIR="$MONO" "$SD")"
+check "stop: the commands share the budget: the second gets what the first left" 0 "$(grep -c late "$CNT")"
+printf '%s' "$out" | grep -q 'the tests say no'; check "stop: ...and running out of it is not red" 1 "$?"
+rm -rf "$MONO"
+# Pre-push: the same selection over the pushed range, each command in its directory; the first red
+# refuses the push, named with its directory and the setting that holds it.
+PP="$(mktemp -d)"; BARE="$(mktemp -d)"; "${GIT[@]}" init -q --bare "$BARE"; "${GIT[@]}" -C "$PP" init -q
+"${GIT[@]}" -C "$PP" remote add origin "$BARE"; mkdir -p "$PP/packages/api" "$PP/packages/web"
+printf 'x = 1\n' > "$PP/packages/api/app.py"; printf 'x = 1\n' > "$PP/packages/web/app.py"
+"${GIT[@]}" -C "$PP" add -A; "${GIT[@]}" -C "$PP" commit -qm init; "${GIT[@]}" -C "$PP" push -q origin main
+"${GIT[@]}" -C "$PP" checkout -q -b feature/api
+printf 'x = 2\n' > "$PP/packages/api/app.py"; "${GIT[@]}" -C "$PP" commit -qam api
+: > "$CNT"
+git -C "$PP" config nonna.testCmd "echo root >> $CNT"
+git -C "$PP" config nonna.packages/web.testCmd "echo web >> $CNT"
+git -C "$PP" config nonna.packages/api.testCmd "echo api >> $CNT; test -f app.py"
+( cd "$PP" && "$RS" ); check "pre-push: a push that changes one package runs its command, in its directory" 0 "$?"
+check "pre-push: ...and no other" "api" "$(cat "$CNT")"
+git -C "$PP" config nonna.packages/api.testCmd false
+out="$(cd "$PP" && "$RS" 2>&1)"; check "pre-push: a red package refuses the push" 1 "$?"
+contains "pre-push: ...named with its directory" '`false` failed in packages/api.' "$out"
+contains "pre-push: ...and the setting that holds it" "git config nonna.packages/api.testCmd" "$out"
+rm -rf "$PP" "$BARE" "$CNT"
 
 echo "== subagent-start.sh (SubagentStart: the constitution reaches subagents) =="
 # SessionStart additionalContext is parent-only, so under a plugin install every
