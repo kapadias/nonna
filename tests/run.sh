@@ -2870,6 +2870,169 @@ space_run "$SP/.claude/settings.json"
 check "settings.json: every command runs from a project dir with a space (ran $ran)${bad_cmds:+ (not: $bad_cmds)}" 0 "$rc"
 rm -rf "$(dirname "$SP")"
 
+echo "== Codex plugin (hooks/codex-hooks.json: Codex's own payloads, read by the same gates) =="
+# Codex loads the plugin's hooks from hooks/codex-hooks.json, which .codex-plugin/plugin.json names, and
+# runs each command with NONNA_HOST=codex; a gate that reads a tool call passes Codex's payload through
+# lib/host-codex.sh first. The payloads are Codex's own: every field its hooks reference documents
+# (learn.chatgpt.com/docs/hooks) and the schemas in @openai/codex 0.159.2 require (pre-tool-use, stop,
+# session-start and subagent-start .command.input). An edit is an apply_patch, the patch in
+# tool_input.command in Codex's grammar. No Codex runs here: each hook starts as Codex starts a plugin's,
+# its command from the file, in the session's directory, the plugin root in PLUGIN_ROOT and
+# CLAUDE_PLUGIN_ROOT and its data directory in PLUGIN_DATA and CLAUDE_PLUGIN_DATA.
+CXH="$ROOT/.claude/hooks/codex-hooks.json"
+CXS="019a7f3c-5d2e-7b10-9c4e-2f6a8b1d3e57" # a session id, as Codex writes one
+CXR="$(mktemp -d)"; CXD="$(mktemp -d)"; CXO="$(mktemp)"
+"${GIT[@]}" -C "$CXR" init -q; printf 'x = 1\n' > "$CXR/app.py"; "${GIT[@]}" -C "$CXR" add -A >/dev/null
+"${GIT[@]}" -C "$CXR" commit -qm init; "${GIT[@]}" -C "$CXR" checkout -q -b feature/x
+cx_event() { # <event> <its own fields, as JSON>: Codex's payload for that event, the common fields filled in
+  python3 -c 'import json, sys
+p = {"session_id": sys.argv[3], "transcript_path": None, "cwd": sys.argv[4], "hook_event_name": sys.argv[1],
+     "model": "test-model", "permission_mode": "default"}
+p.update(json.loads(sys.argv[2]))
+print(json.dumps(p))' "$1" "$2" "$CXS" "$CXR"
+}
+cx_tool() { # <tool_name> <command>: Codex's PreToolUse payload (Bash and apply_patch both carry tool_input.command)
+  cx_event PreToolUse "$(python3 -c 'import json, sys; print(json.dumps({"turn_id": "turn-1", "tool_name": sys.argv[1], "tool_use_id": "call-1", "tool_input": {"command": sys.argv[2]}}))' "$1" "$2")"
+}
+cx_patch() { # <patch line>...: Codex's PreToolUse payload for an apply_patch of those lines
+  cx_tool apply_patch "$(printf '*** Begin Patch\n'; printf '%s\n' "$@"; printf '*** End Patch')"
+}
+cx_run() { # <event> <matcher, or *> <payload>: each hook codex-hooks.json wires there, started as Codex starts
+  # it, their stdout in $CXO. Prints 2 if one blocked, else the first other failure, else 0; none if none ran.
+  local cmd rc worst=none
+  : > "$CXO"
+  while IFS= read -r cmd; do
+    rc=0
+    (cd "$CXR" && printf '%s' "$3" | PLUGIN_ROOT="$ROOT/.claude" CLAUDE_PLUGIN_ROOT="$ROOT/.claude" \
+      PLUGIN_DATA="$CXD" CLAUDE_PLUGIN_DATA="$CXD" bash -c "$cmd" >>"$CXO" 2>/dev/null) || rc=$?
+    if [ "$rc" = 2 ] || [ "$worst" = none ] || [ "$worst" = 0 ]; then worst="$rc"; fi
+  done < <(python3 -c 'import json, sys
+for e in json.load(open(sys.argv[1]))["hooks"].get(sys.argv[2], []):
+    if e.get("matcher", "*") == sys.argv[3]:
+        for h in e["hooks"]: print(h["command"])' "$CXH" "$1" "$2" 2>/dev/null)
+  printf '%s' "$worst"
+}
+cx_gate() { # <PATH> <gate script> <payload>: that gate alone, as Codex runs it, with that PATH; prints its status
+  printf '%s' "$3" | (cd "$CXR" && PATH="$1" NONNA_HOST=codex "$2" >/dev/null 2>&1); printf '%s' "$?"
+}
+# Edits: an apply_patch reaches both guards, a file at a time, as Claude Code's Write and Edit would.
+check "codex: a patch that adds a key is refused" 2 "$(cx_run PreToolUse '^apply_patch$' "$(cx_patch '*** Add File: config.py' "+aws_id = \"$FAKE_AWS\"")")"
+check "codex: a patch that edits .git/config is refused" 2 "$(cx_run PreToolUse '^apply_patch$' "$(cx_patch '*** Update File: .git/config' '@@' ' [core]' '+editor = vi')")"
+check "codex: a clean patch passes" 0 "$(cx_run PreToolUse '^apply_patch$' "$(cx_patch '*** Update File: app.py' '@@' '-x = 1' '+x = 2')")"
+out="$(cx_patch '*** Add File: config.py' "+aws_id = \"$FAKE_AWS\"" | (cd "$CXR" && NONNA_HOST=codex "$HOOKS/secret-scan.sh" 2>&1))"
+contains "codex: the refusal says what it found, in her voice" "looks like an AWS access key id" "$out"
+check "codex: a key in the second file of a patch is refused" 2 "$(cx_run PreToolUse '^apply_patch$' "$(cx_patch '*** Update File: app.py' '@@' '-x = 1' '+x = 2' '*** Add File: settings.py' "+aws_id = \"$FAKE_AWS\"")")"
+check "codex: .git/config as the second file of a patch is refused" 2 "$(cx_run PreToolUse '^apply_patch$' "$(cx_patch '*** Update File: app.py' '@@' '-x = 1' '+x = 2' '*** Update File: .git/config' '@@' '+[core]')")"
+check "codex: deleting a git hook by patch is refused" 2 "$(cx_run PreToolUse '^apply_patch$' "$(cx_patch '*** Delete File: .git/hooks/pre-push')")"
+check "codex: moving a file over a git hook is refused" 2 "$(cx_run PreToolUse '^apply_patch$' "$(cx_patch '*** Update File: tools/hook.sh' '*** Move to: .git/hooks/pre-commit' '@@' '+exit 0')")"
+check "codex: a sample key under a test fixture path passes, as in a Write" 0 "$(cx_run PreToolUse '^apply_patch$' "$(cx_patch '*** Add File: tests/fixtures/keys.py' "+aws_id = \"$FAKE_AWS\"")")"
+check "codex: a patch that takes a key out passes (only what it adds is written)" 0 "$(cx_run PreToolUse '^apply_patch$' "$(cx_patch '*** Update File: settings.py' '@@' "-aws_id = \"$FAKE_AWS\"" '+aws_id = os.environ["AWS_ID"]')")"
+# What the gates read, exactly: a Write of each file the patch adds and an Edit of each it updates, with the
+# lines it adds; an Edit with nothing added of each file it deletes or moves away. A stand-in gate records them.
+REC="$(mktemp -d)"; printf 'cat >> "%s/seen"; echo >> "%s/seen"\n' "$REC" "$REC" > "$REC/gate.sh"
+cx_patch '*** Add File: a.py' '+k = 1' '+m = "q\tt" # café' "$(printf '+t = 1\t# a tab')" '*** Update File: b.py' '@@ def f():' ' ctx' '-old' '+new' \
+  '*** Update File: c.py' '*** Move to: d.py' '@@' '+z' '*** Delete File: e.py' \
+  | (cd "$CXR" && bash -c '. "$1"; nonna_codex_payload "$2"' _ "$HOOKS/lib/host-codex.sh" "$REC/gate.sh" >/dev/null 2>&1)
+got="$(python3 - "$REC/seen" <<'PY'
+import json, sys
+seen = [json.loads(l) for l in open(sys.argv[1], encoding="utf-8") if l.strip()]
+want = [
+    {"tool_name": "Write", "tool_input": {"file_path": "a.py", "content": 'k = 1\nm = "q\\tt" # café\nt = 1\t# a tab'}},
+    {"tool_name": "Edit", "tool_input": {"file_path": "b.py", "new_string": "new"}},
+    {"tool_name": "Edit", "tool_input": {"file_path": "c.py", "new_string": ""}},
+    {"tool_name": "Edit", "tool_input": {"file_path": "d.py", "new_string": "z"}},
+    {"tool_name": "Edit", "tool_input": {"file_path": "e.py", "new_string": ""}},
+]
+print("same" if seen == want else json.dumps(seen))
+PY
+)"
+check "codex: a patch reaches the gates as Claude Code's Write and Edit, a file each, with the lines it adds" same "$got"
+rm -rf "$REC"
+WP='{"tool_name":"Write","tool_input":{"file_path":"config.py","content":"k = 1"}}'
+check "codex: a payload that is not an apply_patch passes through unchanged" "$WP" "$(printf '%s' "$WP" | bash -c '. "$1"; nonna_codex_payload "$2"' _ "$HOOKS/lib/host-codex.sh" "$HOOKS/secret-scan.sh")"
+# Shell commands: Codex's Bash call already has Claude Code's shape, and both guards read it as it is.
+check "codex: a force push through Bash is refused" 2 "$(cx_run PreToolUse '^Bash$' "$(cx_tool Bash 'git push --force origin feature/x')")"
+check "codex: reading .env through Bash is refused" 2 "$(cx_run PreToolUse '^Bash$' "$(cx_tool Bash 'cat .env')")"
+check "codex: an ordinary command passes" 0 "$(cx_run PreToolUse '^Bash$' "$(cx_tool Bash 'git status')")"
+# Without jq the patch is read by lib/json.sh's own decoder; a reader that fails refuses it, never guesses.
+NJX="$(mktemp -d)"
+for b in bash sh env cat grep sed head tail tr cut awk dirname basename git mktemp; do
+  p="$(command -v "$b" 2>/dev/null || true)"; if [ -n "$p" ]; then ln -s "$p" "$NJX/$b" 2>/dev/null || true; fi
+done
+check "codex: without jq, a patch that adds a key is refused" 2 "$(cx_gate "$NJX" "$HOOKS/secret-scan.sh" "$(cx_patch '*** Add File: config.py' "+aws_id = \"$FAKE_AWS\"")")"
+check "codex: without jq, a patch that edits .git/config is refused" 2 "$(cx_gate "$NJX" "$HOOKS/guard-branch.sh" "$(cx_patch '*** Update File: .git/config' '@@' '+[core]')")"
+check "codex: without jq, a clean patch passes" 0 "$(cx_gate "$NJX" "$HOOKS/secret-scan.sh" "$(cx_patch '*** Update File: app.py' '@@' '-x = 1' '+x = 2')")"
+BADJQX="$(mktemp -d)"; printf '#!/bin/sh\nexit 1\n' > "$BADJQX/jq"; chmod +x "$BADJQX/jq"
+check "codex: a patch the reader cannot read (jq fails) is refused, not passed" 2 "$(cx_gate "$BADJQX:$NJX" "$HOOKS/guard-branch.sh" "$(cx_patch '*** Update File: .git/config' '@@' '+[core]')")"
+BADAWKX="$(mktemp -d)"; printf '#!/bin/sh\nexit 1\n' > "$BADAWKX/awk"; chmod +x "$BADAWKX/awk"
+p="$(command -v jq 2>/dev/null || true)"; if [ -n "$p" ]; then ln -s "$p" "$BADAWKX/jq"; fi
+check "codex: a patch the reader cannot read (awk fails) is refused, not passed" 2 "$(cx_gate "$BADAWKX:$NJX" "$HOOKS/secret-scan.sh" "$(cx_patch '*** Update File: app.py' '@@' '+x = 2')")"
+rm -rf "$NJX" "$BADJQX" "$BADAWKX"
+# Codex's grammar puts a file in every patch, so one in which no file is read was not understood.
+check "codex: a patch in which no file is read is refused, not passed" 2 "$(cx_run PreToolUse '^apply_patch$' "$(cx_patch 'x = 1')")"
+# SessionStart: Codex's session id marks where the session began, the git hooks are linked through the
+# plugin's data directory, and the answer has the shape Codex's SessionStart reads.
+cx_run SessionStart '*' "$(cx_event SessionStart '{"source": "startup"}')" >/dev/null
+got="$(python3 - "$CXO" <<'PY'
+import json, sys
+o = json.loads(open(sys.argv[1], encoding="utf-8").read())
+h = o.get("hookSpecificOutput") or {}
+ok = (set(o) <= {"continue", "hookSpecificOutput", "stopReason", "suppressOutput", "systemMessage"}
+      and set(h) <= {"hookEventName", "additionalContext"} and h.get("hookEventName") == "SessionStart"
+      and "Nonna is on" in h.get("additionalContext", ""))
+print("ok" if ok else o)
+PY
+)"
+check "codex: SessionStart answers in the shape Codex reads (session-start.command.output)" ok "$got"
+check "codex: SessionStart links the git hooks through the plugin's data directory" "$CXD/current/hooks/require-status-sync.sh" "$(readlink "$CXR/.git/hooks/pre-push")"
+rc=0; [ -f "$CXR/.git/nonna/base-$CXS" ] || rc=1; check "codex: SessionStart reads Codex's session id, to mark where the session began" 0 "$rc"
+cx_run SubagentStart '*' "$(cx_event SubagentStart '{"turn_id": "turn-1", "agent_id": "agent-1", "agent_type": "default"}')" >/dev/null
+got="$(python3 - "$CXO" <<'PY'
+import json, sys
+o = json.loads(open(sys.argv[1], encoding="utf-8").read())
+h = o.get("hookSpecificOutput") or {}
+ok = set(o) <= {"hookSpecificOutput", "systemMessage"} and set(h) == {"hookEventName", "additionalContext"} and h["hookEventName"] == "SubagentStart"
+print("ok" if ok else o)
+PY
+)"
+check "codex: SubagentStart carries the house rules in the shape Codex reads" ok "$got"
+# Stop: a red suite sends Codex back. Codex's payload carries stop_hook_active and session_id under Claude
+# Code's names, and Codex reads the same answer: {"decision":"block","reason":...} on stdout, and exit 0.
+git -C "$CXR" config nonna.testCmd 'printf "FAILED tests/test_app.py::test_x - assert 2 == 1\n1 failed\n"; exit 1'
+printf 'x = 2\n' > "$CXR/app.py"
+cx_stop() { # <true|false>: Codex's Stop payload, with stop_hook_active as given
+  cx_event Stop "{\"turn_id\": \"turn-1\", \"stop_hook_active\": $1, \"last_assistant_message\": \"Done: the tests pass.\"}"
+}
+check "codex: the Stop hook answers with exit 0" 0 "$(cx_run Stop '*' "$(cx_stop false)")"
+contains "codex: a red suite sends Codex back" "the tests say no" "$(cat "$CXO")"
+got="$(python3 - "$CXO" <<'PY'
+import json, sys
+o = json.loads(open(sys.argv[1], encoding="utf-8").read())
+print("ok" if set(o) == {"decision", "reason"} and o["decision"] == "block" and o["reason"].strip() else o)
+PY
+)"
+check "codex: the answer is what Codex's Stop reads to go on (decision block, a reason)" ok "$got"
+cx_run Stop '*' "$(cx_stop true)" >/dev/null
+check "codex: sent back once, the next stop ends the turn (stop_hook_active)" "" "$(cat "$CXO")"
+# Every command in the file starts from a plugin root with a space: Codex writes the root into it.
+CXSP="$(mktemp -d)/with space"; mkdir -p "$CXSP"; cp -R "$ROOT/.claude" "$CXSP/.claude"
+cx_unrunnable() { # prints "ran:" per command started, and each command the shell could not start
+  python3 -c 'import json, sys
+for es in json.load(open(sys.argv[1]))["hooks"].values():
+    for e in es:
+        for h in e["hooks"]: print(h["command"])' "$CXH" 2>/dev/null | while IFS= read -r cmd; do
+    printf 'ran:\n'
+    (cd "$CXR" && printf '{}' | PLUGIN_ROOT="$CXSP/.claude" CLAUDE_PLUGIN_ROOT="$CXSP/.claude" \
+      PLUGIN_DATA="$CXD" CLAUDE_PLUGIN_DATA="$CXD" bash -c "$cmd" >/dev/null 2>&1)
+    case $? in 126 | 127) printf '%s\n' "$cmd" ;; esac
+  done
+}
+cx_bad="$(cx_unrunnable)"
+cx_ran="$(printf '%s\n' "$cx_bad" | grep -c '^ran:$')"; cx_bad="$(printf '%s\n' "$cx_bad" | grep -v '^ran:$' | grep . || true)"
+rc=0; [ "$cx_ran" -ge 7 ] && [ -z "$cx_bad" ] || rc=1
+check "codex-hooks.json: every command runs from a plugin root with a space (ran $cx_ran)${cx_bad:+ (not: $cx_bad)}" 0 "$rc"
+rm -rf "$(dirname "$CXSP")" "$CXR" "$CXD" "$CXO"
+
 echo "== harness_lint.py (the linter is itself a gate) =="
 # A linter with no failing-case test is an unverified gate: it would still print
 # "OK" if a check silently stopped firing. Each case copies the real tree, breaks
