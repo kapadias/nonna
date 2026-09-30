@@ -44,7 +44,7 @@ jobs:
         run: |
           set -euo pipefail
           version="${GITHUB_REF_NAME#v}"
-          for f in .claude/.claude-plugin/plugin.json .claude-plugin/marketplace.json; do
+          for f in .claude/.claude-plugin/plugin.json .claude/.codex-plugin/plugin.json .claude-plugin/marketplace.json; do
             got="$(python3 -c "
           import json,sys
           d = json.load(open(sys.argv[1]))

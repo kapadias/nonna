@@ -3401,6 +3401,29 @@ python3 -c 'import json,sys; p=sys.argv[1]; c=json.load(open(p)); c["disableAllH
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks disableAllHooks in settings.json" 1 "$?"
 contains "lint: names the kill switch" "disableAllHooks is set" "$out"
 rm -rf "$FX"
+# Codex loads hooks/codex-hooks.json in place of hooks.json. It is held to its own form (the host named,
+# the quoted plugin root, the script, nothing after), its core gates are pinned, and the Codex manifest
+# must point at it, on the plugin's own version.
+FX="$(lint_fixture)"
+set_hook_cmd "$FX/.claude/hooks/codex-hooks.json" PreToolUse '"${PLUGIN_ROOT}"/hooks/guard-branch.sh'
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a Codex hook that does not tell the gate it runs under Codex" 1 "$?"
+contains "lint: says the Codex form" 'must be exactly NONNA_HOST=codex "${PLUGIN_ROOT}"/hooks/<script>.sh' "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+python3 -c 'import json,sys; p=sys.argv[1]; c=json.load(open(p)); e=[x for x in c["hooks"]["PreToolUse"] if x["matcher"]=="^apply_patch$"][0]; e["hooks"]=[h for h in e["hooks"] if "secret-scan" not in h["command"]]; json.dump(c,open(p,"w"),indent=2)' "$FX/.claude/hooks/codex-hooks.json"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a Codex wiring without the secret guard on its edits" 1 "$?"
+contains "lint: names the missing Codex gate" "codex-hooks.json: PreToolUse '^apply_patch\$' must run hooks/secret-scan.sh" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+python3 -c 'import json,sys; p=sys.argv[1]; c=json.load(open(p)); c.pop("hooks"); json.dump(c,open(p,"w"),indent=2)' "$FX/.claude/.codex-plugin/plugin.json"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a Codex manifest that would load Claude Code's hooks.json" 1 "$?"
+contains "lint: says which hooks file Codex must load" 'hooks must be "./hooks/codex-hooks.json"' "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+python3 -c 'import json,sys; p=sys.argv[1]; c=json.load(open(p)); c["version"]="0.0.1"; json.dump(c,open(p,"w"),indent=2)' "$FX/.claude/.codex-plugin/plugin.json"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a Codex manifest on another version than the plugin's" 1 "$?"
+contains "lint: names the Codex manifest's version" "version 0.0.1" "$out"
+rm -rf "$FX"
 # Arguments after the script (SessionStart gets the plugin data dir) are not part of the gate's identity.
 FX="$(lint_fixture)"
 set_hook_cmd "$FX/.claude/settings.json" Stop '"$CLAUDE_PROJECT_DIR"/.claude/hooks/format.sh'
