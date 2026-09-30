@@ -62,6 +62,7 @@ nonna_test_cmd() { # [git-hook]: a git hook takes nothing from the environment (
 
 nonna_have() { command -v "$1" >/dev/null 2>&1; } # <command>: found on PATH; looking runs nothing
 nonna_have_java() { # a JVM as gradlew and mvnw find one: $JAVA_HOME/bin/java if JAVA_HOME is set, else java on PATH
+  # debt: macOS's /usr/bin/java stub counts as a JVM with no JDK installed, ask java_home when a Mac reports a red ./gradlew test
   if [ -n "${JAVA_HOME:-}" ]; then [ -x "$JAVA_HOME/bin/java" ]; else nonna_have java; fi
 }
 
