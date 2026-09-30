@@ -95,24 +95,28 @@ unreadable() {
   exit 1
 }
 "${LOG[@]}" --name-only -z "${revs[@]}" > "$tmp/names" || unreadable
-[ -s "$tmp/names" ] || exit 0
+# What the pushed tree combines, for the tests: each merge against each parent (-m, pinned to separate
+# diffs whatever log.diffMerges says), since --cc leaves out what a merge takes from one side, and a
+# clean merge shows nothing at all. It holds every name above, so nothing here is nothing to push.
+git -c core.quotePath=false -c log.diffMerges=separate log --format= --no-renames -m --root --name-only -z \
+  "${revs[@]}" > "$tmp/tree" || unreadable
+[ -s "$tmp/tree" ] || exit 0
 
 # CODE = everything EXCEPT docs/ and a few top-level meta files. NOTE: .claude/**
 # IS code (the harness is a tracked mirror, rules/sync.md) even though it is
 # markdown — so harness changes also require a STATUS update. Names are read
 # NUL-separated: a newline in a name cannot forge a docs/STATUS.md.
+is_code() { case "$1" in docs/* | LICENSE | .gitignore) return 1 ;; */*) return 0 ;; *.md) return 1 ;; esac; }
 code_touched=""
 status_touched=""
-code_files=() # whose test commands run, below
 while IFS= read -r -d '' f; do
   [ "$f" = docs/STATUS.md ] && status_touched=1
-  case "$f" in
-    docs/* | LICENSE | .gitignore) ;;
-    */*) code_touched=1; code_files+=("$f") ;;
-    *.md) ;;
-    *) code_touched=1; code_files+=("$f") ;;
-  esac
+  is_code "$f" && code_touched=1
 done < "$tmp/names"
+code_files=() # whose test commands run, below
+while IFS= read -r -d '' f; do
+  is_code "$f" && code_files+=("$f")
+done < "$tmp/tree"
 
 fail=0
 # The Definition-of-Done record is full mode's, and only where the repo keeps one.
@@ -166,10 +170,10 @@ fi
 # command (none recorded or detected, or an empty recorded one) means this check does not apply. The suite runs in the working tree, so it must BE what is pushed: HEAD, with no uncommitted
 # change to a tracked file that could hide a broken commit.
 # Where directories have commands of their own (ADR-0012), the same selection as at the end of a turn,
-# over the code this push changes: each that owns some runs once, in its directory, then the
+# over the code the pushed tree combines: each that owns some runs once, in its directory, then the
 # repository's for code in none. The first red refuses the push. A push whose files cannot be listed
 # never gets here (unreadable, above).
-if [ -n "$code_touched" ] && [ -f "$here/lib/tests.sh" ]; then
+if [ "${#code_files[@]}" -gt 0 ] && [ -f "$here/lib/tests.sh" ]; then
   # shellcheck source=/dev/null
   . "$here/lib/tests.sh"
   nonna_read_pkgs git-hook

@@ -2817,25 +2817,61 @@ out="$(printf '{}' | NONNA_TEST_TIMEOUT=4 CLAUDE_PROJECT_DIR="$MONO" "$SD")"
 check "stop: the commands share the budget: the second gets what the first left" 0 "$(grep -c late "$CNT")"
 printf '%s' "$out" | grep -q 'the tests say no'; check "stop: ...and running out of it is not red" 1 "$?"
 rm -rf "$MONO"
-# Pre-push: the same selection over the pushed range, each command in its directory; the first red
-# refuses the push, named with its directory and the setting that holds it.
-PP="$(mktemp -d)"; BARE="$(mktemp -d)"; "${GIT[@]}" init -q --bare "$BARE"; "${GIT[@]}" -C "$PP" init -q
-"${GIT[@]}" -C "$PP" remote add origin "$BARE"; mkdir -p "$PP/packages/api" "$PP/packages/web"
-printf 'x = 1\n' > "$PP/packages/api/app.py"; printf 'x = 1\n' > "$PP/packages/web/app.py"
+# Pre-push: the same selection over the range git names on stdin, each command in its directory; the
+# first red refuses the push, named with its directory and the setting that holds it.
+PP="$(mktemp -d)"; BARE="$(mktemp -d)"; PS="$(mktemp)"; ZERO=0000000000000000000000000000000000000000
+"${GIT[@]}" init -q --bare "$BARE"; "${GIT[@]}" -C "$PP" init -q; "${GIT[@]}" -C "$PP" remote add origin "$BARE"
+mkdir -p "$PP/packages/api" "$PP/packages/web"
+printf 'x = 1\n' > "$PP/packages/api/app.py"; printf 'x = 1\n' > "$PP/packages/api/old.py"
+printf 'x = 1\n' > "$PP/packages/web/app.py"; printf 'x = 1\n' > "$PP/tool.py"
 "${GIT[@]}" -C "$PP" add -A; "${GIT[@]}" -C "$PP" commit -qm init; "${GIT[@]}" -C "$PP" push -q origin main
-"${GIT[@]}" -C "$PP" checkout -q -b feature/api
-printf 'x = 2\n' > "$PP/packages/api/app.py"; "${GIT[@]}" -C "$PP" commit -qam api
-: > "$CNT"
 git -C "$PP" config nonna.testCmd "echo root >> $CNT"
 git -C "$PP" config nonna.packages/web.testCmd "echo web >> $CNT"
 git -C "$PP" config nonna.packages/api.testCmd "echo api >> $CNT; test -f app.py"
-( cd "$PP" && "$RS" ); check "pre-push: a push that changes one package runs its command, in its directory" 0 "$?"
+pp() { # <branch> [<what the remote has of it>]: git's stdin line for pushing the branch checked out; the hook's exit status
+  : > "$CNT"
+  printf 'refs/heads/%s %s refs/heads/%s %s\n' "$1" "$("${GIT[@]}" -C "$PP" rev-parse "$1")" "$1" "${2:-$ZERO}" > "$PS"
+  (cd "$PP" && "$RS" origin "$BARE" < "$PS") 2>/dev/null
+}
+"${GIT[@]}" -C "$PP" checkout -q -b api main; printf 'x = 2\n' > "$PP/packages/api/app.py"; "${GIT[@]}" -C "$PP" commit -qam api
+pp api; check "pre-push: a push that changes one package runs its command, in its directory" 0 "$?"
 check "pre-push: ...and no other" "api" "$(cat "$CNT")"
+"${GIT[@]}" -C "$PP" checkout -q -b root main; printf 'x = 2\n' > "$PP/tool.py"; "${GIT[@]}" -C "$PP" commit -qam root
+pp root; check "pre-push: a file in no package runs the repository's command" "root" "$(cat "$CNT")"
+"${GIT[@]}" -C "$PP" checkout -q -b move main; "${GIT[@]}" -C "$PP" mv packages/api/old.py packages/web/old.py
+"${GIT[@]}" -C "$PP" commit -qm move
+pp move; check "pre-push: a file moved from one package to another runs both, in the order git config lists them" "$(printf 'web\napi')" "$(cat "$CNT")"
+"${GIT[@]}" -C "$PP" checkout -q -b gone main; "${GIT[@]}" -C "$PP" rm -q packages/api/old.py; "${GIT[@]}" -C "$PP" commit -qm gone
+pp gone; check "pre-push: a file deleted from a package runs its command" "api" "$(cat "$CNT")"
+# A git hook takes nothing from the environment: NONNA_TEST_CMD there drops no directory's command.
+"${GIT[@]}" -C "$PP" checkout -q api; : > "$CNT"
+printf 'refs/heads/api %s refs/heads/api %s\n' "$("${GIT[@]}" -C "$PP" rev-parse api)" "$ZERO" > "$PS"
+(cd "$PP" && NONNA_TEST_CMD=true "$RS" origin "$BARE" < "$PS") 2>/dev/null
+check "pre-push: NONNA_TEST_CMD in the push's environment still runs the directory's command" "api" "$(cat "$CNT")"
+git -C "$PP" config nonna.packages/api.testCmd "sleep 5"
+out="$(cd "$PP" && NONNA_TEST_TIMEOUT=1 "$RS" origin "$BARE" < "$PS" 2>&1)"; check "pre-push: a directory's command that times out refuses the push" 1 "$?"
+contains "pre-push: ...and says so, named" "timed out after 1s in packages/api" "$out"
 git -C "$PP" config nonna.packages/api.testCmd false
-out="$(cd "$PP" && "$RS" 2>&1)"; check "pre-push: a red package refuses the push" 1 "$?"
+out="$(cd "$PP" && "$RS" origin "$BARE" < "$PS" 2>&1)"; check "pre-push: a red package refuses the push" 1 "$?"
 contains "pre-push: ...named with its directory" '`false` failed in packages/api.' "$out"
 contains "pre-push: ...and the setting that holds it" "git config nonna.packages/api.testCmd" "$out"
-rm -rf "$PP" "$BARE" "$CNT"
+git -C "$PP" config nonna.packages/api.testCmd "echo api >> $CNT; test -f app.py"
+# A merge is tested against each parent, not only for what its resolution changed: what it takes from
+# one side is new beside the other. Both sides were pushed green; the merge's conflict was in web.
+"${GIT[@]}" -C "$PP" checkout -q -b base main; printf 'a\n' > "$PP/packages/api/a.py"; printf 'base\n' > "$PP/packages/web/x.py"
+"${GIT[@]}" -C "$PP" add -A; "${GIT[@]}" -C "$PP" commit -qm base
+"${GIT[@]}" -C "$PP" checkout -q -b feat main; printf 'b\n' > "$PP/packages/api/b.py"; printf 'feat\n' > "$PP/packages/web/x.py"
+"${GIT[@]}" -C "$PP" add -A; "${GIT[@]}" -C "$PP" commit -qm feat; "${GIT[@]}" -C "$PP" push -q origin base feat
+OLDTIP="$("${GIT[@]}" -C "$PP" rev-parse feat)"
+"${GIT[@]}" -C "$PP" merge -q base >/dev/null 2>&1; printf 'resolved\n' > "$PP/packages/web/x.py"
+"${GIT[@]}" -C "$PP" add -A; "${GIT[@]}" -C "$PP" commit -q --no-edit
+pp feat "$OLDTIP"; check "pre-push: a merge runs the package it takes from one side, not only the one its resolution changed" "$(printf 'web\napi')" "$(cat "$CNT")"
+# A clean merge, whose resolution changes nothing, is tested all the same.
+"${GIT[@]}" -C "$PP" checkout -q -b c1 main; printf 'c\n' > "$PP/packages/api/c.py"; "${GIT[@]}" -C "$PP" add -A; "${GIT[@]}" -C "$PP" commit -qm c1
+"${GIT[@]}" -C "$PP" checkout -q -b c2 main; printf 'x = 3\n' > "$PP/tool.py"; "${GIT[@]}" -C "$PP" commit -qam c2
+"${GIT[@]}" -C "$PP" push -q origin c1 c2; OLDTIP="$("${GIT[@]}" -C "$PP" rev-parse c2)"; "${GIT[@]}" -C "$PP" merge -q --no-edit c1
+pp c2 "$OLDTIP"; check "pre-push: a clean merge, whose resolution changes nothing, still runs the tests" "$(printf 'api\nroot')" "$(cat "$CNT")"
+rm -rf "$PP" "$BARE" "$PS" "$CNT"
 
 echo "== subagent-start.sh (SubagentStart: the constitution reaches subagents) =="
 # SessionStart additionalContext is parent-only, so under a plugin install every
