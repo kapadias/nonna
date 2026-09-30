@@ -2852,6 +2852,18 @@ printf 'raise SystemExit("test_mod fails")\n' > "$SH/packages/api/test_mod.py"; 
 out="$(printf '{}' | CLAUDE_PROJECT_DIR="$SH" "$SD")"
 contains "stop: a new test file in one package, beside an edit in another, runs its package" "failed in packages/api" "$(printf '%s' "$out" | jq -r .reason)"
 rm -rf "$SH"
+# A package inside another counts toward the one around it, whose command runs over it too: a change
+# there runs the outer package again, though it was cached green.
+NEST="$(mktemp -d)"; "${GIT[@]}" -C "$NEST" init -q; mkdir -p "$NEST/packages/api/v2"
+printf 'x = 1\n' > "$NEST/packages/api/a.py"; printf 'ok\n' > "$NEST/packages/api/v2/b.py"
+"${GIT[@]}" -C "$NEST" add -A; "${GIT[@]}" -C "$NEST" commit -qm init
+git -C "$NEST" config nonna.packages/api.testCmd "grep -qx ok v2/b.py"
+git -C "$NEST" config nonna.packages/api/v2.testCmd true
+printf 'x = 2\n' > "$NEST/packages/api/a.py"; printf '{}' | CLAUDE_PROJECT_DIR="$NEST" "$SD" >/dev/null
+printf 'broken\n' > "$NEST/packages/api/v2/b.py"
+out="$(printf '{}' | CLAUDE_PROJECT_DIR="$NEST" "$SD")"
+contains "stop: a change in a package inside another runs the outer one again, though it was green" "failed in packages/api)" "$(printf '%s' "$out" | jq -r .reason)"
+rm -rf "$NEST"
 # Pre-push: the same selection over the range git names on stdin, each command in its directory; the
 # first red refuses the push, named with its directory and the setting that holds it.
 PP="$(mktemp -d)"; BARE="$(mktemp -d)"; PS="$(mktemp)"; ZERO=0000000000000000000000000000000000000000

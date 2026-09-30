@@ -178,8 +178,9 @@ nonna_is_source_file() {
 # nonna_green_key <command> [<directory>]  the key a passing run is remembered by (git rev-parse
 #                  --git-path nonna-green): the tree, tracked and untracked files read through a scratch
 #                  index, and the command. With a directory's own command (after nonna_read_pkgs), the
-#                  whole tree but the other directories that have their own, read from wherever this
-#                  runs: another package's change leaves its key as it was, a shared file does not.
+#                  whole tree but the directories beside it that have their own, read from wherever
+#                  this runs: another package's change leaves its key as it was, a shared file does not,
+#                  nor one in a package inside it, which its command runs over too.
 #                  Nothing when the tree cannot be read. It writes git objects, so a
 #                  reader computes it only when there is a key to compare with.
 nonna_green_key() {
@@ -187,7 +188,9 @@ nonna_green_key() {
   if [ -n "${2:-}" ]; then
     spec=":/"
     for d in ${NONNA_PKG_DIRS[@]+"${NONNA_PKG_DIRS[@]}"}; do
-      case "$2/" in "$d"/*) ;; *) others+=(":(top,literal)$d") ;; esac # itself, or one around it, stays
+      case "$2/" in "$d"/*) continue ;; esac # itself, or one around it
+      case "$d/" in "$2"/*) continue ;; esac # one inside it
+      others+=(":(top,literal)$d")
     done
   fi
   idx="$(mktemp 2>/dev/null)" || return 0

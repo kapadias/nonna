@@ -192,8 +192,9 @@ each directory that owns a file changed this session (a new file git does not ig
 and in that directory, then the repository's command if a changed file is in no directory. If it
 cannot list the changes, it runs every command. The commands run in the order `/nonna` lists them,
 share the 240 seconds, and the first red one sends the agent back, named with its directory. A
-directory's command is not run again while nothing but other directories has changed since it last
-passed; a shared file outside every package, such as a lockfile, runs it again. A directory that
+directory's command is not run again while nothing but the directories beside it has changed since
+it last passed; a shared file outside every package, such as a lockfile, or a package inside it,
+runs it again. A directory that
 leads out of the repository, through a link, is red. Before a push, the `pre-push` hook chooses the
 same way from the pushed commits, and each command gets its 600 seconds.
 

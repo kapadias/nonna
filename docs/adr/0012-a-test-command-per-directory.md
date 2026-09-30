@@ -49,9 +49,11 @@ should have forgotten.
    order `/nonna` shows, and the root's runs last. The commands share the 240 seconds. One that runs
    out of time stops the rest, and that is not red, as before. The first red blocks, named with its
    command and directory. A directory's green run is remembered by the whole tree (tracked and
-   untracked files) except the other directories that have commands of their own, and by its
-   command, in `.git/nonna/green-<hash of the directory>`. So another package's change does not run
-   it again, and a change to a shared file outside every package (a lockfile, a base config) does.
+   untracked files) except the directories beside it that have commands of their own, and by its
+   command, in `.git/nonna/green-<hash of the directory>`. A directory around it or inside it stays
+   in: its command runs over one inside it too. So a change in a package beside it does not run it
+   again, and a change to a shared file outside every package (a lockfile, a base config), or in a
+   package inside it, does.
    The root's green run is remembered as before, by the whole tree and the command in
    `.git/nonna-green`, because the root's command may test everything.
 5. **Before a push,** the pre-push hook makes the same selection over the code the pushed range
@@ -78,9 +80,10 @@ should have forgotten.
 
 - **Run order: config order, not sorted.** Sorting needs `sort`, which the Stop hook avoids so that
   minimal machines keep working. Config order is stable, and `/nonna` shows it.
-- **A directory's green run is keyed by the whole tree but the other directories' own.** Keyed by the
+- **A directory's green run is keyed by the whole tree but the directories beside it.** Keyed by the
   whole tree, a package would run again every time another package changed. Keyed by its own tree
-  alone, a change to a shared file outside every package would leave a red suite reported green.
+  alone, a change to a shared file outside every package would leave a red suite reported green,
+  and so would leaving out a package inside it, whose files its command also tests.
 - **A directory's command runs in its directory, not at the top.** At the top, the issue's own example
   (`pytest`) would run the whole suite.
 - **An empty directory command means no command, not "off".** If empty meant off, one empty value
@@ -96,9 +99,10 @@ should have forgotten.
   package's tests. Per-directory commands trust the user's directory boundaries. A package that
   depends on code outside it can include that code's tests in its command, or leave that code to a
   root command that runs them.
-- A package's green run leaves out the other packages. Suppose its files changed earlier in the
-  session and have not changed since, and a later change in another package breaks its tests. The
-  Stop hook's cache does not notice. The pre-push hook has no cache and runs the package's command.
+- A package's green run leaves out the packages beside it. Suppose its files changed earlier in the
+  session and have not changed since, and a later change in a package beside it breaks its tests.
+  The Stop hook's cache does not notice. The pre-push hook has no cache and runs the package's
+  command.
 - A repository with directory keys costs the Stop hook a few more git calls at each turn end: an exact
   list of the changed and new files, and for each owning directory a key read over the whole tree,
   about what `git status` costs. A repository without them costs nothing more.

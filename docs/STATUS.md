@@ -75,8 +75,8 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   command. The Stop hook runs each owning command once, in its directory and only inside the
   repository, within the shared budget, and blocks on the first red, naming the directory; new
   files count, and a listing that fails runs every command. A directory's green run is remembered by
-  the whole tree but the other directories, so another package's change does not run it again and a
-  shared file does. The pre-push hook chooses the same way from the pushed range, reading each merge
+  the whole tree but the directories beside it, so a change in one of those does not run it again,
+  and a shared file or a package inside it does. The pre-push hook chooses the same way from the pushed range, reading each merge
   against each parent (for every repository, a clean merge used to push with no tests), with a
   signer's `log.showSignature` pinned off so the verifier's lines cannot move a file out of its
   package. `/nonna`

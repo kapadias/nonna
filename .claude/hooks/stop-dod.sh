@@ -59,8 +59,8 @@ reason=""
 # no cache.
 # Where directories have commands of their own (ADR-0012), each that owns a file changed this session
 # runs once, in its directory, then the repository's for a file in none. They share the budget, the
-# first red blocks, and a directory's green run is remembered by the whole tree but the other
-# directories' own.
+# first red blocks, and a directory's green run is remembered by the whole tree but the directories
+# beside it that have their own.
 if ! printf '%s' "$payload" | grep -qE '"stop_hook_active"[[:space:]]*:[[:space:]]*true' \
   && [ -f "$here/lib/tests.sh" ]; then
   # shellcheck source=/dev/null
