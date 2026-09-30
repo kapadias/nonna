@@ -76,7 +76,7 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   and tool names. `.claude/hooks/lib/host-copilot.sh` renames the tools' arguments, Copilot's names
   winning over any decoy, judges each path of a grep, and gives her replies in Copilot's form; one
   block in each of three scripts calls it. Under either agent the branch guard now refuses writes to
-  Copilot's repository settings and hooks (`disableAllHooks` turns every hook off). 58 golden tests
+  Copilot's repository settings and hooks (`disableAllHooks` turns every hook off). Golden tests
   from Copilot's documented payloads, one of them holding the adapter equal to Claude Code's
   goldens; no live Copilot session has run it. `release.yml` checks both new manifests against the
   tag.

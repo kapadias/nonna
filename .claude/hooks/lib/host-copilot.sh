@@ -16,8 +16,10 @@
 #   apply_patch's text, raw or as input or patch) are joined into content, and new_str and new_string
 #   into new_string, so each is scanned; a patch is scanned whole. write_bash's input is a Bash
 #   command, and str_replace_editor's view, which arrives as an Edit, a Read. A grep is one payload per
-#   path it names, in paths or beside them, for nonna_copilot_each. A payload with nothing to
-#   translate, or no JSON at all, passes unchanged, on one line. Without jq, "path" is renamed
+#   path it names, in paths or beside them, for nonna_copilot_each; more than 32 paths, which could not
+#   all be judged before the hook times out (and Copilot lets a timed-out call through), are refused
+#   up front. A payload with nothing to translate, or no JSON at all, passes unchanged, on one line.
+#   Without jq, "path" is renamed
 #   "file_path", and a "paths" that is one string "path", in the text, where the gates' own reader
 #   finds them; what the text cannot be trusted to show (a file_path beside path, a list of paths, a
 #   shell's input) is refused: exit 2, her reason on stderr.
@@ -40,7 +42,7 @@ nonna_copilot_payload() {
     printf '%s' "$in" | sed -e 's/"path"\([[:space:]]*:\)/"file_path"\1/g' -e 's/"paths"\([[:space:]]*:\)/"path"\1/g'
     return 0
   fi
-  out="$(printf '%s' "$in" | jq -c '
+  out="$(printf '%s' "$in" | jq -c --argjson most 32 '
     def joined($keys): [$keys[] as $k | .[$k] | strings] | if length > 0 then join("\n") else null end;
     . as $in
     | if type != "object" then [.]
@@ -62,7 +64,10 @@ nonna_copilot_payload() {
             [.tool_input |= (if (.path | type) == "string" then .file_path = .path else . end)]
           elif $tool == "Grep" then
             ([.tool_input.path, (.tool_input.paths | if type == "array" then .[] else . end)] | map(strings) | unique) as $each
-            | if ($each | length) == 0 then [.] else [. as $call | $each[] | . as $one | $call | .tool_input.path = $one] end
+            | if ($each | length) > $most then
+                [{nonna_copilot_refuse: "too_long", why: "a grep over more than \($most) paths is refused: each path is judged on its own, and so many would outrun the timeout of the hook"}]
+              elif ($each | length) == 0 then [.]
+              else [. as $call | $each[] | . as $one | $call | .tool_input.path = $one] end
           else [.] end
       end
     | if . == [$in] then empty else .[] end' 2>/dev/null)" || {
@@ -74,7 +79,23 @@ nonna_copilot_payload() {
     fi
     out=""
   }
+  case "$out" in
+    '{"nonna_copilot_refuse":'*)
+      _nonna_copilot_refuse "$(printf '%s' "$out" | jq -r .nonna_copilot_refuse)" "$(printf '%s' "$out" | jq -r .why)"
+      return 2
+      ;;
+  esac
   if [ -n "$out" ]; then printf '%s' "$out"; else printf '%s' "$in"; fi
+}
+
+_nonna_copilot_refuse() { # <too_long|unread> <why>: her refusal, on stderr, as the branch guard says one
+  if [ "$1" = too_long ]; then
+    echo "✗ Nonna: that's too much to taste in one bite. (Copilot CLI: $2.)" >&2
+    echo "  Split it into smaller calls." >&2
+  else
+    echo "✗ Nonna: I can't taste what I can't read. (Copilot CLI: $2, so it is refused, not guessed at.)" >&2
+    echo "  Call the tool with its own arguments, or tell the user plainly why you cannot." >&2
+  fi
 }
 
 # nonna_copilot_each <script> <payloads>

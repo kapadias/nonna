@@ -69,7 +69,9 @@ while a file in `.github/hooks/` adds hooks of its own.
 4. **Copilot's names win, and every target is judged.** Copilot's tools act on their own argument
    names, so those are what the gates read, whatever Claude-named key sits beside them (a decoy): a
    write's content keys are joined and all scanned. A grep over several paths becomes one payload per
-   path, and `nonna_copilot_each` runs the gate on each, refusing on the first refusal. An
+   path, and `nonna_copilot_each` runs the gate on each, refusing on the first refusal; past 32
+   paths, which could not all be judged before the hook's timeout (which lets a call through), it is
+   refused up front. An
    `apply_patch` is scanned whole, so a patch that only removes a key is refused too; the files it
    names wait for a patch reader shared with Codex's adapter. Where the payload cannot be read safely
    it is refused: without jq, a list of paths, a Claude-named key beside Copilot's, or input to a

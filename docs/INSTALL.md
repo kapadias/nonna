@@ -248,7 +248,8 @@ scripts read as they read Claude Code's. Each hook runs with `NONNA_HOST=copilot
 and [`host-copilot.sh`](../.claude/hooks/lib/host-copilot.sh) translates what still differs: the
 tools' argument names (`path`, `file_text`, `old_str`, `new_str`, grep's `paths`, `write_bash`'s
 `input`), which win over any Claude-named key beside them, and her replies. A grep over several paths
-is judged path by path, and any refusal refuses. A refusal also goes out as
+is judged path by path, and any refusal refuses; more than 32, too many to judge before the hook
+times out, are refused up front. A refusal also goes out as
 `permissionDecision: "deny"` with her message as the reason, the form Copilot shows the agent, and
 session start's context as `additionalContext` ([ADR 0012](adr/0012-copilot-cli-plugin.md)).
 

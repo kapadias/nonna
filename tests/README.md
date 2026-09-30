@@ -94,7 +94,8 @@ Exercises each deterministic gate with fixed inputs and asserts the exit code:
   `permissionDecisionReason`; a clean edit and a clean patch pass; `agentStop` on a red suite blocks,
   once; session start records the test command and the session's start, wires the git hooks, and
   answers in `additionalContext`. A Claude-named decoy beside Copilot's own key never stands in for
-  it, and a grep over several paths is judged path by path. An equivalence test runs Claude Code's
+  it, and a grep over several paths is judged path by path, up to 32; more are refused. An
+  equivalence test runs Claude Code's
   own Write, Edit, Read and Grep goldens rewritten in Copilot's names, and every order of a
   several-path grep, and wants the same exit codes. Writes to Copilot's repository settings and hooks
   are refused under either agent. A Claude Code payload passes the adapter byte for byte, nothing is

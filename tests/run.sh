@@ -2938,6 +2938,18 @@ cop PreToolUse 'Read|Grep' secret-scan.sh "$CPR" "$(pre Grep '{"pattern":".","pa
 check "copilot: a decoy path beside grep's paths does not stand in for them" 2 "$?"
 cop PreToolUse 'Read|Grep' secret-scan.sh "$CPR" "$(pre Grep '{"pattern":".","paths":["src","docs"]}')" >/dev/null
 check "copilot: a grep over several ordinary paths exits 0" 0 "$?"
+# Each path is judged in a gate of its own, so past a cap the hook would outrun its timeout, which Copilot
+# lets through: a grep over more than 32 paths is refused up front.
+cp_paths() { # <count> [last path...]: a JSON list of that many paths, ordinary ones first
+  python3 -c 'import json, sys; n = int(sys.argv[1]); last = sys.argv[2:]; print(json.dumps(["docs/p%d" % i for i in range(n - len(last))] + last))' "$@"
+}
+cop PreToolUse 'Read|Grep' secret-scan.sh "$CPR" "$(pre Grep '{"pattern":".","paths":'"$(cp_paths 32)"'}')" >/dev/null
+check "copilot: a grep over 32 ordinary paths, the cap, is judged and exits 0" 0 "$?"
+cop PreToolUse 'Read|Grep' secret-scan.sh "$CPR" "$(pre Grep '{"pattern":".","paths":'"$(cp_paths 32 .env)"'}')" >/dev/null
+check "copilot: a grep over 32 paths, the last .env, is judged and exits 2" 2 "$?"
+out="$(cop PreToolUse 'Read|Grep' secret-scan.sh "$CPR" "$(pre Grep '{"pattern":".","paths":'"$(cp_paths 33)"'}')")"
+check "copilot: a grep over 33 paths is refused up front" 2 "$?"
+contains "copilot: and the refusal names the cap" "more than 32 paths" "$out"
 # Input written to an async shell is a command too.
 cop PreToolUse 'write_bash|write_powershell' guard-branch.sh "$CPR" "$(pre write_bash '{"shellId":"7","input":"git commit --no-verify -m x"}')" >/dev/null
 check "copilot: a command written to an async shell (write_bash's input) is read: --no-verify exits 2" 2 "$?"

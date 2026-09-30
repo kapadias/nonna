@@ -126,8 +126,8 @@ Your AI agent says "done"; Nonna makes it prove it.
   and `agentStop`, with `NONNA_HOST=copilot`. Copilot's agent can no longer end its turn on a red
   suite, commit to `main` or write a key into a file. PascalCase event names bring Copilot's
   payload close to Claude Code's; `.claude/hooks/lib/host-copilot.sh` renames the tools' arguments
-  (Copilot's names win over any Claude-named decoy; a grep over several paths is judged path by
-  path) and gives her replies in Copilot's form, a refusal's reason included. Under either agent,
+  (Copilot's names win over any Claude-named decoy; a grep over up to 32 paths is judged path by
+  path, and one over more is refused) and gives her replies in Copilot's form, a refusal's reason included. Under either agent,
   the branch guard also refuses the agent writing Copilot's repository settings, where one
   `disableAllHooks` line turns every hook off, or its repository hooks. Golden-tested against
   Copilot's documented payloads and held equal to Claude Code's goldens; not yet run in a live
