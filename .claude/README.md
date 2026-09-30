@@ -54,7 +54,8 @@ discipline is **enforced by code, not prose**. Start with [`../CLAUDE.md`](../CL
   install, so they survive updates; warns instead of overwriting a foreign one — records the plugin's
   test command and mode in git config, carries the mode's rules into plugin installs, and tells the
   user once what it did), `stop-dod.sh` (**Stop** — code changed since the session began: runs the
-  suite, asks "where's the test?", and in full mode blocks on a stale `docs/STATUS.md`),
+  suite, or in a monorepo each changed directory's own command (ADR-0012), asks "where's the test?",
+  and in full mode blocks on a stale `docs/STATUS.md`),
   `subagent-verdict.sh` (**SubagentStop** — runs `check-review.sh` on the reviewer's own
   output, so ADR-0005 binds where the verdict is produced), `post-compact.sh` (**PostCompact** —
   restates branch, STATUS state, and review verdicts after a summary), `subagent-start.sh`
@@ -64,7 +65,7 @@ discipline is **enforced by code, not prose**. Start with [`../CLAUDE.md`](../CL
   `lib/` (`json.sh`, `secret-patterns.sh`, `core.sh` — harness root, the mode, the carrier, the
   context emitter; `shell-words.awk` — how the shell will read a command, for the branch guard;
   `expand.awk` — its brace lists and globs, as the shell expands them;
-  `tests.sh` — the test command, runner and failure digest; `lite.md` — lite's house
+  `tests.sh` — the test command and each directory's own, runner and failure digest; `lite.md` — lite's house
   rules; `ladder.sh` — whether another plugin already states the ladder); plugin wiring in
   `hooks.json`, asserted equivalent to `settings.json` by the linter.
 - **`settings.json`** — denies reading secrets (`.env`/`*.pem`/`*.key`/`.ssh`/`.aws`/…) and

@@ -46,6 +46,15 @@ Your AI agent says "done"; Nonna makes it prove it.
   `/nonna uninstall` takes back only what is hers, in every worktree, and names each value. It is
   the user's alone: the agent cannot invoke it, and the branch guard refuses the agent running its
   scripts. While she is off, the guard still keeps her settings, and nothing else.
+- **Monorepos: a test command per directory** (ADR-0012, #29).
+  `/nonna test --dir packages/api '<command>'` sets `git config nonna.packages/api.testCmd`. At the
+  end of a turn the Stop hook runs only the commands of the directories this session changed, each
+  once and in its directory, then the repository's command for a file in none; they share the 240
+  seconds, the first red blocks with its directory named, and a directory unchanged since it passed
+  is not run again. The pre-push hook chooses the same way over the pushed range. `/nonna` lists
+  them, and `/nonna uninstall` removes every `nonna` subsection, which it used to leave behind while
+  saying it had removed them. Without such keys nothing changes; `NONNA_TEST_CMD` still replaces
+  them all.
 - **Modes: `off`, `lite` and `full`, one switch per repository** (ADR-0011). Every hook reads, in
   order: `NONNA_MODE` (Claude Code's hooks only), your `nonna.mode` (repository, then global), the
   plugin's `mode` option, `nonna.defaultMode`, and last what the repository carries (the hooks and

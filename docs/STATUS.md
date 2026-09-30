@@ -56,7 +56,7 @@ never offered to the model, so it is not counted.
 - **Plugin** — `.claude/.claude-plugin/plugin.json` (2.0.0, `displayName`, `userConfig`:
   `run_tests`, `mode`) + `.claude-plugin/marketplace.json`. Both validate with `--strict`.
 - **Docs** — this `STATUS.md`, `INSTALL.md`, `OVERVIEW.md`, `docs/benchmarks/`, `CHANGELOG.md`, the
-  `docs/adr/` index, and ADRs 0001–0011.
+  `docs/adr/` index, and ADRs 0001–0012.
 - **Launch images** — `assets/build.py` builds the scorecard, the social preview and one card per
   trap task from round 3's files; `--check` (standard library only) is run by `tests/run.sh`.
 - **CI** — `.github/workflows/ci.yml`: shellcheck (all scripts) + harness-lint + gate self-tests
@@ -68,6 +68,16 @@ never offered to the model, so it is not counted.
 
 History lives in `CHANGELOG.md` and `git log`. Entries here describe the current unit of work.
 
+- **2026-09-30** — A test command per directory, for monorepos (#29, ADR-0012). A monorepo's whole
+  suite runs past the Stop hook's 240 seconds, so it got no verdict until the push. Now
+  `git config nonna.<dir>.testCmd` (set with `/nonna test --dir`) gives a directory its own
+  command. A changed file belongs to the longest such directory it is in, else to the repository's
+  command. The Stop hook runs each owning command once, in its directory, within the shared budget,
+  and blocks on the first red, naming the directory. A directory's green run is remembered by its
+  own tree, so an untouched package is not run again. The pre-push hook chooses the same way from
+  the pushed range. `/nonna` lists the directories' commands, and `/nonna uninstall` removes every
+  `nonna` subsection (it used to leave them behind). With no such keys, both hooks behave as
+  before. Golden tests for each hook and for `/nonna`, and a property test for ownership.
 - **2026-09-30** — No demo video in the repository's tree. The README's demo (a gif, an mp4 and the
   raw recording of one session, and the page on how it was recorded) is removed with its block in
   the README, and the split-screen film on `chore/17-demo` is not merged: both are launch
