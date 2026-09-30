@@ -8,11 +8,12 @@ itself: if a gate is silently wrong, CI goes red.
 
 ## What runs
 
-| File                                 | What it proves                                                         | How                                            |
-| ------------------------------------ | ---------------------------------------------------------------------- | ---------------------------------------------- |
-| [`run.sh`](run.sh)                   | **Every gate blocks vs. allows correctly** — gate golden tests.        | golden tests over real hook/script invocations |
-| [`harness_lint.py`](harness_lint.py) | **The harness is internally consistent** — structural self-validation. | static checks over `.claude/` + docs           |
-| [`test_assets.py`](test_assets.py)   | **The launch images match the data** — numbers, lettering, SVGs.       | unit tests, standard library only              |
+| File                                   | What it proves                                                         | How                                            |
+| -------------------------------------- | ---------------------------------------------------------------------- | ---------------------------------------------- |
+| [`run.sh`](run.sh)                     | **Every gate blocks vs. allows correctly** — gate golden tests.        | golden tests over real hook/script invocations |
+| [`harness_lint.py`](harness_lint.py)   | **The harness is internally consistent** — structural self-validation. | static checks over `.claude/` + docs           |
+| [`test_assets.py`](test_assets.py)     | **The launch images match the data** — numbers, lettering, SVGs.       | unit tests, standard library only              |
+| [`windows-probe.sh`](windows-probe.sh) | **What native Windows does to the hooks** — facts, never a verdict.    | run in Git Bash; CI's Windows job prints it    |
 
 ### `run.sh` — gate golden tests
 
