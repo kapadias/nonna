@@ -85,6 +85,33 @@ def test_plugin_arms_get_a_bare_tree_and_her_config(tmp_path, arm, mode, harness
     assert branch.strip() == "feature/work"
 
 
+def test_the_installer_arm_installs_the_whole_harness(tmp_path):
+    """install.sh defaults to lite; the `nonna` arm is rounds 1-2's copy-in, the whole harness."""
+    d, r = setup(tmp_path, "nonna", INSTALLER=ROOT)
+    assert r.returncode == 0, r.stderr
+    assert (d / ".claude" / "rules" / "00-core.md").is_file()
+    assert cfg(d, "nonna.defaultMode") == "full"
+
+
+def test_an_installer_without_modes_is_not_given_one(tmp_path):
+    """Rounds 1-2's install.sh knew no --mode (the whole harness was its only shape) and refuses
+    an argument it does not know, so a rerun at their harness ref must not pass one."""
+    old = tmp_path / "old"
+    old.mkdir()
+    (old / "install.sh").write_text(
+        "#!/usr/bin/env bash\n"
+        '[ "$#" -eq 0 ] || { echo "install.sh: unknown argument \'$1\'" >&2; exit 2; }\n'
+        "mkdir -p .claude/rules && echo core > .claude/rules/00-core.md\n"
+    )
+    git = ["git", "-C", str(old), "-c", "user.name=t", "-c", "user.email=t@example.com"]
+    subprocess.run(git[:3] + ["init", "-q"], check=True)
+    subprocess.run(git + ["add", "-A"], check=True)
+    subprocess.run(git + ["commit", "-q", "-m", "old"], check=True)
+    d, r = setup(tmp_path, "nonna", INSTALLER=str(old))
+    assert r.returncode == 0, r.stderr
+    assert (d / ".claude" / "rules" / "00-core.md").is_file()
+
+
 @pytest.mark.parametrize("suite", ["traps", "small"])
 def test_every_suite_names_its_test_command(suite):
     with open(os.path.join(B, "tasks", suite, "TESTCMD")) as fh:

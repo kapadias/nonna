@@ -57,12 +57,163 @@ never offered to the model, so it is not counted.
   `run_tests`, `mode`) + `.claude-plugin/marketplace.json`. Both validate with `--strict`.
 - **Docs** — this `STATUS.md`, `INSTALL.md`, `OVERVIEW.md`, `docs/benchmarks/`, `CHANGELOG.md`, the
   `docs/adr/` index, and ADRs 0001–0011.
-- **CI** — `.github/workflows/ci.yml`: shellcheck (all scripts) + harness-lint + gate self-tests +
-  plugin manifest (`claude plugin validate --strict`, pinned CLI).
+- **Launch images** — `assets/build.py` builds the scorecard, the social preview and one card per
+  trap task from round 3's files; `--check` (standard library only) is run by `tests/run.sh`.
+- **CI** — `.github/workflows/ci.yml`: shellcheck (all scripts) + harness-lint + gate self-tests
+  (on Linux, and again on a stock Mac) + plugin manifest (`claude plugin validate --strict`, pinned
+  CLI). Every action is pinned to a commit SHA, the token is read-only by default, and only the
+  release job can write.
 
 ## Recently changed
 
 History lives in `CHANGELOG.md` and `git log`. Entries here describe the current unit of work.
+
+- **2026-09-29** — The launch, the fifth unit of the launch plan (#17), from round 3's numbers.
+  - **README:** the plugin install first, what the first session prints, what she checks, the
+    modes (full mode as extras for teams, as D3 row 4 requires), a before/after from the
+    rule-picked round-3 runs, her voice lines as the hooks print them, the numbers with their
+    misses, and a FAQ that says how an agent can still get past her. Every benchmark number carries
+    a mark (`<!--n:key-->`) that `harness_lint.py` checks against `bench/results/round3/*.tsv`.
+  - **`install.sh` installs lite** unless told `--mode full`, as D3 row 1 decided; re-running it
+    keeps the mode a repository has, and no longer mistakes her own git hooks for the user's.
+  - **`examples/`:** one run of each trap per arm, word for word, picked by a rule in code
+    (`bench/examples.py`, rep 1 on Haiku); `--check` runs with the gate self-tests.
+  - **Images:** `assets/build.py` builds the scorecard, the social preview and a card per trap task
+    from the rows, lettered from Space Grotesk's own outlines (OFL); `--check` fails on a stale
+    image. The demo (`assets/demo.{gif,mp4,cast}`, `docs/demo.md`) is a real Haiku session, 4
+    takes, take 4 used; it shows her "where's the test?" block, not a failing-test block. A
+    split-screen film (bare against Nonna, every pair recorded) is being finished on its own branch
+    (`chore/17-demo`) and lands as its own PR.
+  - **Docs:** INSTALL, OVERVIEW and CONTRIBUTING reordered for the plugin and cleared of em dashes;
+    `bench/README.md` has round 3's results and a new break-even table; CHANGELOG 2.0.0 opens with
+    the release notes' five lines; ADR 0011 records what round 3 decided.
+  - **Fixes found on the way:** a staged binary file drew a shell warning from the pre-commit hook;
+    a lite install switched to full carried no rules at all. Both have golden tests.
+  - **Review fixes** (the code and security review of this unit), each with a test that failed
+    first:
+    - on a Mac the pre-commit hook blocked every commit with a binary file (`tr` read the bytes in
+      the user's locale); its fail-closed path, never reached by the old test, is now;
+    - the plugin no longer formats the files the agent edits; a copy-in install still does;
+    - `install.sh`: the stack packs pre-approve test, lint, format and type-check runners only, say
+      so, and are git-ignored; a git hook it could not wire is a non-zero exit; a recorded mode
+      that is neither lite nor full reads as full;
+    - the bench's copy-in arm passes `--mode` only to an installer that knows it;
+    - the pooled Fisher p is 1.3e-7, not 9.4e-6; lite's one miss is described as far as the rows
+      go; every benchmark number in the README is linted, and the scorecard's alt text is the
+      image's own;
+    - `assets/build.py` renders nothing that runs or reaches outside the file, `bench/examples.py`
+      never writes through a symlink, and the key-class messages read "an AWS access key id".
+  - **Second and third review rounds** (each approved the one before with findings; each fix has a
+    test that failed first):
+    - the stack packs pre-approve only the exact commands their gate runs, never a prefix: a
+      runner's own flags run any program or write any file (`npm test --node-options`,
+      `go test -exec`, `golangci-lint --output.text.path`, `pytest --basetemp`);
+    - the secret scan finds a key given as a shell or compose default (`${VAR:-key}`,
+      `${1-key}`), after a URL escape or a NUL byte, and an Anthropic key even inside a compiled
+      file; it reads bytes, so macOS's grep cannot give up on it; a prefixed key needs a 40-character
+      tail, so a kebab-case name is not one;
+    - the Stop hook's "where's the test?" had been switched off by the suite's own bytecode
+      (`tests/__pycache__/*.pyc` counted as a new test) in any repo that does not ignore it: only a
+      test's source counts now. Found by the macOS CI job, where no bytecode was written;
+    - `check-debt.sh` (and so `/review`) rejected every marker on a Mac: `grep -Z` is decompress
+      there; `--null` works on both;
+    - `install.sh`: a re-run in a linked worktree knows her shared hook links, and a link of hers
+      that git cannot run is reported, not counted as a gate;
+    - `assets/build.py` checks every SVG against an allow-list of what the images draw with, and the
+      scorecard's alt-text lint reads the tag in any shape and fails when it compared nothing;
+    - the docs say that a plugin user's clone of a full copy-in runs lite, and how to keep full.
+  - **Fourth review round** (both reviews asked for changes; each fix has a test that failed first):
+    - the secret scan reads each NUL byte both as a gap and as nothing, so the write guard,
+      pre-commit and pre-push find a key right after one, a key one cuts in two, and a key in UTF-16
+      text (what Windows PowerShell writes). The third round had made a NUL a gap only, which lost
+      UTF-16 files;
+    - the placeholder rule reads only a key's own start: a sample word before a key
+      (`${SAMPLE-key}`, `${k[FAKE]-key}`) or glued after it (`keyEXAMPLE`), or a sample glued in
+      front of it, no longer exempts a real key;
+    - a key after a shell's special parameter (`${?-key}`) or a JSON escape (`\f`, `\u0000`) is found;
+    - the TypeScript pack no longer pre-approves `npx tsc` or `npx vitest`: npx fetches and runs a
+      package that is not installed, without asking;
+    - "where's the test?" counts a new `.test.mts`, `.test.cts` or `_test.cxx`, and four Stop tests
+      that the first ask's memo had answered now decide alone;
+    - `check-debt.sh`'s `tr` and `sed` read bytes: on a Mac they refused a file with a byte that is
+      not UTF-8, so its marker went unseen. The real Mac run had failed that test too; the BSD-tools
+      simulation, run to the end on this unit for the first time, found this much of why (the rest
+      was `sort`, below).
+  - **Fifth review round** (the security review approved the fourth with findings; each fix has a
+    test that failed first):
+    - without jq, the write guard reads a `\u0000` escape as the NUL byte it stands for, so a key
+      one cuts in two, or UTF-16 text read as JSON, is found there too;
+    - in lines whose NUL bytes are removed, an OpenAI key as long as a real one (a tail of 80 or
+      more; real ones have about 156) is a key wherever it starts, so one right after a kana or a
+      CJK character in UTF-16 text is found. Read everywhere at first, that rule made a long
+      kebab-case name after a word ending in "sk" (a URL slug) a key, which the code re-review
+      found, and then every line of a text with one NUL in it; the reading with the NULs removed
+      now holds only the lines that had one (all of the text, should picking them fail);
+    - the scan reads its text in lower case once, reads each key where its prefix starts, in the
+      shell, and skips text that holds nothing a pattern needs. On the review's slowest inputs it is
+      faster than before either round: 20 KB of Slack sample keys took 3.1 s before the fourth
+      round, 7.2 s after it, and 0.17 s now; a 2 MB binary 1.0 s, 2.1 s and 0.4 s.
+    - an indirect expansion's default (`${!ref-key}`) starts a token too, as the code review asked;
+      its other MEDIUM, a key after a U+0000 in UTF-16 text (a string list), is found by the
+      real-length rule above;
+    - the TypeScript pack's README says its gate's two `npx` steps ask first, and how to approve
+      them;
+    - a key pattern with no literal prefix counts as a key at once: the walk from each prefix had
+      nothing to walk from and would have looped (no pattern has one yet);
+    - the sample-word test of the patterns with no key window (an AWS access key id, a Google key,
+      a quoted assignment) runs in the shell too, reading bytes whatever the locale: a 312 KB write
+      of 12,000 sample ids before a NUL-cut key took 64 s to block, longer than a hook's timeout,
+      and now takes 1.5 s. A value over 512 characters goes to grep, in one pass: the regex tries
+      `<[^>]+>` from every `<`, and 240 KB of them took 104 s (0.26 s now);
+    - a string escape starts a token as `\n` and `\u0000` do (`\x01`, `\0`, `\000`, `\a`, `\e`,
+      `\v`): once the real-length rule read only lines with a NUL, a key in a byte literal
+      (`b"\x0a\xa4\x01sk-proj-…"`) had nothing else to find it, which the security re-review found;
+    - no shell subscript before a key is read: any `]-` starts a token, so a key after
+      `${a[0]-`, after a subscript of any length, or after a nested one (`${a[${b[0]}]-key}`) is
+      found, in fixed time per place. Read to its end, grep went from every `{a[` to the end of a
+      line that never closed one (240 KB of them before a key took 79 s); read to 64 characters, a
+      longer one hid the key, which both reviewers found. The route for values over 512 characters
+      is tested both ways (a long secret is one, a long sample is not), after a mutant that called
+      every such value a sample passed the suite.
+  - **The first real-Mac run of the launch PR** (#22) failed tests the simulation passed; the
+    simulation now has each cause (Python 3.9 as `python3`, and a `sort` that stops at a byte that
+    is not UTF-8), and each fix has a test that failed first:
+    - `check-debt.sh` reads bytes throughout (`LC_ALL=C` for the whole script): macOS's `sort`
+      stopped at a byte that is not UTF-8, and the empty ledger it left passed the marker. A tool
+      that fails while the markers are read, classified or counted is now a stop (exit 2), not a
+      clean ledger: both reviews found `tr`, `sed`, the diff's reader and the count unchecked too,
+      and a count that is not a number (a `wc` that printed nothing) passed as well;
+    - `bench/examples.py` runs on a stock Mac's Python 3.9: its `str | None` annotations needed
+      3.10, and it now defers them (`from __future__ import annotations`), as the other scripts do.
+  - **Secret scan:** it missed Anthropic keys and OpenAI's `sk-proj-`, `sk-svcacct-` and `sk-admin-`
+    keys, which the docs said it caught. The write guard, pre-commit and pre-push now refuse them;
+    golden tests hold each key type and a key given as a shell default, a property test holds the
+    40-character tail bound, and the scan reads bytes, so macOS's grep cannot give up on it.
+
+- **2026-09-29** — Round 3 ran: 484 runs, $37.18 of logged spend, every fingerprint ok, none
+  dropped, no ERROR rows. Harness `83b5de3`, Claude Code 2.1.284, `claude-sonnet-5-5` and
+  `claude-haiku-4-5-20251001`. The rows, `summary.txt`, `summary.json` and the runner's report are
+  in `bench/results/`; `summarize.py` reproduces the summary byte for byte. D3 rows 1 and 4 hold
+  (lite 1/64 unsafe against the bare agent's 24/64, at 1.8× its small-task cost; full 0/64), row 5
+  does not (its code-size condition fails: +28% against a ±20% limit), and lite's real-suite pass rate is not
+  below the bare agent's (30/36 against 28/36). The launch docs take their numbers from here.
+
+- **2026-09-29** — CI hardening, the follow-ups on the launch plan's tracking issue (#17), folded
+  into the launch unit so the macOS job ships with the fixes it found:
+  - every third-party action is pinned to a full commit SHA with its tag beside it (checkout 4.4.0,
+    setup-python 5.6.0, setup-node 4.4.0, shellcheck 2.0.0). The shellcheck action had been
+    `@master`, two commits past 2.0.0 that change only its own tests and README, so it is the same
+    action;
+  - the token is read-only by default in both workflows, and only the release job, which creates
+    the release, has `contents: write`;
+  - a macOS job runs the gate self-tests under `/bin/bash` 3.2 with only Apple's tools on the PATH
+    (no Homebrew), and fails if the runner is not that toolchain. It is not proven yet. Its first
+    run failed 62 tests and its second 59: three were brace lists typed inside `"$(gb "...")"`,
+    which bash 3.2 expands (the tests now pass them through a variable); 46 were the suite's own
+    GNU habits (`sed -i`, `timeout`), which it no longer has; 12 were a real bug, `check-debt.sh`'s
+    `grep -Z` (decompress, on a Mac); and one found a real bug in the Stop hook (see the launch
+    entry). The next run, on this unit's PR, is the proof, and a local simulation with BSD-style
+    `sed`, `grep` and `tr` is the check before it.
 
 - **2026-09-28** — Benchmark round 3, the fourth unit of the launch plan (#17), built and proven,
   not yet run (paid runs are the maintainer's). `bench/` gains:
@@ -284,10 +435,18 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
 
 ## Next / open
 
-- The rest of the launch plan (#17): a smoke test of `/nonna` in a real session (manual and auto
-  mode) before it merges; the paid round-3 run, from a pushed commit of the benchmark PR, in the
-  order `bench/README.md` gives (smoke runs first); then the launch README and assets from its
-  numbers.
+- The rest of the launch plan (#17), once this unit merges: the film, as its own PR from
+  `chore/17-demo`; then the v2.0.0 release and the go/no-go checks. `/nonna` ran headless in
+  default and auto mode during the smoke runs; an interactive check stays on the go/no-go list.
+- The branch guard should fail closed when a check cannot run. A `git` or `grep` that fails to
+  start reads as "nothing found" today, so the command is allowed: the likely reason two guard
+  tests allowed a blocked command, three times in all and each passing on rerun, while three or
+  four copies of the suite ran at once. Server-side branch protection is the wall either way; the
+  guard is the speed bump (ADR-0011).
+- `check-debt.sh` counts a trigger made only of whitespace other than a space or a tab (`\r\r`,
+  `\v`, a no-break space) as a trigger; it should trim all of it (the security review's LOW). It
+  also reads only the first marker on a line, so one inside a string before it, or a file with
+  CR-only line endings, hides a marker with no trigger later on that line (also LOW).
 
 - A behavioural eval on the failures the gates exist for (a secret in a fixture, a push to a
   protected branch, an error hidden by a "fix"), scored on "did it get caught".

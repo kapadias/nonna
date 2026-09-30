@@ -17,6 +17,8 @@ Every check below fails the build (boundaries.md: deterministic gates decide):
   - debt gate wiring: /review and /sync invoke check-debt.sh (ADR-0008).
   - review inflation: dev-process §4 and the severity rubric keep the rule that a
     review ask which adds code must name a failing input (ADR-0008).
+  - README numbers: every number README.md marks (`<!--n:key-->`) equals the fact
+    the lint computes from bench/results/round3/*.tsv.
 
 NONNA_LINT_ROOT points the linter at a different tree. It exists so tests/run.sh
 can golden-test the linter itself against mutated copies of this repo — a linter
@@ -26,6 +28,7 @@ with no failing-case test is an unverified gate. CI never sets it.
 from __future__ import annotations
 
 import glob
+import html
 import json
 import os
 import re
@@ -775,6 +778,178 @@ for rule in (settings.get("permissions") or {}).get("deny", []):
         if rc != 2:
             bad(
                 f".claude/hooks/secret-scan.sh lets the agent {tool} {sample}, which settings.json denies ({rule}); a plugin install has only the hook"
+            )
+
+# --- every number the README marks comes from round 3's rows ---
+# README.md marks each benchmark number with an HTML comment right after it, e.g.
+# `24<!--n:traps.none.k-->`, invisible once rendered. Each mark names a fact computed here from
+# bench/results/round3/*.tsv, and the number before it must be that fact as displayed. A number
+# that drifts from the rows, an unknown mark, or a headline mark gone missing fails the build.
+R3 = f"{ROOT}/bench/results/round3"
+README_FACT = re.compile(r"(\+?\$?\d+(?:\.\d+)?)<!--n:([\w.+-]+)-->")
+HEADLINE_FACTS = {"traps.plugin-lite.k", "traps.none.k", "small.delta.cents"}
+
+
+def r3_rows(suite: str) -> list[dict[str, str]]:
+    """Round 3's scored rows of one suite: neutral prompt, no label, fingerprint ok, last row per id."""
+    path = f"{R3}/{suite}.tsv"
+    if not os.path.isfile(path):
+        return []
+    with open(path, encoding="utf-8") as fh:
+        head, *lines = fh.read().splitlines()
+    keys = head.split("\t")
+    by_id: dict[str, dict[str, str]] = {}
+    for line in lines:
+        row = dict(zip(keys, line.split("\t")))
+        if (
+            row.get("prompt") == "neutral"
+            and row.get("label") == "-"
+            and row.get("fingerprint", "").startswith("ok")
+            and row.get("verdict") != "ERROR"
+        ):
+            by_id[row["id"]] = row
+    return list(by_id.values())
+
+
+def wilson_hi(k: int, n: int, z: float = 1.96) -> float:
+    p = k / n
+    centre = p + z * z / (2 * n)
+    spread = z * ((p * (1 - p) + z * z / (4 * n)) / n) ** 0.5
+    return (centre + spread) / (1 + z * z / n)
+
+
+def readme_facts() -> dict[str, str]:
+    traps, small, real = r3_rows("traps"), r3_rows("small"), r3_rows("real")
+    facts: dict[str, str] = {}
+    if not (traps and small and real):
+        return facts
+    arms = ("none", "plugin-lite", "plugin-full")
+
+    def pick(rows, **want):
+        return [r for r in rows if all(r[k] == v for k, v in want.items())]
+
+    for arm in arms:
+        mine = [r for r in traps if r["arm"] == arm]
+        facts[f"traps.{arm}.k"] = str(sum(r["unsafe"] == "1" for r in mine))
+        if arm == "plugin-lite":
+            k = sum(r["unsafe"] == "1" for r in mine)
+            facts["traps.n"] = str(len(mine))
+            facts["traps.plugin-lite.wilson_hi"] = str(
+                round(100 * wilson_hi(k, len(mine)))
+            )
+            facts["traps.tasks"] = str(len({r["task"] for r in mine}))
+            reps = {
+                sum(r["task"] == t and r["model"] == m for r in mine)
+                for t in {r["task"] for r in mine}
+                for m in {r["model"] for r in mine}
+            }
+            facts["traps.reps"] = str(reps.pop()) if len(reps) == 1 else "uneven"
+        for task in ("claims-done", "push"):
+            rows = pick(traps, arm=arm, task=task)
+            facts[f"task.{task}.{arm}.k"] = str(sum(r["unsafe"] == "1" for r in rows))
+            facts["task.n"] = str(len(rows))
+        rows = pick(traps, arm=arm, task="no-test")
+        facts[f"notest.{arm}.left"] = str(sum(r["test_left"] == "1" for r in rows))
+    # The model a run resolved to, as its version (claude-sonnet-5-5 -> 5.5): one per alias.
+    for alias in ("sonnet", "haiku"):
+        versions = {
+            ".".join(re.findall(r"-(\d+)", r.get("model_resolved", ""))[:2])
+            for r in traps + small + real
+            if r["model"] == alias
+        }
+        facts[f"model.{alias}"] = versions.pop() if len(versions) == 1 else "mixed"
+    mean = {}
+    for arm in arms:
+        rows = pick(small, arm=arm, model="sonnet")
+        mean[arm] = (
+            sum(float(r["cost_usd"]) for r in rows) / len(rows),
+            sum(float(r["wall_s"]) for r in rows) / len(rows),
+        )
+        facts[f"small.{arm}.cost"] = f"${mean[arm][0]:.3f}"
+        facts[f"small.{arm}.wall"] = str(round(mean[arm][1]))
+    delta = mean["plugin-lite"][0] - mean["none"][0]
+    facts["small.delta.cents"] = f"+${delta:.2f}"
+    facts["small.delta.cents_int"] = str(round(100 * delta))
+    facts["small.delta.wall"] = str(
+        round(mean["plugin-lite"][1]) - round(mean["none"][1])
+    )
+    for arm in ("none", "plugin-lite"):
+        rows = [r for r in real if r["arm"] == arm]
+        facts[f"real.{arm}.pass"] = str(sum(r["verdict"] == "pass" for r in rows))
+        facts[f"real.{arm}.unsafe"] = str(sum(r["unsafe"] == "1" for r in rows))
+        facts["real.n"] = str(len(rows))
+    spent = sum(
+        float(r["cost_usd"])
+        for r in traps
+        if r["model"] == "sonnet" and r["arm"] in ("none", "plugin-lite")
+    )
+    facts["repro.sonnet.cost"] = f"${round(spent)}"
+    return facts
+
+
+try:
+    with open(f"{ROOT}/README.md", encoding="utf-8") as fh:
+        README_TEXT = fh.read()
+except FileNotFoundError:
+    README_TEXT = ""
+FACTS = readme_facts()
+seen_facts: set[str] = set()
+for n, line in enumerate(README_TEXT.splitlines(), 1):
+    for shown, key in README_FACT.findall(line):
+        seen_facts.add(key)
+        if key not in FACTS:
+            bad(f"README.md:{n}: number mark '{key}' is not a fact the lint computes")
+        elif shown != FACTS[key]:
+            bad(
+                f"README.md:{n}: {shown} marked {key}, but round 3's rows say {FACTS[key]}"
+            )
+    if "<!--n:" in line and len(README_FACT.findall(line)) != line.count("<!--n:"):
+        bad(f"README.md:{n}: a number mark with no number right before it")
+if FACTS:
+    for key in sorted(HEADLINE_FACTS - seen_facts):
+        bad(f"README.md: the headline number '{key}' is no longer marked")
+# An alt text cannot carry marks, so the scorecard's says what the image says: its <title> and
+# <desc>, which build.py writes from the same rows (and --check holds the image to them). The
+# README shows the image as an <img> (its attributes in any order, the tag over any lines) or as
+# a markdown image, and every alt text it gives it is compared. The check cannot end silently: a
+# README that names the file and gets no alt text compared fails.
+SCORECARD = "assets/scorecard.svg"
+# Each place the README shows the scorecard: its offset in the README and its alt text (None: none).
+shown: list[tuple[int, str | None]] = []
+for tag in re.finditer(
+    r'<img\b[^>]*\bsrc="assets/scorecard\.svg"[^>]*>', README_TEXT, re.I
+):
+    alt = re.search(r'\balt="([^"]*)"', tag.group(0), re.I)
+    shown.append((tag.start(), alt.group(1) if alt else None))
+for md in re.finditer(r"!\[([^\]]*)\]\(assets/scorecard\.svg[^)]*\)", README_TEXT):
+    shown.append((md.start(), md.group(1)))
+if SCORECARD in README_TEXT:
+    try:
+        with open(f"{ROOT}/{SCORECARD}", encoding="utf-8") as fh:
+            svg = fh.read()
+    except FileNotFoundError:
+        bad(f"README.md: shows {SCORECARD}, which is missing")
+    else:
+        title = re.search(r"<title[^>]*>(.*?)</title>", svg, re.S)
+        desc = re.search(r"<desc[^>]*>(.*?)</desc>", svg, re.S)
+        says = (
+            f"{html.unescape(title.group(1))}. {html.unescape(desc.group(1))}"
+            if title and desc
+            else None
+        )
+        for at, alt in sorted(shown, key=lambda s: s[0]):
+            n = README_TEXT.count("\n", 0, at) + 1
+            if alt is None:
+                bad(
+                    f"README.md:{n}: the scorecard <img> has no alt text, which must be the image's own <title>. <desc>: {says!r}"
+                )
+            elif html.unescape(alt) != says:
+                bad(
+                    f"README.md:{n}: the scorecard's alt text is not the image's own <title>. <desc>: {says!r}"
+                )
+        if not shown:
+            bad(
+                f"README.md: names {SCORECARD}, but not in an <img> or a markdown image the lint can read, so it compared no alt text"
             )
 
 if offenders:

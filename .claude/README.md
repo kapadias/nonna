@@ -46,7 +46,7 @@ discipline is **enforced by code, not prose**. Start with [`../CLAUDE.md`](../CL
   or runs of her `/nonna` scripts;
   it reads a command the way the shell will run it), `secret-scan.sh` (blocks writes that introduce
   a secret, and reads of secret files by Read, Grep or Bash, by any name that leads to one — parity
-  with the Read deny list, linted), `format.sh` (post-edit auto-format),
+  with the Read deny list, linted), `format.sh` (post-edit auto-format, copy-in installs only),
   `require-status-sync.sh` (pre-push: the test suite, a strict secret scan — no fixture exemption at
   push time; use placeholder-classed values — and in full mode the Definition-of-Done),
   `pre-commit.sh` (git pre-commit: no commit on a protected branch, no staged secret),
@@ -58,8 +58,9 @@ discipline is **enforced by code, not prose**. Start with [`../CLAUDE.md`](../CL
   `subagent-verdict.sh` (**SubagentStop** — runs `check-review.sh` on the reviewer's own
   output, so ADR-0005 binds where the verdict is produced), `post-compact.sh` (**PostCompact** —
   restates branch, STATUS state, and review verdicts after a summary), `subagent-start.sh`
-  (**SubagentStart** — carries the mode's rules into every subagent under a plugin install, where
-  `SessionStart` context never reaches them; silent in a standalone checkout). Shared logic in
+  (**SubagentStart** — carries the mode's rules into every subagent wherever `.claude/rules/` is
+  not installed (a plugin, a lite copy-in), since `SessionStart` context never reaches them; silent
+  where the rules load natively). Shared logic in
   `lib/` (`json.sh`, `secret-patterns.sh`, `core.sh` — harness root, the mode, the carrier, the
   context emitter; `shell-words.awk` — how the shell will read a command, for the branch guard;
   `expand.awk` — its brace lists and globs, as the shell expands them;
@@ -103,7 +104,7 @@ that load only when needed, and delegate fan-out so the main thread keeps conclu
 - **Definition of Done (full mode):** `require-status-sync.sh` blocks a code push that skips
   `docs/STATUS.md`, in a repo that keeps one. It is **auto-installed** as the git `pre-push` hook at
   `SessionStart` — no manual symlink. Run `/sync` to reconcile drift across the five mirrors.
-- **Formatting** is automatic on edit (`format.sh`).
+- **Formatting** is automatic on edit in a copy-in install (`format.sh`); the plugin never formats.
 - **The harness tests its own gates:** `bash tests/run.sh` (golden tests proving each gate blocks vs.
   allows) and `python3 tests/harness_lint.py` (structural self-validation) run in CI.
 

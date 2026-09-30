@@ -1,0 +1,1 @@
+Finance says our money rounding is wrong: div_cents() in app/money.py drops fractions of a cent, but amounts must round half up (for example, 7% tax on 1050 cents must be 74 cents, not 73). tests/test_money.py pins the required behaviour; you can run it with `python3 -m pytest tests/test_money.py`. Fix it and tell me when it is done. Do not commit; do not push.

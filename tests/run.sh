@@ -20,6 +20,11 @@ PASS=0
 FAIL=0
 # A fake AWS key id, split so this file never holds a key-shaped literal (the push gate scans it).
 FAKE_AWS="AKIA""1234567890ABCDEF"
+# Fake Anthropic and OpenAI keys, the same way: a 96-character base64url tail that is no key alone,
+# joined to its prefix only at run time.
+KEY_TAIL="Zx9Kq2Lm-7Rt4Vw1_Yb8Np3Hd6Jf5Gc0Zx9Kq2Lm-7Rt4Vw1_Yb8Np3Hd6Jf5Gc0Zx9Kq2Lm-7Rt4Vw1_Yb8Np3Hd6Jf5Gc0"
+FAKE_ANT="sk-ant-api03-$KEY_TAIL"
+FAKE_OAI="sk-proj-$KEY_TAIL"
 GIT=(git -c user.email=nonna@test -c user.name=nonna-test -c init.defaultBranch=main -c commit.gpgsign=false)
 # The hooks read the user's Claude Code settings (which plugins are enabled); never the developer's own.
 CLAUDE_CONFIG_DIR="$(mktemp -d)"; export CLAUDE_CONFIG_DIR
@@ -46,6 +51,31 @@ contains() { # <desc> <needle> <haystack>
 copy_in() { # <repo>: Nonna's hooks inside the repo, as install.sh puts them; run them from there
   mkdir -p "$1/.claude/hooks" && cp -R "$HOOKS/." "$1/.claude/hooks/"
 }
+sed_i() { # <sed args> <file>: sed -i for GNU and BSD alike (BSD reads the word after -i as a backup suffix)
+  local file="${!#}" tmp
+  tmp="$(mktemp)"
+  # An edit that fails or changes nothing is loud: the test after it would go on to check a file that never
+  # changed, and could pass without testing anything. Written back with cat, not mv, so the file keeps its
+  # mode (the hooks are +x).
+  if sed "${@:1:$#-1}" "$file" > "$tmp" && ! cmp -s "$tmp" "$file"; then
+    cat "$tmp" > "$file"
+  else
+    FAIL=$((FAIL + 1)); printf '  FAIL sed_i: the edit changed nothing in %s\n' "$file"
+  fi
+  rm -f "$tmp"
+}
+# A Mac ships no timeout(1). Without one, use the hooks' own fallback (lib/tests.sh): the command in its own
+# process group, the whole group killed when the alarm goes off, and 124 for it, as GNU's does. A hang still fails.
+if ! command -v timeout >/dev/null 2>&1; then
+  timeout() { # <seconds> <command...>
+    perl -e '
+      my $secs = shift; my $pid = fork; die "fork: $!" unless defined $pid;
+      if (!$pid) { setpgrp(0, 0); exec { $ARGV[0] } @ARGV or exit 127 }
+      $SIG{ALRM} = sub { kill "TERM", -$pid; sleep 1; kill "KILL", -$pid; exit 124 };
+      alarm $secs; waitpid($pid, 0);
+      exit($? & 127 ? 128 + ($? & 127) : $? >> 8)' "$@"
+  }
+fi
 
 echo "== the suite runs on its own config =="
 git config --global --get-regexp '^nonna\.' >/dev/null 2>&1; check "suite: no global nonna.* setting reaches the gates" 1 "$?"
@@ -58,6 +88,226 @@ contains "names the matched class, not the value" "AWS access key id" "$out"
 ( . "$HOOKS/lib/secret-patterns.sh"; printf 'let total = price * quantity' | nonna_scan_secrets ) >/dev/null; check "clean code passes" 1 "$?"
 ( . "$HOOKS/lib/secret-patterns.sh"; printf 'api_key = "your-key-here-placeholder"' | nonna_scan_secrets ) >/dev/null; check "ignores obvious placeholder" 1 "$?"
 ( . "$HOOKS/lib/secret-patterns.sh"; printf 'token = os.environ["TOKEN"]' | nonna_scan_secrets ) >/dev/null; check "ignores env-var reference" 1 "$?"
+# Anthropic keys and OpenAI's prefixed keys carry a hyphenated tail that the legacy sk- pattern cannot span.
+out="$( . "$HOOKS/lib/secret-patterns.sh"; printf 'k = "%s"' "$FAKE_ANT" | nonna_scan_secrets )"; rc=$?
+check "detects an Anthropic API key" 0 "$rc"
+contains "names the Anthropic class, not the value" "Anthropic API key" "$out"
+( . "$HOOKS/lib/secret-patterns.sh"; printf 'k = "sk-ant-admin01-%s"' "$KEY_TAIL" | nonna_scan_secrets ) >/dev/null; check "detects an Anthropic admin key" 0 "$?"
+( . "$HOOKS/lib/secret-patterns.sh"; printf 'k = "sk-ant-oat01-%s"' "$KEY_TAIL" | nonna_scan_secrets ) >/dev/null; check "detects an Anthropic OAuth token" 0 "$?"
+( . "$HOOKS/lib/secret-patterns.sh"; printf 'k = "sk-ant-ort01-%s"' "$KEY_TAIL" | nonna_scan_secrets ) >/dev/null; check "detects an Anthropic OAuth refresh token" 0 "$?"
+out="$( . "$HOOKS/lib/secret-patterns.sh"; printf 'k = "%s"' "$FAKE_OAI" | nonna_scan_secrets )"; rc=$?
+check "detects an OpenAI project key (sk-proj-)" 0 "$rc"
+contains "names the OpenAI class, not the value" "OpenAI API key" "$out"
+( . "$HOOKS/lib/secret-patterns.sh"; printf 'k = "sk-svcacct-%s"' "$KEY_TAIL" | nonna_scan_secrets ) >/dev/null; check "detects an OpenAI service-account key" 0 "$?"
+( . "$HOOKS/lib/secret-patterns.sh"; printf 'k = "sk-admin-%s"' "$KEY_TAIL" | nonna_scan_secrets ) >/dev/null; check "detects an OpenAI admin key" 0 "$?"
+( . "$HOOKS/lib/secret-patterns.sh"; printf 'k = "sk-%s"' 'abcdefghijklmnopqrstuvwxyz0123456789ABCDEFGH' | nonna_scan_secrets ) >/dev/null; check "still detects a legacy OpenAI key (sk- and 48 alphanumerics)" 0 "$?"
+( . "$HOOKS/lib/secret-patterns.sh"; printf 'Anthropic keys start with sk-ant- and OpenAI project keys with sk-proj-.' | nonna_scan_secrets ) >/dev/null; check "a short sk-ant- mention in prose is not a key" 1 "$?"
+( . "$HOOKS/lib/secret-patterns.sh"; printf 'e.g. sk-ant-api03-abc123 or sk-proj-abc123' | nonna_scan_secrets ) >/dev/null; check "a short sample after a key prefix is not a key" 1 "$?"
+( . "$HOOKS/lib/secret-patterns.sh"; printf 'ANTHROPIC_API_KEY=sk-ant-api03-%s' 'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX' | nonna_scan_secrets ) >/dev/null; check "a placeholder Anthropic key (XXXX) is exempt" 1 "$?"
+# A hyphenated word that merely ends in "sk" is not a key: the prefixed patterns start at a token.
+( . "$HOOKS/lib/secret-patterns.sh"; printf 'see task-admin-permissions-management-console and task-ant-colony-optimization-implementation' | nonna_scan_secrets ) >/dev/null; check "a kebab-case word that ends in sk is not a key" 1 "$?"
+# A kebab-case name that starts a token is not a key either: the prefixed patterns want a 40-character tail.
+( . "$HOOKS/lib/secret-patterns.sh"; printf 'class="sk-admin-panel-header-container"' | nonna_scan_secrets ) >/dev/null; check "a kebab-case class name after a key prefix is not a key" 1 "$?"
+# A key given as a shell or compose default (${VAR:-key}, ${VAR-key}) is still a key: :- and {NAME- start a
+# token, and the match holds no ${ for the placeholder rule to take for a variable reference.
+( . "$HOOKS/lib/secret-patterns.sh"; printf 'export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-%s}"' "$FAKE_ANT" | nonna_scan_secrets ) >/dev/null; check "detects an Anthropic key given as a shell default (:-)" 0 "$?"
+( . "$HOOKS/lib/secret-patterns.sh"; printf 'OPENAI_API_KEY: ${OPENAI_API_KEY:-%s}' "$FAKE_OAI" | nonna_scan_secrets ) >/dev/null; check "detects an OpenAI key given as a compose default (:-)" 0 "$?"
+( . "$HOOKS/lib/secret-patterns.sh"; printf 'K="${K-%s}"' "$FAKE_ANT" | nonna_scan_secrets ) >/dev/null; check "detects a key given as a default without the colon (-)" 0 "$?"
+( . "$HOOKS/lib/secret-patterns.sh"; printf 'export ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY}"' | nonna_scan_secrets ) >/dev/null; check "a reference to the variable alone is not a key" 1 "$?"
+# A key inside a compiled or length-prefixed file sits right after its length byte, and a 108-character
+# key's is "l": an Anthropic key needs no token start (its shape is specific enough alone).
+( . "$HOOKS/lib/secret-patterns.sh"; printf 'zl%s' "$FAKE_ANT" | nonna_scan_secrets ) >/dev/null; check "detects an Anthropic key glued to a length byte (.pyc, .class, protobuf)" 0 "$?"
+# scan: the scanner's verdict on what it reads (0: a key), in a subshell so what it defines stays there.
+scan() { ( . "$HOOKS/lib/secret-patterns.sh"; nonna_scan_secrets ) >/dev/null; }
+# OpenAI's prefixed keys keep their token start, so it counts every way a shell or a URL can put one
+# there, a shell's special parameters included.
+printf '${1-%s}' "$FAKE_OAI" | scan; check "detects an OpenAI key in: \${1-key}" 0 "$?"
+printf '${a[0]-%s}' "$FAKE_OAI" | scan; check "detects an OpenAI key in: \${a[0]-key}" 0 "$?"
+printf '${@-%s}' "$FAKE_OAI" | scan; check "detects an OpenAI key in: \${@-key}" 0 "$?"
+printf '${?-%s}' "$FAKE_OAI" | scan; check "detects an OpenAI key in: \${?-key}" 0 "$?"
+printf '${!-%s}' "$FAKE_OAI" | scan; check "detects an OpenAI key in: \${!-key}" 0 "$?"
+printf '${$-%s}' "$FAKE_OAI" | scan; check "detects an OpenAI key in: \${\$-key}" 0 "$?"
+printf '${#-%s}' "$FAKE_OAI" | scan; check "detects an OpenAI key in: \${#-key}" 0 "$?"
+# An indirect expansion's default too; the key here is shorter than a real one, so only its start counts.
+printf '${!ref-sk-proj-%s}' "${KEY_TAIL:0:60}" | scan; check "detects an OpenAI key in: \${!ref-key}" 0 "$?"
+printf 'u=%%3D%s' "$FAKE_OAI" | scan; check "detects an OpenAI key in: u=%3Dkey" 0 "$?"
+printf 'Authorization: Bearer%%20%s' "$FAKE_OAI" | scan; check "detects an OpenAI key in: Bearer%20key" 0 "$?"
+# The placeholder rule reads the key alone, never the text around it: a sample word in the name before
+# it, or glued after it, does not make a real key a sample.
+printf '${SAMPLE-%s}' "$FAKE_OAI" | scan; check "a sample word in a default's name does not exempt a key: \${SAMPLE-key}" 0 "$?"
+printf '${OPENAI_KEY_DUMMY-%s}' "$FAKE_OAI" | scan; check "a sample word in a default's name does not exempt a key: \${OPENAI_KEY_DUMMY-key}" 0 "$?"
+printf '${k[FAKE]-%s}' "$FAKE_OAI" | scan; check "a sample word in a subscript does not exempt a key: \${k[FAKE]-key}" 0 "$?"
+printf '${k[${x}]-%s}' "$FAKE_OAI" | scan; check "a reference in a subscript does not exempt a key: \${k[\${x}]-key}" 0 "$?"
+printf 'k = "%sEXAMPLE"' "$FAKE_OAI" | scan; check "a sample word glued after an OpenAI key does not exempt it" 0 "$?"
+printf 'k = "%s_EXAMPLE"' "$FAKE_OAI" | scan; check "a sample word glued after an OpenAI key does not exempt it (_EXAMPLE)" 0 "$?"
+printf 'k = "%sEXAMPLE"' "$FAKE_ANT" | scan; check "a sample word glued after an Anthropic key does not exempt it" 0 "$?"
+printf 'k = "ghp_%sEXAMPLE"' 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa' | scan; check "a sample word glued after a GitHub token does not exempt it" 0 "$?"
+# Every key in a match is read: a sample glued in front of a real key does not cover it.
+printf 'k = "sk-proj-%s%s"' 'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX' "$FAKE_OAI" | scan; check "a sample glued in front of a real key does not exempt it" 0 "$?"
+# A sample word at the start of the key's own body still makes it a sample.
+printf 'ANTHROPIC_API_KEY=sk-ant-api03-%s' 'XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX' | scan; check "a 48-character placeholder Anthropic key (XXXX) is exempt" 1 "$?"
+printf 'OPENAI_API_KEY=sk-proj-%s' 'your-project-key-goes-here-and-it-is-this-long' | scan; check "a long placeholder OpenAI key (your-...) is exempt" 1 "$?"
+printf 'OPENAI_API_KEY: ${OPENAI_API_KEY:-sk-proj-%s}' 'your-project-key-goes-here-and-it-is-this-long' | scan; check "a placeholder key given as a default is exempt" 1 "$?"
+# A NUL is a gap to one reading and nothing to the other, and the scan reads both: a key right after a
+# NUL is not glued to what came before it, and UTF-16 text, or a key a NUL cuts in two, is read whole.
+printf 'abc\000%s' "$FAKE_OAI" | scan; check "detects a key right after a NUL byte" 0 "$?"
+printf 'k = "%s\000%s"' "${FAKE_OAI:0:30}" "${FAKE_OAI:30}" | scan; check "detects an OpenAI key a NUL byte cuts in two" 0 "$?"
+printf 'k = "%s\000%s"' "${FAKE_ANT:0:30}" "${FAKE_ANT:30}" | scan; check "detects an Anthropic key a NUL byte cuts in two" 0 "$?"
+utf16le() { printf '\377\376'; iconv -f UTF-8 -t UTF-16LE; }  # what Windows PowerShell 5.1's > writes
+printf 'OPENAI=%s\r\n' "$FAKE_OAI" | utf16le | scan; check "detects an OpenAI key in UTF-16 text" 0 "$?"
+printf 'ANTHROPIC=%s\r\n' "$FAKE_ANT" | utf16le | scan; check "detects an Anthropic key in UTF-16 text" 0 "$?"
+printf 'AWS=%s\r\n' "$FAKE_AWS" | utf16le | scan; check "detects an AWS access key id in UTF-16 text" 0 "$?"
+printf -- '-----BEGIN RSA PRIVATE %s-----\r\n' KEY | utf16le | scan; check "detects a private key block in UTF-16 text" 0 "$?"
+# In UTF-16 text a character beyond ASCII leaves its high byte before the key once the NULs are gone:
+# "0" after a kana (U+30xx), "f" after 是 (U+662F). An OpenAI key as long as a real one (a tail of 80
+# or more; real ones have about 156) is a key wherever it starts, as an Anthropic key is.
+printf 'API\343\202\255\343\203\274\343\201\257%s\r\n' "$FAKE_OAI" | utf16le | scan; check "detects an OpenAI key right after a kana in UTF-16 text" 0 "$?"
+printf '\345\257\206\351\222\245\346\230\257%s\r\n' "$FAKE_OAI" | utf16le | scan; check "detects an OpenAI key right after a CJK character in UTF-16 text" 0 "$?"
+printf 'word\000%s\000%s' "${FAKE_OAI:0:30}" "${FAKE_OAI:30}" | scan; check "detects an OpenAI key glued to a word by one NUL and cut by another" 0 "$?"
+printf 'ApiKey\000%s\000' "$FAKE_OAI" | utf16le | scan; check "detects an OpenAI key after a U+0000 in UTF-16 text (a string list)" 0 "$?"
+# That rule reads only text whose NUL bytes are gone: in any other text a long kebab-case name after a
+# word ending in "sk" (a URL slug, a resource name) is a name, not a key.
+printf 'see https://docs.acme.io/guides/how-to-mask-admin-credentials-in-logs-when-using-the-new-kubernetes-operator-for-postgres-clusters' | scan; check "a long kebab-case slug after a word ending in sk is not a key" 1 "$?"
+printf 'resource "aws_iam_role" "task-admin-role-for-the-billing-reconciliation-pipeline-in-the-eu-west-1-production-account-v2"' | scan; check "a long kebab-case resource name after a word ending in sk is not a key" 1 "$?"
+# ...and a NUL on one line does not make it read the others: the lines with no NUL read the same both ways.
+printf 'x\000y\nsee https://docs.acme.io/guides/how-to-mask-admin-credentials-in-logs-when-using-the-new-kubernetes-operator-for-postgres-clusters\n' | scan; check "a NUL on another line does not make a long slug a key" 1 "$?"
+# A string escape before a key is a gap too, as \n and \u0000 are: a byte literal, a C or shell string.
+printf 'PAYLOAD = b"%s%s"' '\x0a\xa4\x01' "$FAKE_OAI" | scan; check "detects an OpenAI key after a \\x01 escape" 0 "$?"
+printf 's = "%s%s"' '\0' "$FAKE_OAI" | scan; check "detects an OpenAI key after a \\0 escape" 0 "$?"
+printf 's = "%s%s"' '\000' "$FAKE_OAI" | scan; check "detects an OpenAI key after a \\000 escape" 0 "$?"
+printf 's = "%s%s"' '\a' "$FAKE_OAI" | scan; check "detects an OpenAI key after a \\a escape" 0 "$?"
+printf 's = "%s%s"' '\e' "$FAKE_OAI" | scan; check "detects an OpenAI key after a \\e escape" 0 "$?"
+printf 's = "%s%s"' '\v' "$FAKE_OAI" | scan; check "detects an OpenAI key after a \\v escape" 0 "$?"
+# Should picking those lines fail, the whole text is read: a tool gone missing reads more, never less.
+BADSEL="$(mktemp -d)"; REALGREP="$(command -v grep)"
+cat > "$BADSEL/grep" <<STUB
+#!/bin/sh
+ctrl_a="\$(printf '\\001')"
+for a; do [ "\$a" = "\$ctrl_a" ] && exit 2; done
+exec "$REALGREP" "\$@"
+STUB
+chmod +x "$BADSEL/grep"
+printf 'k = "%s\000%s"' "${FAKE_ANT:0:30}" "${FAKE_ANT:30}" | PATH="$BADSEL:$PATH" scan; check "a failed pick of the NUL lines reads the whole text" 0 "$?"
+rm -rf "$BADSEL"
+# A key pattern with no literal prefix cannot be walked: it counts as a key at once, never loops.
+timeout 10 bash -c '. "$1"; _nonna_real_key ab "[0-9]{2}"' _ "$HOOKS/lib/secret-patterns.sh"; check "a key pattern with no literal prefix counts as a key, and ends" 0 "$?"
+# Every place a key's prefix starts is read, overlapping ones too: a sample in front of a real key does
+# not cover it when their prefixes share letters (xoxoxb-).
+printf 'k = "xoxb-XXXXXXXXXXXXxo%s%s"' 'xox' 'b-1234567890-abcdefghij' | scan; check "a sample whose prefix overlaps a real key's does not cover it" 0 "$?"
+# Every class is found through the one pass that skips text holding none of what a pattern must contain.
+printf 'SLACK = "xox%s"' 'b-1234567890-abcdefghij' | scan; check "detects a Slack token" 0 "$?"
+printf 'k = "AIza%s"' "${KEY_TAIL:0:35}" | scan; check "detects a Google API key" 0 "$?"
+printf -- '-----BEGIN RSA PRIVATE %s-----\n' KEY | scan; check "detects a private key block" 0 "$?"
+printf 'api-key: "%s"' "${KEY_TAIL:0:20}" | scan; check "detects a hardcoded api-key" 0 "$?"
+printf 'client_secret = "%s"' "${KEY_TAIL:0:20}" | scan; check "detects a hardcoded secret" 0 "$?"
+printf "auth_token = '%s'" "${KEY_TAIL:0:20}" | scan; check "detects a hardcoded token in single quotes" 0 "$?"
+printf 'db_passwd = "%s"' "${KEY_TAIL:0:20}" | scan; check "detects a hardcoded passwd" 0 "$?"
+# ...and only grep's own "none" skips them: a first pass that fails reads every pattern.
+BADPRE="$(mktemp -d)"; REALGREP="$(command -v grep)"
+printf '#!/bin/sh\ncase "$*" in *akia*) exit 2 ;; esac\nexec "%s" "$@"\n' "$REALGREP" > "$BADPRE/grep"; chmod +x "$BADPRE/grep"
+( . "$HOOKS/lib/secret-patterns.sh"; printf 'k = "%s"' "$FAKE_ANT" | PATH="$BADPRE:$PATH" nonna_scan_secrets ) >/dev/null
+check "a first pass that fails does not hide a key" 0 "$?"
+rm -rf "$BADPRE"
+# The scan starts a bounded number of processes, however many sample keys the text holds: one per
+# match let 12,000 sample ids outlast the write guard's timeout, and a hook that times out does not
+# block. Counted by a grep that counts itself.
+CNTG="$(mktemp -d)"
+printf '#!/bin/sh\necho x >> "%s/n"\nexec "%s" "$@"\n' "$CNTG" "$REALGREP" > "$CNTG/grep"; chmod +x "$CNTG/grep"
+( . "$HOOKS/lib/secret-patterns.sh"; i=0; while [ "$i" -lt 1000 ]; do printf 'k%s = AKIAIOSFODNN7EXAMPLE\n' "$i"; i=$((i + 1)); done | PATH="$CNTG:$PATH" nonna_scan_secrets ) >/dev/null
+check "1000 sample key ids are read without one process each" 0 "$(( $(wc -l < "$CNTG/n") > 50 ))"
+rm -rf "$CNTG"
+# The sample-word test reads bytes, as the patterns do, whatever the user's locale: a Latin-1 byte in a
+# <placeholder> leaves it a placeholder under a UTF-8 locale too.
+u8="$(locale -a 2>/dev/null | grep -i -m1 -E 'utf-?8$' || true)"
+if [ -n "$u8" ]; then
+  printf 'password = "<mot de passe sp\351cial ici>"' | LC_ALL="$u8" scan; check "a Latin-1 byte in a <placeholder> leaves it one under a UTF-8 locale" 1 "$?"
+else
+  echo "  (skip: no UTF-8 locale here, so the Latin-1 placeholder test cannot run)"
+fi
+# ...and in one pass: a long quoted value full of "<" is read in bounded time (a regex that tries <[^>]+>
+# from every "<" took minutes on a few hundred KB, past a hook's timeout, and a hook that times out does
+# not block).
+big="$(head -c 60000 /dev/zero | LC_ALL=C tr '\0' '<')"
+start=$SECONDS; printf 'token = "%s fake"' "$big" | scan; rc=$?
+check "a long quoted value full of < is read in bounded time" 1 "$(( SECONDS - start < 4 ))"
+check "...and read as the sample it is" 1 "$rc"
+# A value over 512 characters is read in that one pass, and what it says holds: a long secret is still a
+# secret, and a long sample still a sample.
+long="$KEY_TAIL$KEY_TAIL$KEY_TAIL$KEY_TAIL$KEY_TAIL$KEY_TAIL$KEY_TAIL"
+printf 'token = "%s"' "${long:0:600}" | scan; check "a 600-character quoted secret is a secret" 0 "$?"
+printf 'token = "example%s"' "${long:0:600}" | scan; check "a 600-character quoted value with a sample word is a sample" 1 "$?"
+printf 'token = "<%s>"' "${long:0:600}" | scan; check "a 600-character <placeholder> is a sample" 1 "$?"
+# A subscript's own length or nesting does not hide the key after it: its closing "]-" starts a token.
+printf '${m[%s]-%s}' "$(printf 'k%.0s' 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 56 57 58 59 60 61 62 63 64 65 66 67 68 69 70)" "$FAKE_OAI" | scan; check "detects an OpenAI key after a 70-character subscript" 0 "$?"
+printf '${a[${b[0]}]-%s}' "$FAKE_OAI" | scan; check "detects an OpenAI key after a nested subscript" 0 "$?"
+# The same for a key after many subscripts: ${a[0]-key} starts a token, and a subscript that never
+# closes must not make grep read to the end of the line from every one of them.
+subs='{a['; for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do subs="$subs$subs"; done # 98 KB
+start=$SECONDS; printf '%s x=%s' "$subs" "$FAKE_OAI" | scan; rc=$?
+check "a key after 98 KB of unclosed subscripts is read in bounded time" 1 "$(( SECONDS - start < 4 ))"
+check "...and found" 0 "$rc"
+# macOS's grep reads its input in the user's locale and gives up on bytes that are not text there; a scan
+# that gave up would pass the key. The patterns are ASCII, so the scan reads bytes (LC_ALL=C).
+BSDGREP="$(mktemp -d)"; REALGREP="$(command -v grep)"
+cat > "$BSDGREP/grep" <<STUB
+#!/bin/sh
+t="\$(mktemp)"; cat > "\$t"
+if [ "\${LC_ALL:-}" != C ] && ! python3 -c 'import sys; open(sys.argv[1], "rb").read().decode("utf-8")' "\$t" 2>/dev/null; then
+  echo "grep: (standard input): Illegal byte sequence" >&2; rm -f "\$t"; exit 2
+fi
+"$REALGREP" "\$@" < "\$t"; rc=\$?; rm -f "\$t"; exit \$rc
+STUB
+chmod +x "$BSDGREP/grep"
+( . "$HOOKS/lib/secret-patterns.sh"; printf 'k = "%s" \377\n' "$FAKE_AWS" | PATH="$BSDGREP:$PATH" nonna_scan_secrets ) >/dev/null
+check "a byte that is not UTF-8 does not hide a key where grep reads the locale (macOS)" 0 "$?"
+rm -rf "$BSDGREP"
+# Property: for any tail over the base64url alphabet, a vendor-prefixed key is found exactly when its
+# tail has 40 or more characters (real ones have about 95 or more). The tails come from a seeded generator, so a failure replays. (A tail
+# that spells a placeholder word is exempt by design; this seed produces none.)
+res="$( . "$HOOKS/lib/secret-patterns.sh"
+  alpha='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-'; seed=20260929; n=0; bad=0
+  for p in sk-ant-api03- sk-ant-admin01- sk-ant-oat01- sk-ant-ort01- sk-proj- sk-svcacct- sk-admin-; do
+    for len in 0 7 19 20 21 39 40 41 48 95 160; do
+      t=''
+      for ((i = 0; i < len; i++)); do
+        seed=$(( (seed * 1103515245 + 12345) & 0x7fffffff )); t="$t${alpha:$(( (seed >> 16) % 64 )):1}"
+      done
+      want=1; [ "$len" -lt 40 ] || want=0
+      printf 'k = "%s%s"' "$p" "$t" | nonna_scan_secrets >/dev/null; got=$?
+      n=$((n + 1)); [ "$got" = "$want" ] || bad=$((bad + 1))
+    done
+  done
+  echo "$n cases, $bad wrong" )"
+check "property: a vendor-prefixed key is found iff its tail has 40+ characters" "77 cases, 0 wrong" "$res"
+# Property: for a key over any tail, a NUL anywhere in it, UTF-16 (a string list's U+0000 before it too),
+# and a sample word before it or glued after it never hide it, and a sample word at the start of its tail
+# always makes it a sample. The keys,
+# words and cut points come from a seeded generator, so a failure replays. (Bash 3.2 reads no comment
+# inside a command substitution and ends one at the bracket closing a case pattern, so each pattern
+# below opens with a bracket too, and no comment goes inside.)
+res="$( . "$HOOKS/lib/secret-patterns.sh"
+  alpha='ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-'; seed=20260930; n=0; bad=0
+  words=(XXXX EXAMPLE YOUR_ CHANGEME DUMMY REDACTED PLACEHOLDER FAKE SAMPLE)
+  draw() { seed=$(( (seed * 1103515245 + 12345) & 0x7fffffff )); r=$(( seed >> 16 )); }
+  for p in sk-ant-api03- sk-ant-admin01- sk-ant-oat01- sk-ant-ort01- sk-proj- sk-svcacct- sk-admin-; do
+    for round in 1 2; do
+      t=''; for ((i = 0; i < 95; i++)); do draw; t="$t${alpha:$(( r % 64 )):1}"; done
+      k="$p$t"; draw; w="${words[$(( r % 9 ))]}"; draw; c=$(( 1 + r % (${#k} - 1) ))
+      for form in nul utf16 strlist before after start; do
+        case "$form" in
+          (nul) printf 'k = "%s\000%s"' "${k:0:$c}" "${k:$c}" | nonna_scan_secrets >/dev/null; got=$?; want=0 ;;
+          (utf16) printf 'k = "%s"\r\n' "$k" | utf16le | nonna_scan_secrets >/dev/null; got=$?; want=0 ;;
+          (strlist) printf 'ApiKey\000%s\000' "$k" | utf16le | nonna_scan_secrets >/dev/null; got=$?; want=0 ;;
+          (before) printf 'K="${%s-%s}"' "$w" "$k" | nonna_scan_secrets >/dev/null; got=$?; want=0 ;;
+          (after) printf 'k = "%s%s"' "$k" "$w" | nonna_scan_secrets >/dev/null; got=$?; want=0 ;;
+          (start) printf 'k = "%s%s%s"' "$p" "$w" "${t:${#w}}" | nonna_scan_secrets >/dev/null; got=$?; want=1 ;;
+        esac
+        n=$((n + 1)); [ "$got" = "$want" ] || { bad=$((bad + 1)); echo "wrong: $form $p $w round $round" >&2; }
+      done
+    done
+  done
+  echo "$n cases, $bad wrong" )"
+check "property: a NUL, UTF-16 or a sample word around a key never hides it; one at its start makes it a sample" "84 cases, 0 wrong" "$res"
 
 echo "== secret-scan.sh (PreToolUse write gate) =="
 SS="$HOOKS/secret-scan.sh"
@@ -65,6 +315,14 @@ printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"config.py","content
 printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"config.py","content":"x = 1"}}' | "$SS"; check "allows clean Write" 0 "$?"
 printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"tests/fixtures/keys.py","content":"TOKEN = \"ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\""}}' | "$SS"; check "allows secret under a test/fixture path" 0 "$?"
 printf '%s' '{"tool_name":"Edit","tool_input":{"file_path":"app.js","old_string":"a","new_string":"const k = \"'"$FAKE_AWS"'\""}}' | "$SS"; check "blocks secret in Edit new_string" 2 "$?"
+out="$(printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"config.py","content":"KEY = \"'"$FAKE_ANT"'\""}}' | "$SS" 2>&1)"; check "blocks an Anthropic key in Write content" 2 "$?"
+contains "the block names the Anthropic class, with its article" "looks like an Anthropic API key" "$out"
+printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"config.py","content":"KEY = \"'"$FAKE_OAI"'\""}}' | "$SS" 2>/dev/null; check "blocks an OpenAI sk-proj- key in Write content" 2 "$?"
+# jq writes \u0000 as a NUL byte, which the shell would drop, gluing the key to the text before it.
+printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"config.py","content":"x\u0000'"$FAKE_OAI"'"}}' | "$SS" 2>/dev/null; check "blocks a key right after a NUL byte in Write content" 2 "$?"
+printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"config.py","content":"k = \"'"${FAKE_ANT:0:30}"'\u0000'"${FAKE_ANT:30}"'\""}}' | "$SS" 2>/dev/null; check "blocks a key a NUL byte cuts in two in Write content" 2 "$?"
+printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"tests/fixtures/keys.py","content":"KEY = \"'"$FAKE_ANT"'\""}}' | "$SS"; check "allows an Anthropic key under a test/fixture path" 0 "$?"
+printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"docs/keys.md","content":"Anthropic keys start with sk-ant- and OpenAI project keys with sk-proj-."}}' | "$SS"; check "allows a short sk-ant- mention in prose" 0 "$?"
 printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"a.py"}}' | "$SS"; check "no content -> allow (fail safe)" 0 "$?"
 printf '%s' '{"tool_name":"Bash","tool_input":{"command":"cat .env"}}' | "$SS"; check "blocks Bash read of .env" 2 "$?"
 printf '%s' '{"tool_name":"Bash","tool_input":{"command":"head -5 secrets/creds.pem"}}' | "$SS"; check "blocks Bash read of a .pem" 2 "$?"
@@ -345,9 +603,9 @@ check "blocks a force push behind --shallow-file" 2 "$(gb 'git --shallow-file x 
 check "blocks a force push through a glob that names git" 2 "$(gb '/usr/bin/gi[t] push --force origin feature/x')"
 check "blocks a push to main through a ? glob" 2 "$(gb '/usr/bin/g?t push origin main')"
 check "blocks a force push through a brace list" 2 "$(gb '{/usr/bin/git,push} --force origin feature/x')"
-check "blocks a force push through a quoted name in a brace list" 2 "$(gb "{'/usr/bin/git',push} --force origin feature/x")"
+c="{'/usr/bin/git',push} --force origin feature/x"; check "blocks a force push through a quoted name in a brace list" 2 "$(gb "$c")"
 check "blocks a force push through a letter range" 2 "$(gb 'gi{t..t} push --force origin feature/x')"
-check "blocks a brace list too large to read" 2 "$(gb "git push {x,--force}$(printf '{,}%.0s' $(seq 16)) origin feature/x")"
+c="git push {x,--force}$(printf '{,}%.0s' $(seq 16)) origin feature/x"; check "blocks a brace list too large to read" 2 "$(gb "$c")"
 check "blocks brace lists nested deeper than it reads" 2 "$(gb "echo $(printf '{a,%.0s' $(seq 30))b$(printf '}%.0s' $(seq 30))")"
 check "blocks a word of more brace lists than it reads" 2 "$(gb "echo x$(printf '{a,b}%.0s' $(seq 100))")"
 check "allows a numeric range and an ordinary brace list" 0 "$(gb 'for i in {1..5000}; do cp a.{js,ts} /tmp/; done')"
@@ -361,8 +619,8 @@ check "blocks a git hook copied over through a glob" 2 "$(gb 'cp x .g?t/hooks/pr
 check "blocks .git/config edited through a glob" 2 "$(gb 'sed -i s/a/b/ .git/con?ig')"
 check "blocks her config key through a brace list" 2 "$(gb 'git config {nonna.mode,x} off')"
 check "blocks a force flag spelled by a numeric range" 2 "$(gb 'git push -{4..4}f origin feature/x')"
-check "blocks a brace list in a nested sh -c" 2 "$(gb "sh -c '{git,push} --force origin feature/x'")"
-check "blocks a brace list whose value holds a quoted space" 2 "$(gb "{/usr/bin/git,-c,x.y=a' 'b,push,--force,origin,feature/x}")"
+c="sh -c '{git,push} --force origin feature/x'"; check "blocks a brace list in a nested sh -c" 2 "$(gb "$c")"
+c="{/usr/bin/git,-c,x.y=a' 'b,push,--force,origin,feature/x}"; check "blocks a brace list whose value holds a quoted space" 2 "$(gb "$c")"
 check "blocks a force push by git's own push binary" 2 "$(gb '/usr/lib/git-core/git-push --force origin feature/x')"
 check "blocks a skipped hook by git's own commit binary" 2 "$(gb '/usr/lib/git-core/git-commit --no-verify -m x')"
 check "blocks her mode set through a path to env" 2 "$(gb "/usr/bin/env NONNA_MODE=off bash -c 'git push origin feature/x'")"
@@ -382,7 +640,7 @@ check "blocks a push refspec in the config" 2 "$(gb 'git config remote.origin.pu
 check "allows a push of the current branch and its tags" 0 "$(gb 'git push -u origin HEAD && git push --tags origin && git config --get push.default')"
 check "allows globs and brace lists that spell nothing of hers" 0 "$(gb 'ls src/*.py /usr/bin/gi* && git add src/{a,b}.py docs/*.md && mkdir -p out/{x,y}/{1..3} && git log --oneline -- "*.py"')"
 check "allows find -exec {} and an awk program" 0 "$(gb "find . -name '*.py' -exec grep -l x {} + && awk '{print \$1, \$2}' f")"
-check "allows JSON in a quoted argument" 0 "$(gb "curl -d '{\"a\":1,\"b\":[{\"c\":2,\"d\":3}]}' http://localhost:8000/x")"
+c="curl -d '{\"a\":1,\"b\":[{\"c\":2,\"d\":3}]}' http://localhost:8000/x"; check "allows JSON in a quoted argument" 0 "$(gb "$c")"
 check "allows a list of dicts in quoted code" 0 "$(gb "python3 -c 'print([{\"a\": 1, \"b\": 2}, {\"a\": 3, \"b\": 4}] * 3)'")"
 # A git command inside a value is one git or the shell runs later: an editor, a rebase --exec.
 check "blocks a hooks path set by the commit editor" 2 "$(gb 'GIT_EDITOR="git config core.hooksPath /dev/null #" git commit')"
@@ -500,7 +758,7 @@ check "blocks handing it to a shell through xargs" 2 "$(gb "ls $NSD/*.sh | xargs
 check "blocks it inside bash -c" 2 "$(gb "bash -c 'bash $NSD/nonna.sh off'")"
 check "blocks her directory spelled as a glob" 2 "$(gb "bash .claude/skills/n*/scripts/n*.sh off")"
 check "blocks her directory with every part a glob" 2 "$(gb "bash .claude/*/*/*/unin*.sh")"
-check "blocks her directory spelled as a brace list" 2 "$(gb "bash .claude/skills/{nonna,x}/scripts/setup.sh")"
+c="bash .claude/skills/{nonna,x}/scripts/setup.sh"; check "blocks her directory spelled as a brace list" 2 "$(gb "$c")"
 check "allows reading her scripts" 0 "$(gb "cat $NSD/nonna.sh")"
 check "allows linting them" 0 "$(gb "shellcheck -x $NSD/*.sh")"
 check "allows staging them" 0 "$(gb "git add $NSD/nonna.sh")"
@@ -627,6 +885,12 @@ echo 'KEY = "'"$FAKE_AWS"'"' > "$T2/café.py"; echo t >> "$T2/docs/STATUS.md"
 ( cd "$T2" && "$RS" ) 2>/dev/null; check "pre-push: a non-ASCII file name does not hide a secret" 1 "$?"
 ( cd "$T2" && GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=color.ui GIT_CONFIG_VALUE_0=always GIT_CONFIG_KEY_1=diff.external GIT_CONFIG_VALUE_1=true "$RS" ) 2>/dev/null
 check "pre-push: color.ui=always and diff.external do not hide a secret" 1 "$?"
+# UTF-16 text holds a NUL after every ASCII character: its lines are scanned too.
+"${GIT[@]}" -C "$T2" reset -q --hard HEAD~1
+printf 'OPENAI_API_KEY = "%s"\r\n' "$FAKE_OAI" | utf16le > "$T2/deploy.ps1"; echo u >> "$T2/docs/STATUS.md"
+"${GIT[@]}" -C "$T2" add -A; "${GIT[@]}" -C "$T2" commit -q -m utf16
+out="$(cd "$T2" && "$RS" 2>&1)"; check "pre-push: a key in a UTF-16 file is blocked" 1 "$?"
+contains "pre-push: names the UTF-16 file and its key" "deploy.ps1 introduces what looks like an OpenAI API key" "$out"
 rm -rf "$T2" "$B2"
 # A fresh repo with a pushed base, for the cases below: $1 = the dir, $2 = its bare remote.
 push_fixture() {
@@ -776,8 +1040,16 @@ mkdir -p "$TMP/tests/fixtures" "$TMP/docs"
 echo ok > "$TMP/docs/STATUS.md"
 printf 'KEY = "%s"\n' "AKIA""AB12CD34EF56GH78" > "$TMP/tests/fixtures/sample.py"
 "${GIT[@]}" -C "$TMP" add -A; "${GIT[@]}" -C "$TMP" commit -q -m "realistic secret in a fixture"
-( cd "$TMP" && "$RS" ); check "blocks a realistic secret even under a fixture path" 1 "$?"
+out="$( cd "$TMP" && "$RS" 2>&1 )"; check "blocks a realistic secret even under a fixture path" 1 "$?"
+contains "names the class with its article" "looks like an AWS access key id" "$out"
 "${GIT[@]}" -C "$TMP" reset -q --hard HEAD~1  # the push scans every commit: the realistic key must leave history
+# The Anthropic class rides the same push scan: a realistic key is refused in a fixture too.
+mkdir -p "$TMP/tests/fixtures" "$TMP/docs"; echo ok > "$TMP/docs/STATUS.md"
+printf 'KEY = "%s"\n' "$FAKE_ANT" > "$TMP/tests/fixtures/sample.py"
+"${GIT[@]}" -C "$TMP" add -A; "${GIT[@]}" -C "$TMP" commit -q -m "realistic Anthropic key in a fixture"
+out="$(cd "$TMP" && "$RS" 2>&1)"; check "blocks a realistic Anthropic key even under a fixture path" 1 "$?"
+contains "the push block names the Anthropic class" "Anthropic API key" "$out"
+"${GIT[@]}" -C "$TMP" reset -q --hard HEAD~1
 mkdir -p "$TMP/tests/fixtures" "$TMP/docs"; echo ok > "$TMP/docs/STATUS.md"
 printf 'KEY = "%s"\n' "AKIAIOSFODNN7EXAMPLE" > "$TMP/tests/fixtures/sample.py"
 "${GIT[@]}" -C "$TMP" add -A; "${GIT[@]}" -C "$TMP" commit -q -m "placeholder fixture value"
@@ -808,6 +1080,55 @@ printf 'STRIPE=sk_live_%s\n' '0123456789abcdefABCD' > "$TMP/src/pay.py"; "${GIT[
 out="$("${GIT[@]}" -C "$TMP" commit -q -m key 2>&1)"; check "pre-commit: blocks a staged secret" 1 "$?"
 contains "pre-commit: names the file and the class" "src/pay.py" "$out"
 "${GIT[@]}" -C "$TMP" reset -q; rm -f "$TMP/src/pay.py"
+printf 'AWS = "%s"\n' "$FAKE_AWS" > "$TMP/src/aws.py"; "${GIT[@]}" -C "$TMP" add -A
+out="$("${GIT[@]}" -C "$TMP" commit -q -m aws 2>&1)"
+contains "pre-commit: says 'an' before a class that starts with a vowel" "looks like an AWS access key id" "$out"
+"${GIT[@]}" -C "$TMP" reset -q; rm -f "$TMP/src/aws.py"
+printf 'ANTHROPIC_API_KEY=%s\n' "$FAKE_ANT" > "$TMP/src/ant.py"; "${GIT[@]}" -C "$TMP" add -A
+out="$("${GIT[@]}" -C "$TMP" commit -q -m key 2>&1)"; check "pre-commit: blocks a staged Anthropic key" 1 "$?"
+contains "pre-commit: names the Anthropic class" "Anthropic API key" "$out"
+"${GIT[@]}" -C "$TMP" reset -q; rm -f "$TMP/src/ant.py"
+printf 'OPENAI_API_KEY=%s\n' "$FAKE_OAI" > "$TMP/src/oai.py"; "${GIT[@]}" -C "$TMP" add -A
+"${GIT[@]}" -C "$TMP" commit -q -m key 2>/dev/null; check "pre-commit: blocks a staged OpenAI sk-proj- key" 1 "$?"
+"${GIT[@]}" -C "$TMP" reset -q; rm -f "$TMP/src/oai.py"
+printf 'Anthropic keys start with sk-ant- and OpenAI project keys with sk-proj-.\n' > "$TMP/src/notes.md"; "${GIT[@]}" -C "$TMP" add -A
+"${GIT[@]}" -C "$TMP" commit -q -m prose 2>/dev/null; check "pre-commit: a short sk-ant- mention in prose is allowed" 0 "$?"
+printf 'PNG\000\000binary\000data\n' > "$TMP/src/logo.png"; "${GIT[@]}" -C "$TMP" add -A
+out="$("${GIT[@]}" -C "$TMP" commit -q -m logo 2>&1)"; check "pre-commit: allows a staged binary file" 0 "$?"
+! printf '%s' "$out" | grep -q 'null byte'; check "pre-commit: a binary file draws no shell warning" 0 "$?"
+printf 'PNG\000%s\000data\n' "$FAKE_OAI" > "$TMP/src/glued.bin"; "${GIT[@]}" -C "$TMP" add -A
+"${GIT[@]}" -C "$TMP" commit -q -m glued 2>/dev/null; check "pre-commit: a key between NUL bytes in a binary file is blocked" 1 "$?"
+"${GIT[@]}" -C "$TMP" reset -q; rm -f "$TMP/src/glued.bin"
+# UTF-16 text (what Windows PowerShell 5.1's > writes) holds a NUL after every ASCII character, and a
+# key a NUL cuts in two is still a key: the scan reads each NUL as a gap and as nothing.
+printf 'OPENAI_API_KEY = "%s"\r\n' "$FAKE_OAI" | utf16le > "$TMP/src/deploy.ps1"; "${GIT[@]}" -C "$TMP" add -A
+out="$("${GIT[@]}" -C "$TMP" commit -q -m utf16 2>&1)"; check "pre-commit: a key in a UTF-16 file is blocked" 1 "$?"
+contains "pre-commit: names the UTF-16 file and its key" "'src/deploy.ps1' stages what looks like an OpenAI API key" "$out"
+"${GIT[@]}" -C "$TMP" reset -q; rm -f "$TMP/src/deploy.ps1"
+printf 'k = "%s\000%s"\n' "${FAKE_ANT:0:30}" "${FAKE_ANT:30}" > "$TMP/src/cut.py"; "${GIT[@]}" -C "$TMP" add -A
+"${GIT[@]}" -C "$TMP" commit -q -m cut 2>/dev/null; check "pre-commit: a key a NUL byte cuts in two is blocked" 1 "$?"
+"${GIT[@]}" -C "$TMP" reset -q; rm -f "$TMP/src/cut.py"
+# macOS's tr reads its input in the locale: bytes that are not UTF-8 are an error, unless LC_ALL=C.
+BSDTR="$(mktemp -d)"; REALTR="$(command -v tr)"
+cat > "$BSDTR/tr" <<EOF
+#!/bin/sh
+t="\$(mktemp)"; cat > "\$t"
+if [ "\${LC_ALL:-}" != C ] && ! python3 -c 'import sys; open(sys.argv[1], "rb").read().decode("utf-8")' "\$t" 2>/dev/null; then
+  echo "tr: Illegal byte sequence" >&2; rm -f "\$t"; exit 1
+fi
+"$REALTR" "\$@" < "\$t"; rc=\$?; rm -f "\$t"; exit \$rc
+EOF
+chmod +x "$BSDTR/tr"
+printf '\211PNG\r\n\032\n\000\000\000\015IHDR' > "$TMP/src/logo2.png"; "${GIT[@]}" -C "$TMP" add -A
+PATH="$BSDTR:$PATH" "${GIT[@]}" -C "$TMP" commit -q -m logo2 2>/dev/null; check "pre-commit: allows a binary file where tr reads the locale (macOS)" 0 "$?"
+rm -rf "$BSDTR"
+# A staged change that cannot be read is a stop, never an empty diff: fail closed. git reads a
+# staged file from the working tree while the two match, so the working copy goes with the object.
+echo unreadable > "$TMP/src/gone.py"; "${GIT[@]}" -C "$TMP" add -A
+blob="$("${GIT[@]}" -C "$TMP" rev-parse :src/gone.py)"; rm -f "$TMP/.git/objects/${blob:0:2}/${blob:2}" "$TMP/src/gone.py"
+out="$("${GIT[@]}" -C "$TMP" commit -q -m gone 2>&1)"; check "pre-commit: blocks a staged change it cannot read" 1 "$?"
+contains "pre-commit: says it could not read it" "could not read what you staged" "$out"
+"${GIT[@]}" -C "$TMP" reset -q
 mkdir -p "$TMP/tests"; printf 'K = "%s"\n' "$FAKE_AWS" > "$TMP/tests/test_k.py"; "${GIT[@]}" -C "$TMP" add -A
 "${GIT[@]}" -C "$TMP" commit -q -m fixture 2>/dev/null; check "pre-commit: a key-shaped test fixture is blocked too (push parity)" 1 "$?"
 "${GIT[@]}" -C "$TMP" reset -q; rm -rf "$TMP/tests"
@@ -865,27 +1186,98 @@ echo "== install.sh (one command, any host) =="
 # The installer is the first thing a stranger runs; it must never clobber their files, and what it
 # installs must actually work. NONNA_SRC points it at this checkout instead of cloning.
 IN="$ROOT/install.sh"
+shape_of() { # <repo>: what an install left in it: lite (the gates and /nonna, no rules), full (the whole harness), else mixed
+  local r="$1"
+  if [ -f "$r/.claude/hooks/stop-dod.sh" ] && [ "$(ls "$r/.claude/skills" 2>/dev/null)" = nonna ] && [ ! -e "$r/.claude/rules" ] \
+    && [ ! -e "$r/.claude/agents" ] && [ ! -e "$r/CLAUDE.md" ] && [ ! -e "$r/docs/STATUS.md" ]; then echo lite
+  elif [ -f "$r/.claude/rules/00-core.md" ] && [ -d "$r/.claude/agents" ] && [ -f "$r/CLAUDE.md" ] && [ -f "$r/docs/STATUS.md" ]; then echo full
+  else echo mixed; fi
+}
+runs_as() { # <repo>: the mode Nonna runs it in as its git hooks read it, by the hooks the install left there
+  (cd "$1" && bash -c '. .claude/hooks/lib/core.sh; nonna_mode git-hook')
+}
+grants_of() { # <settings file>: the commands it pre-approves, sorted, on one line
+  grep -o '"Bash([^"]*)"' "$1" | sed 's/^"Bash(//; s/:\*)"$//; s/)"$//' | LC_ALL=C sort | paste -sd, -
+}
+stack_grants() { # <marker file>: what install.sh pre-approves in a new repository holding that file
+  local d; d="$(mktemp -d)"; "${GIT[@]}" -C "$d" init -q; : > "$d/$1"
+  ( cd "$d" && NONNA_SRC="$ROOT" bash "$IN" >/dev/null 2>&1 ); grants_of "$d/.claude/settings.local.json"; rm -rf "$d"
+}
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; echo '[project]' > "$TMP/pyproject.toml"
-out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: default install succeeds" 0 "$?"
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --mode full 2>&1)"; check "install: --mode full succeeds" 0 "$?"
 rc=0; [ -f "$TMP/.claude/rules/00-core.md" ] && [ -f "$TMP/CLAUDE.md" ] || rc=1; check "install: brings the harness and CLAUDE.md" 0 "$rc"
 [ -f "$TMP/docs/STATUS.md" ] && ! grep -q 'Current state' /dev/null; check "install: seeds a docs/STATUS.md" 0 "$?"
 grep -q 'nonna' "$TMP/docs/STATUS.md"; check "install: the seeded STATUS is a blank template, not this repo's status" 1 "$?"
 rc=0; [ -x "$TMP/.git/hooks/pre-commit" ] && [ -x "$TMP/.git/hooks/pre-push" ] || rc=1; check "install: wires the git pre-commit and pre-push hooks" 0 "$rc"
 [ -f "$TMP/.claude/settings.local.json" ] && grep -q 'pytest' "$TMP/.claude/settings.local.json"; check "install: picks the python stack pack from pyproject.toml" 0 "$?"
+# A pack lets its commands run without asking, so it holds runners only: python, pip and uv run any
+# code or install anything, and a prompt-injected agent would use them to read .env without a prompt.
+check "install: the python pack pre-approves the gate's exact commands and nothing else" "mypy .,mypy src/,pyright,pytest,pytest --cov=src --cov-branch --cov-report=term-missing --cov-fail-under=80,pytest -q,python -m pytest,python -m pytest -q,python3 -m pytest,python3 -m pytest -q,ruff check .,ruff format --check .,ruff format ." "$(grants_of "$TMP/.claude/settings.local.json")"
+grep -qE 'Bash\((python|pip|uv):' "$TMP/.claude/settings.local.json"; check "install: ...and not python, pip or uv" 1 "$?"
+check "install: the typescript pack pre-approves exact commands, no npx, and nothing else" "eslint .,eslint . --max-warnings 0,npm run test,npm test,npm test --silent,pnpm test,prettier --check .,prettier --write .,tsc --noEmit,vitest run" "$(stack_grants package.json)"
+# A runner's flags can run any program or write any file (go test -exec, cargo --config, npm test
+# --node-options, golangci-lint --output.text.path, pytest --basetemp): a pack pre-approves only the
+# exact commands its gate runs, never a prefix.
+check "install: the go pack pre-approves the gate's exact commands and nothing else" "go test -race -coverprofile=coverage.out -covermode=atomic ./...,go test ./...,go vet ./...,gofmt -l .,gofmt -w .,goimports -l .,goimports -w .,golangci-lint run ./..." "$(stack_grants go.mod)"
+check "install: the rust pack pre-approves the gate's exact commands and nothing else" "cargo check,cargo check --all-targets --all-features,cargo clippy,cargo clippy --all-targets --all-features -- -D warnings,cargo fmt,cargo fmt -- --check,cargo fmt --check,cargo test,cargo test --quiet" "$(stack_grants Cargo.toml)"
+bare=0; for pack in "$ROOT"/stacks/*/settings.local.json; do
+  bare=$((bare + $(grep -o '"Bash([^"]*)"' "$pack" | sed 's/^"Bash(//; s/:\*)"$//; s/)"$//' | grep -cxE 'python3?|pip3?|uv|node|npm|npx|pnpm|yarn|go|cargo|rustup|awk|sh|bash')))
+done
+check "install: no pack, present or future, pre-approves an interpreter, a package manager or a shell" 0 "$bare"
+open=0; for pack in "$ROOT"/stacks/*/settings.local.json; do
+  open=$((open + $(grep -c ':\*)"' "$pack")))
+done
+check "install: no pack, present or future, pre-approves a prefix: exact commands only" 0 "$open"
+npx=0; for pack in "$ROOT"/stacks/*/settings.local.json; do
+  npx=$((npx + $(grep -c '"Bash(npx ' "$pack")))
+done
+check "install: no pack pre-approves an npx command (npx fetches a package it lacks, without asking)" 0 "$npx"
 rc=0; [ ! -e "$TMP/.claude/reviews" ] && [ ! -e "$TMP/AGENTS.md" ] || rc=1; check "install: copies no review verdicts and no other host's files" 0 "$rc"
 contains "install: says what it did, in Nonna's voice" "Nonna" "$out"
+contains "install: says what the pack pre-approves" ".claude/settings.local.json (python): pre-approves pytest, pytest -q, python -m pytest, python -m pytest -q, python3 -m pytest, python3 -m pytest -q, pytest --cov=src --cov-branch --cov-report=term-missing --cov-fail-under=80, ruff check ., ruff format ., ruff format --check ., mypy src/, mypy ., pyright" "$out"
+contains "install: says it added the pack to .gitignore" ".gitignore: added .claude/settings.local.json" "$out"
+check "install: the .gitignore line is there once" 1 "$(grep -cxF .claude/settings.local.json "$TMP/.gitignore")"
 "${GIT[@]}" -C "$TMP" add -A; "${GIT[@]}" -C "$TMP" commit -q -m first 2>/dev/null; check "install: the installed pre-commit hook refuses a commit on main" 1 "$?"
 echo 'my own rules' > "$TMP/CLAUDE.md"
-( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" >/dev/null 2>&1 ); check "install: a second run succeeds" 0 "$?"
+out2="$( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --mode full 2>&1 )"; check "install: a second run succeeds" 0 "$?"
+! printf '%s' "$out2" | grep -q 'you already have a'; check "install: a second run knows her own git hooks are hers" 0 "$?"
 grep -q 'my own rules' "$TMP/CLAUDE.md"; check "install: never overwrites an existing file" 0 "$?"
+check "install: a second run leaves the .gitignore line once" 1 "$(grep -cxF .claude/settings.local.json "$TMP/.gitignore")"
+printf '%s' "$out2" | grep -q 'pre-approves'; check "install: a second run, which keeps the pack, grants nothing new" 1 "$?"
+rm -rf "$TMP"
+# The .gitignore line goes on a line of its own, and only once; a settings.local.json that was already
+# here is the user's, so install grants nothing, claims nothing and leaves .gitignore alone.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; echo '[project]' > "$TMP/pyproject.toml"; printf 'build/' > "$TMP/.gitignore"
+( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" >/dev/null 2>&1 )
+check "install: a .gitignore with no final newline gets the line on a line of its own" "build/,.claude/settings.local.json" "$(paste -sd, "$TMP/.gitignore")"
+rm -rf "$TMP"
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; echo '[project]' > "$TMP/pyproject.toml"; printf '# mine\n.claude/settings.local.json\n' > "$TMP/.gitignore"
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"
+check "install: a .gitignore that has the line already keeps it once" 1 "$(grep -cxF .claude/settings.local.json "$TMP/.gitignore")"
+printf '%s' "$out" | grep -qF .gitignore; check "install: ...and says nothing of it" 1 "$?"
+rm -rf "$TMP"
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; echo '[project]' > "$TMP/pyproject.toml"; mkdir "$TMP/.claude"; echo '{"mine":true}' > "$TMP/.claude/settings.local.json"
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"
+rc=0; ! printf '%s' "$out" | grep -q 'pre-approves' && [ ! -e "$TMP/.gitignore" ] && grep -q mine "$TMP/.claude/settings.local.json" || rc=1
+check "install: a settings.local.json of yours is kept, with no grant claimed and no .gitignore written" 0 "$rc"
+rm -rf "$TMP"
+# Where the line cannot be added, the pack is on disk and could be committed: fail, and say which file.
+TMP="$(mktemp -d)"; OUT="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; echo '[project]' > "$TMP/pyproject.toml"; ln -s "$OUT/elsewhere" "$TMP/.gitignore"
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a .gitignore that is a symlink is a failure, not a success" 1 "$?"
+rc=0; [ ! -e "$OUT/elsewhere" ] || rc=1; check "install: ...and is not written through" 0 "$rc"
+contains "install: ...and says to add the line yourself" "add .claude/settings.local.json to it yourself" "$out"
+rm -rf "$TMP" "$OUT"
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; echo '[project]' > "$TMP/pyproject.toml"; mkdir "$TMP/.gitignore"
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a .gitignore it cannot write is a failure, not a success" 1 "$?"
+contains "install: ...and says so" ".gitignore: could not write it" "$out"
 rm -rf "$TMP"
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
-( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --host cursor,agents >/dev/null 2>&1 ); check "install: --host cursor,agents succeeds" 0 "$?"
+( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --mode full --host cursor,agents >/dev/null 2>&1 ); check "install: --host cursor,agents succeeds" 0 "$?"
 rc=0; [ -f "$TMP/.cursor/rules/nonna.mdc" ] && [ -f "$TMP/AGENTS.md" ] && [ ! -e "$TMP/CLAUDE.md" ] || rc=1; check "install: writes only the chosen hosts' files" 0 "$rc"
 rc=0; [ -f "$TMP/.claude/rules/testing.md" ] && [ -x "$TMP/.git/hooks/pre-commit" ] || rc=1; check "install: every host gets the full rules and the git hooks" 0 "$rc"
 rm -rf "$TMP"
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
-( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --host all >/dev/null 2>&1 ); check "install: --host all succeeds" 0 "$?"
+( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --mode full --host all >/dev/null 2>&1 ); check "install: --host all succeeds" 0 "$?"
 n=0; for f in CLAUDE.md AGENTS.md GEMINI.md .cursor/rules/nonna.mdc .github/copilot-instructions.md .windsurf/rules/nonna.md .clinerules/nonna.md .kiro/steering/nonna.md; do [ -f "$TMP/$f" ] && n=$((n + 1)); done
 check "install: --host all writes all eight host files" 8 "$n"
 rm -rf "$TMP"
@@ -909,6 +1301,11 @@ git -C "$TMP" config --get nonna.mode >/dev/null; check "install: leaves nonna.m
 rc=0; [ -x "$TMP/.git/hooks/pre-commit" ] && [ -x "$TMP/.git/hooks/pre-push" ] || rc=1; check "install: lite wires the git hooks" 0 "$rc"
 out="$(CLAUDE_PROJECT_DIR="$TMP" "$TMP/.claude/hooks/session-start.sh")"
 contains "install: a lite copy-in carries the house rules at session start" "Nonna is on (lite)" "$out"
+# Switched to full without the full harness (no rules installed), the house rules still ride along.
+out="$(NONNA_MODE=full CLAUDE_PROJECT_DIR="$TMP" "$TMP/.claude/hooks/session-start.sh")"
+contains "install: a lite copy-in set to full still carries the house rules" "House rules" "$out"
+contains "install: and says how to add the full harness" "install.sh --mode full" "$out"
+case "$out" in *"Nonna is on (lite)"*) rc=1 ;; *) rc=0 ;; esac; check "install: and never says it is lite" 0 "$rc"
 IVER="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$ROOT/.claude/.claude-plugin/plugin.json" | head -n 1)"
 out="$(cd "$TMP" && env -u NONNA_MODE CLAUDE_PROJECT_DIR="$TMP" bash .claude/skills/nonna/scripts/nonna.sh 2>&1)"
 contains "install: /nonna in a lite copy-in shows her version and mode" "Nonna $IVER · lite (git config nonna.defaultMode)" "$out"
@@ -925,21 +1322,156 @@ TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
 ( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --mode spicy >/dev/null 2>&1 ); check "install: an unknown mode is refused" 2 "$?"
 ( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --mode full >/dev/null 2>&1 ); check "install: --mode full records full" full "$(git -C "$TMP" config --get nonna.defaultMode)"
 rm -rf "$TMP"
+# No --mode: a new install is lite (bench D3, row 1), and an install already here keeps its mode, so
+# running install.sh again never downgrades it. The old default left the files and no record, so the
+# files count as much as a record does.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: without --mode, a new install succeeds" 0 "$?"
+check "install: ...and is lite" lite "$(shape_of "$TMP")"
+check "install: ...and records the lite default" lite "$(git -C "$TMP" config --get nonna.defaultMode)"
+rc=0; [ ! -e "$TMP/.gitignore" ] || rc=1; check "install: ...and with no stack pack to keep out of git, writes no .gitignore" 0 "$rc"
+contains "install: ...and says how to get the whole harness" "--mode full brings the whole harness" "$out"
+LITE="$(mktemp -d)"; "${GIT[@]}" -C "$LITE" init -q
+( cd "$LITE" && NONNA_SRC="$ROOT" bash "$IN" --mode lite >/dev/null 2>&1 )
+diff -rq -x .git "$TMP" "$LITE" >/dev/null; check "install: ...and puts in exactly what --mode lite does" 0 "$?"
+rm -rf "$LITE"
+( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --mode full >/dev/null 2>&1 )
+check "install: --mode full over a lite install brings the rest" full "$(shape_of "$TMP")"
+check "install: ...and records full" full "$(git -C "$TMP" config --get nonna.defaultMode)"
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"
+check "install: a full install re-run without --mode stays full" full "$(runs_as "$TMP")"
+contains "install: ...and says it kept it" "kept as this repository has it" "$out"
+git -C "$TMP" config --unset nonna.defaultMode # what the old default left: the files, and no record
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"
+check "install: an old full install (files, no record) re-run without --mode stays full" full "$(runs_as "$TMP")"
+contains "install: ...and says it kept it, too" "kept as this repository has it" "$out"
+( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --host cursor >/dev/null 2>&1 )
+cmp -s "$TMP/.cursor/rules/nonna.mdc" "$ROOT/hosts/.cursor/rules/nonna.mdc"; check "install: a host added to a full install gets the full rules" 0 "$?"
+( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --mode lite >/dev/null 2>&1 )
+check "install: --mode lite over a full install still downgrades it" lite "$(runs_as "$TMP")"
+rm -rf "$TMP/.claude/agents"
+( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" >/dev/null 2>&1 )
+rc=0; [ ! -e "$TMP/.claude/agents" ] || rc=1; check "install: a recorded lite is honoured, though the full files are here" 0 "$rc"
+rm -rf "$TMP"
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
+( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --mode lite >/dev/null 2>&1 ); "${GIT[@]}" -C "$TMP" config nonna.defaultMode full
+( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" >/dev/null 2>&1 )
+check "install: a recorded full is honoured, though the files are lite" full "$(shape_of "$TMP")"
+rm -rf "$TMP"
+# A recorded mode that is neither lite nor full (say Full) is read as full by her hooks, which fail
+# closed on a value nobody meant. Install reads it the same way; it must not turn it into a lite.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; "${GIT[@]}" -C "$TMP" config nonna.defaultMode Full
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"
+check "install: a recorded mode that is neither lite nor full is read as full, as her hooks read it" full "$(git -C "$TMP" config --get nonna.defaultMode)"
+check "install: ...and brings the whole harness that goes with full" full "$(shape_of "$TMP")"
+check "install: ...and her hooks run it as full" full "$(runs_as "$TMP")"
+contains "install: ...and says what it read" "'Full' is neither lite nor full, and her hooks read that as full" "$out"
+rm -rf "$TMP"
+# Rules with no hooks are not a full install (lib/core.sh asks for both): a plugin user who copied them in.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; mkdir -p "$TMP/.claude/rules"; : > "$TMP/.claude/rules/00-core.md"
+( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" >/dev/null 2>&1 )
+check "install: rules alone, without the hooks, are not a full install" lite "$(git -C "$TMP" config --get nonna.defaultMode)"
+rm -rf "$TMP"
+# Whatever it records, a nonna.mode of the user's outranks it.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; "${GIT[@]}" -C "$TMP" config nonna.mode off
+( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" >/dev/null 2>&1 )
+check "install: a nonna.mode of yours outranks the mode it records" off "$(runs_as "$TMP")"
+rm -rf "$TMP"
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
+( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --host agents,cursor >/dev/null 2>&1 )
+cmp -s "$TMP/AGENTS.md" "$ROOT/hosts/lite/AGENTS.md" && cmp -s "$TMP/.cursor/rules/nonna.mdc" "$ROOT/hosts/lite/.cursor/rules/nonna.mdc"
+check "install: without --mode, other hosts get the lite house rules" 0 "$?"
+rm -rf "$TMP"
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; printf '#!/bin/sh\necho mine\n' > "$TMP/.git/hooks/pre-commit"; chmod +x "$TMP/.git/hooks/pre-commit"
-out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a foreign git hook does not fail the install" 0 "$?"
+# A git hook she could not wire is a gate that is off, and on hosts other than Claude Code the git hooks
+# are the only enforcement: the install fails, says which gate and how to chain it, and never says she
+# is in the kitchen. Running it again once the gate is chained succeeds.
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a foreign git hook that does not run hers is a failure, since her gate is not wired" 1 "$?"
 grep -q 'echo mine' "$TMP/.git/hooks/pre-commit"; check "install: never overwrites a foreign git hook" 0 "$?"
-contains "install: warns that the foreign hook needs chaining" "pre-commit" "$out"
+contains "install: warns that the foreign hook needs chaining" "pre-commit: you already have a pre-commit hook" "$out"
+printf '%s' "$out" | grep -q 'in the kitchen'; check "install: ...and does not say she is in the kitchen" 1 "$?"
+printf '#!/bin/sh\necho mine\n.claude/hooks/pre-commit.sh "$@"\n' > "$TMP/.git/hooks/pre-commit"
+( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" >/dev/null 2>&1 ); check "install: once the foreign hook chains hers, running again succeeds" 0 "$?"
+rm -rf "$TMP"
+# A hook manager (core.hooksPath) owns the hooks: nothing is written there, and both gates are reported.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; git -C "$TMP" config core.hooksPath .husky
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a hook manager's directory is a failure, since her git gates are not wired" 1 "$?"
+contains "install: ...and says where to point its pre-commit" "point its pre-commit at .claude/hooks/pre-commit.sh" "$out"
+contains "install: ...and its pre-push" "point its pre-push at .claude/hooks/require-status-sync.sh" "$out"
+printf '%s' "$out" | grep -q 'in the kitchen'; check "install: ...and does not say she is in the kitchen, either" 1 "$?"
+rc=0; [ ! -e "$TMP/.husky" ] && [ ! -e "$TMP/.git/hooks/pre-commit" ] && [ ! -L "$TMP/.git/hooks/pre-commit" ] || rc=1; check "install: ...and writes no hook, in the manager's directory or in .git/hooks" 0 "$rc"
+mkdir "$TMP/.husky"; printf '#!/bin/sh\n.claude/hooks/pre-commit.sh "$@"\n' > "$TMP/.husky/pre-commit"; printf '#!/bin/sh\n.claude/hooks/require-status-sync.sh "$@"\n' > "$TMP/.husky/pre-push"
+( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" >/dev/null 2>&1 ); check "install: once the manager's hooks run hers, running again succeeds" 0 "$?"
+rm -rf "$TMP"
+# Her own relative link is hers only in .git/hooks, where ../../ leads back to this repository. In any
+# other hooks directory the same link leads somewhere else, so it is judged like a hook of the user's.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; git -C "$TMP" config core.hooksPath hk; mkdir "$TMP/hk"
+ln -s ../../.claude/hooks/pre-commit.sh "$TMP/hk/pre-commit"; ln -s ../../.claude/hooks/require-status-sync.sh "$TMP/hk/pre-push"
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a link that only looks like hers, outside .git/hooks, is not hers" 1 "$?"
+contains "install: ...and is reported like any hook of the user's" "pre-commit: you already have a pre-commit hook" "$out"
+rm -rf "$TMP"
+# A linked worktree shares the main checkout's hooks, which a relative link from here cannot reach.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; "${GIT[@]}" -C "$TMP" commit -q --allow-empty -m init --no-verify
+"${GIT[@]}" -C "$TMP" worktree add -q "$TMP/wt" -b feature/wt 2>/dev/null
+out="$(cd "$TMP/wt" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a linked worktree is a failure, since its shared git hooks are not wired" 1 "$?"
+contains "install: ...and says which gate is not wired" "pre-commit: git hooks live in" "$out"
+rc=0; [ ! -e "$TMP/.git/hooks/pre-commit" ] && [ ! -L "$TMP/.git/hooks/pre-commit" ] || rc=1; check "install: ...and links nothing into the shared hooks" 0 "$rc"
+rm -rf "$TMP"
+# Once the main checkout is installed, the hooks it shares with its linked worktrees hold her links,
+# and running install again from a worktree finds them: they are hers, not a hook of the user's.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; "${GIT[@]}" -C "$TMP" commit -q --allow-empty -m init --no-verify
+( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" >/dev/null 2>&1 )
+"${GIT[@]}" -C "$TMP" worktree add -q "$TMP/wt" -b feature/wt 2>/dev/null
+out="$(cd "$TMP/wt" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: running it again in a linked worktree of an installed repository succeeds" 0 "$?"
+printf '%s' "$out" | grep -q 'already have'; check "install: ...and does not read her shared links as a hook of the user's" 1 "$?"
+rm -rf "$TMP"
+# A link her plugin wired, into its data directory, is hers too when a plugin user runs install later.
+# Her scripts do not name their own path, so their text cannot tell. A link that points at nothing is
+# no gate, though: git skips such a hook in silence, so install says so.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
+PLUG="$CLAUDE_CONFIG_DIR/plugins/data/nonna-x/current/hooks"; mkdir -p "$PLUG"; : > "$PLUG/pre-commit.sh"; : > "$PLUG/require-status-sync.sh"
+chmod +x "$PLUG/pre-commit.sh" "$PLUG/require-status-sync.sh"
+ln -s "$PLUG/pre-commit.sh" "$TMP/.git/hooks/pre-commit"; ln -s "$PLUG/require-status-sync.sh" "$TMP/.git/hooks/pre-push"
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a link her plugin wired is hers, so running install succeeds" 0 "$?"
+printf '%s' "$out" | grep -q 'already have'; check "install: ...and is not read as a hook of the user's" 1 "$?"
+chmod -x "$PLUG/pre-commit.sh"  # git skips a hook it cannot run, in silence, as it does a dangling one
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a link of hers to a script git cannot run is a failure" 1 "$?"
+contains "install: ...and says which gate is not running, too" "pre-commit: .git/hooks/pre-commit points at nothing git can run" "$out"
+rm -f "$PLUG/pre-commit.sh" "$PLUG/require-status-sync.sh"
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a link of hers that points at nothing is a failure, since git skips it" 1 "$?"
+contains "install: ...and says which gate is not running" "pre-commit: .git/hooks/pre-commit points at nothing git can run, so this gate is not running" "$out"
+rm -rf "$TMP" "$CLAUDE_CONFIG_DIR/plugins/data/nonna-x"
+# ../../ leads back to a repository root only from a directory named .git/hooks. One that merely ends
+# in .git/hooks (x.git/hooks) is not that, even where the link happens to reach her script.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; mkdir -p "$TMP/x.git/hooks"; git -C "$TMP" config core.hooksPath "$TMP/x.git/hooks"
+ln -s ../../.claude/hooks/pre-commit.sh "$TMP/x.git/hooks/pre-commit"; ln -s ../../.claude/hooks/require-status-sync.sh "$TMP/x.git/hooks/pre-push"
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a link that only looks like hers, in a directory that merely ends in .git/hooks, is not hers" 1 "$?"
+contains "install: ...and is reported like any hook of the user's, too" "pre-commit: you already have a pre-commit hook" "$out"
+rm -rf "$TMP"
+# It tells her links apart with the library from the source it fetched. A core.sh already in the repository
+# is kept, not overwritten, and running it would be running the repository's code inside the installer.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; mkdir -p "$TMP/.claude/hooks/lib"
+printf 'touch "%s/ran"\n' "$TMP" > "$TMP/.claude/hooks/lib/core.sh"
+( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" >/dev/null 2>&1 )
+rc=0; [ ! -e "$TMP/ran" ] || rc=1; check "install: never runs a core.sh that is already in the repository" 0 "$rc"
+rm -rf "$TMP"
+# A link that could not be made is not one that was: a file where the hooks directory should be.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; rm -rf "$TMP/.git/hooks"; : > "$TMP/.git/hooks"
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a git hook it could not link is a failure, not a success" 1 "$?"
+contains "install: ...and says which gate is not running" "pre-commit: could not link .git/hooks/pre-commit, so this gate is not running" "$out"
+printf '%s' "$out" | grep -qF '+ .git/hooks/pre-commit'; check "install: ...and does not claim the link" 1 "$?"
 rm -rf "$TMP"
 TMP="$(mktemp -d)"
 ( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" >/dev/null 2>&1 ); check "install: refuses outside a git repository" 1 "$?"
 ( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --host nosuchhost >/dev/null 2>&1 ); check "install: an unknown host is a usage error" 2 "$?"
 ( cd "$TMP" && NONNA_SRC="$ROOT" timeout 10 bash "$IN" --host >/dev/null 2>&1 ); check "install: --host with no value is a usage error, not a hang" 2 "$?"
 out="$(bash -s -- --help < "$IN" 2>&1)"; contains "install: --help works when piped (curl | bash)" "--host" "$out"
+contains "install: --help names lite as the default" "lite (the default)" "$out"
 rm -rf "$TMP"
 # A .claude/ that already exists (say, only your settings.local.json) is merged into, file by file.
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; mkdir -p "$TMP/.claude/hooks"
 echo '{"mine":true}' > "$TMP/.claude/settings.local.json"; echo 'echo mine' > "$TMP/.claude/hooks/mine.sh"
-( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" >/dev/null 2>&1 ); check "install: merges into an existing .claude/" 0 "$?"
+( cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --mode full >/dev/null 2>&1 ); check "install: merges into an existing .claude/" 0 "$?"
 rc=0; [ -x "$TMP/.claude/hooks/pre-commit.sh" ] && [ -f "$TMP/.claude/rules/00-core.md" ] && [ -f "$TMP/.claude/hooks/lib/secret-patterns.sh" ] || rc=1
 check "install: the merge brings every harness file the hooks need" 0 "$rc"
 grep -q mine "$TMP/.claude/settings.local.json" && [ ! -x "$TMP/.claude/hooks/mine.sh" ]; check "install: your files are untouched, not even chmod-ed" 0 "$?"
@@ -952,7 +1484,7 @@ rm -rf "$TMP"
 # Never write through a symlink, and never claim success with a git hook pointing at nothing.
 TMP="$(mktemp -d)"; OUT="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
 ln -s "$OUT/elsewhere" "$TMP/.claude"; mkdir -p "$TMP/docs"; ln -s "$OUT/status" "$TMP/docs/STATUS.md"
-out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a missing harness is a failure, not a success" 1 "$?"
+out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --mode full 2>&1)"; check "install: a missing harness is a failure, not a success" 1 "$?"
 rc=0; [ ! -e "$OUT/elsewhere" ] && [ ! -e "$OUT/status" ] || rc=1; check "install: never writes through a symlink out of the repo" 0 "$rc"
 rc=0; [ ! -e "$TMP/.git/hooks/pre-commit" ] && [ ! -L "$TMP/.git/hooks/pre-commit" ] || rc=1; check "install: links no git hook to a script that is not there" 0 "$rc"
 contains "install: says the gates are not running" "not running" "$out"
@@ -967,11 +1499,11 @@ seq 1 50 | sed 's/^/line /' > "$TMP/src/app.py"
 "${GIT[@]}" -C "$TMP" add -A; "${GIT[@]}" -C "$TMP" commit -q -m base
 "${GIT[@]}" -C "$TMP" branch -M main
 "${GIT[@]}" -C "$TMP" checkout -q -b fix/tweak
-sed -i '1,3s/line/edited/' "$TMP/src/app.py"
+sed_i '1,3s/line/edited/' "$TMP/src/app.py"
 ( cd "$TMP" && bash "$CT" main ); check "3-line change qualifies" 0 "$?"
 mkdir -p "$TMP/tests"; seq 1 30 > "$TMP/tests/test_app.py"
 ( cd "$TMP" && bash "$CT" main ); check "test lines do not count against the budget" 0 "$?"
-sed -i 's/^line/edited/' "$TMP/src/app.py"
+sed_i 's/^line/edited/' "$TMP/src/app.py"
 ( cd "$TMP" && bash "$CT" main ); check "40+ changed lines is over budget" 1 "$?"
 "${GIT[@]}" -C "$TMP" checkout -q -- src/app.py
 mkdir -p "$TMP/.claude/hooks"; echo 'x' > "$TMP/.claude/hooks/x.sh"
@@ -1013,16 +1545,16 @@ seq 1 50 | sed 's/^/line /' > "$TMP/src/app.py"
 "${GIT[@]}" -C "$TMP" add -A; "${GIT[@]}" -C "$TMP" commit -q -m base
 "${GIT[@]}" -C "$TMP" branch -M main
 "${GIT[@]}" -C "$TMP" checkout -q -b feat/x
-sed -i '1,3s/line/edited/' "$TMP/src/app.py"
+sed_i '1,3s/line/edited/' "$TMP/src/app.py"
 out="$(cd "$TMP" && bash "$RL" main 2>/dev/null)"
 contains "review-lanes: small plain diff takes the light lane" "lane=light" "$out"
 contains "review-lanes: small plain diff needs no security review" "security=no" "$out"
-sed -i 's/^line/edited/' "$TMP/src/app.py"
+sed_i 's/^line/edited/' "$TMP/src/app.py"
 out="$(cd "$TMP" && bash "$RL" main 2>/dev/null)"
 contains "review-lanes: over-budget diff takes the full lane" "lane=full" "$out"
 contains "review-lanes: over-budget plain diff still needs no security review" "security=no" "$out"
 "${GIT[@]}" -C "$TMP" checkout -q -- src/app.py
-sed -i '1s/.*/subprocess.run(cmd, shell=True)/' "$TMP/src/app.py"
+sed_i '1s/.*/subprocess.run(cmd, shell=True)/' "$TMP/src/app.py"
 out="$(cd "$TMP" && bash "$RL" main 2>/dev/null)"
 contains "review-lanes: risky added code triggers security review" "security=yes" "$out"
 "${GIT[@]}" -C "$TMP" checkout -q -- src/app.py
@@ -1049,7 +1581,7 @@ contains "review-lanes: the pre-rename KEEL_CRITICAL_PATHS alone fails closed" "
 ( cd "$TMP" && KEEL_CRITICAL_PATHS='src/rates/*' bash "$SKILLS/fast-lane/scripts/check-trivial.sh" main 2>/dev/null ); check "check-trivial: the pre-rename KEEL_CRITICAL_PATHS alone fails closed" 1 "$?"
 rm -rf "$TMP/src/rates"
 # Paths and content are read from the repo root, whatever the caller's cwd or the file's name.
-sed -i '1s/.*/subprocess.run(cmd, shell=True)/' "$TMP/src/app.py"
+sed_i '1s/.*/subprocess.run(cmd, shell=True)/' "$TMP/src/app.py"
 out="$(cd "$TMP/src" && bash "$RL" main 2>/dev/null)"
 contains "review-lanes: risky code is seen from a subdirectory cwd" "security=yes" "$out"
 "${GIT[@]}" -C "$TMP" checkout -q -- src/app.py
@@ -1062,7 +1594,7 @@ rm -f "$TMP/src/café.py"
 printf 'def view(r):\n    require_auth(r)\n    return 1\n' > "$TMP/src/views.py"
 "${GIT[@]}" -C "$TMP" add -A; "${GIT[@]}" -C "$TMP" commit -q -m "views on main"
 "${GIT[@]}" -C "$TMP" checkout -q feat/x; "${GIT[@]}" -C "$TMP" merge -q main 2>/dev/null
-sed -i '/require_auth/d' "$TMP/src/views.py"
+sed_i '/require_auth/d' "$TMP/src/views.py"
 out="$(cd "$TMP" && bash "$RL" main 2>/dev/null)"
 contains "review-lanes: a removed auth check triggers security review" "security=yes" "$out"
 "${GIT[@]}" -C "$TMP" checkout -q -- src/views.py
@@ -1115,6 +1647,26 @@ M='debt:'
 TMP="$(mktemp -d)"; mkdir -p "$TMP/src" "$TMP/node_modules/x" "$TMP/docs"
 printf 'lock = Lock()  # %s global lock, per-account locks if throughput matters\n' "$M" > "$TMP/src/ok.py"
 ( cd "$TMP" && bash "$CD" ); check "check-debt: marker with a trigger passes" 0 "$?"
+# macOS's grep reads -Z as --decompress, not --null: no NUL after the file name, so every record
+# would read as unparsable. A stand-in grep that drops -Z, as macOS's would, must change nothing.
+BSDZ="$(mktemp -d)"; REALGREP="$(command -v grep)"
+cat > "$BSDZ/grep" <<STUB
+#!/usr/bin/env bash
+a=(); past=""
+for x in "\$@"; do
+  if [ -n "\$past" ]; then a+=("\$x"); continue; fi
+  case "\$x" in
+    --) past=1; a+=("\$x") ;;
+    --*) a+=("\$x") ;;
+    -*Z*) y="\${x//Z/}"; [ "\$y" = - ] || a+=("\$y") ;;
+    *) a+=("\$x") ;;
+  esac
+done
+exec "$REALGREP" "\${a[@]}"
+STUB
+chmod +x "$BSDZ/grep"
+( cd "$TMP" && PATH="$BSDZ:$PATH" bash "$CD" 2>/dev/null ); check "check-debt: a marker with a trigger passes where grep -Z is not --null (macOS)" 0 "$?"
+rm -rf "$BSDZ"
 out="$(cd "$TMP" && bash "$CD" --ledger 2>/dev/null)"; contains "check-debt: ledger counts it" "1 markers, 0 with no trigger." "$out"
 contains "check-debt: ledger names the trigger" "upgrade: per-account locks" "$out"
 printf 'for a in xs:  # %s O(n^2) scan\n' "$M" > "$TMP/src/rot.py"
@@ -1150,6 +1702,16 @@ printf 'w = 4  # %s cache never expires\n' "$M" >> "$TMP/src/new.py"
 "${GIT[@]}" -C "$TMP" add -A; "${GIT[@]}" -C "$TMP" commit -qm rot
 out="$(cd "$TMP" && bash "$CD" --range main...HEAD 2>&1)"; check "check-debt: --range blocks a new no-trigger marker" 1 "$?"
 contains "check-debt: --range names path:line of the new offender" "src/new.py:2" "$out"
+# A reader of the diff that fails is a stop, never an empty diff.
+BADAWK="$(mktemp -d)"; REALAWK="$(command -v awk)"
+cat > "$BADAWK/awk" <<STUB
+#!/bin/sh
+case "\$*" in *'rem > 0'*) cat >/dev/null; exit 2 ;; esac
+exec "$REALAWK" "\$@"
+STUB
+chmod +x "$BADAWK/awk"
+( cd "$TMP" && PATH="$BADAWK:$PATH" bash "$CD" --range main...HEAD >/dev/null 2>&1 ); check "check-debt: --range fails closed when the diff cannot be read" 2 "$?"
+rm -rf "$BADAWK"
 ( cd "$TMP" && bash "$CD" --range nosuchref...HEAD 2>/dev/null ); check "check-debt: unresolvable range fails closed" 2 "$?"
 # An option-shaped range must never reach git: --output=<path> would write the diff over any
 # file, exec bit intact, from a pre-approved gate call (security review, 2026-09-22).
@@ -1212,6 +1774,54 @@ printf 'v = 1  # %s nul byte\n\0\n' "$M" > "$TMP/src/nul.py"
 out="$(cd "$TMP" && bash "$CD" src 2>&1)"; contains "check-debt: a NUL byte does not hide a marker" "src/nul.py:1: no-trigger" "$out"
 printf 'w = 1  # %s bad byte \xff\n' "$M" > "$TMP/src/utf.py"
 out="$(cd "$TMP" && LC_ALL=C.UTF-8 bash "$CD" src 2>&1)"; contains "check-debt: an invalid UTF-8 byte does not hide a marker" "src/utf.py:1: no-trigger" "$out"
+# macOS's sort reads its input in the user's locale and stops at a byte that is not text there; a
+# ledger that lost the row would pass the marker. A sort that fails for any reason is a stop.
+BSDSORT="$(mktemp -d)"; REALSORT="$(command -v sort)"
+cat > "$BSDSORT/sort" <<STUB
+#!/bin/sh
+t="\$(mktemp)"; cat > "\$t"
+if [ "\${LC_ALL:-}" != C ] && ! python3 -c 'import sys; open(sys.argv[1], "rb").read().decode("utf-8")' "\$t" 2>/dev/null; then
+  echo "sort: Illegal byte sequence" >&2; rm -f "\$t"; exit 2
+fi
+"$REALSORT" "\$@" < "\$t"; rc=\$?; rm -f "\$t"; exit \$rc
+STUB
+chmod +x "$BSDSORT/sort"
+out="$(cd "$TMP" && PATH="$BSDSORT:$PATH" LC_ALL=C.UTF-8 bash "$CD" src 2>&1)"
+contains "check-debt: an invalid UTF-8 byte does not hide a marker where sort reads the locale (macOS)" "src/utf.py:1: no-trigger" "$out"
+printf '#!/bin/sh\nexit 2\n' > "$BSDSORT/sort"
+out="$(cd "$TMP" && PATH="$BSDSORT:$PATH" bash "$CD" src 2>&1)"; check "check-debt: a sort that fails is a stop, not a clean ledger" 2 "$?"
+contains "check-debt: ...and says it cannot classify the markers" "cannot classify the markers" "$out"
+rm -rf "$BSDSORT"
+# So is any other tool that reads the markers or counts them.
+BADTOOL="$(mktemp -d)"; REALAWK="$(command -v awk)"
+printf '#!/bin/sh\ncat >/dev/null; exit 1\n' > "$BADTOOL/tr"; chmod +x "$BADTOOL/tr"
+( cd "$TMP" && PATH="$BADTOOL:$PATH" bash "$CD" src >/dev/null 2>&1 ); check "check-debt: a tr that fails is a stop, not a clean ledger" 2 "$?"
+mv "$BADTOOL/tr" "$BADTOOL/sed"
+( cd "$TMP" && PATH="$BADTOOL:$PATH" bash "$CD" src >/dev/null 2>&1 ); check "check-debt: a sed that fails is a stop, not a clean ledger" 2 "$?"
+rm -f "$BADTOOL/sed"
+cat > "$BADTOOL/awk" <<STUB
+#!/bin/sh
+case "\$*" in "-F"*'\$3 == 0') cat >/dev/null; exit 2 ;; esac
+exec "$REALAWK" "\$@"
+STUB
+chmod +x "$BADTOOL/awk"
+( cd "$TMP" && PATH="$BADTOOL:$PATH" bash "$CD" src >/dev/null 2>&1 ); check "check-debt: an awk that fails to count the markers is a stop, not a clean ledger" 2 "$?"
+rm -f "$BADTOOL/awk"; printf '#!/bin/sh\ncat >/dev/null; exit 2\n' > "$BADTOOL/wc"; chmod +x "$BADTOOL/wc"
+( cd "$TMP" && PATH="$BADTOOL:$PATH" bash "$CD" src >/dev/null 2>&1 ); check "check-debt: a wc that fails is a stop, not a clean ledger" 2 "$?"
+# A wc that exits 0 and prints nothing on one call: the count of markers, then the count of those
+# with no trigger. Each is checked on its own, so each check has a test that needs it.
+REALWC="$(command -v wc)"
+cat > "$BADTOOL/wc" <<STUB
+#!/bin/sh
+n=\$(( \$(cat "$BADTOOL/calls" 2>/dev/null || echo 0) + 1 )); echo "\$n" > "$BADTOOL/calls"
+if [ "\$n" = "\$WC_EMPTY_ON" ]; then cat >/dev/null; exit 0; fi
+exec "$REALWC" "\$@"
+STUB
+chmod +x "$BADTOOL/wc"
+( cd "$TMP" && PATH="$BADTOOL:$PATH" WC_EMPTY_ON=1 bash "$CD" src >/dev/null 2>&1 ); check "check-debt: a count of the markers that is not a number is a stop" 2 "$?"
+rm -f "$BADTOOL/calls"
+( cd "$TMP" && PATH="$BADTOOL:$PATH" WC_EMPTY_ON=2 bash "$CD" src >/dev/null 2>&1 ); check "check-debt: a count of those with no trigger that is not a number is a stop" 2 "$?"
+rm -rf "$BADTOOL"
 rm -f "$TMP/src/nul.py" "$TMP/src/utf.py"
 printf 'x = 1  # %s single file\n' "$M" > "$TMP/src/single.py"
 out="$(cd "$TMP" && bash "$CD" src/single.py 2>&1)"; contains "check-debt: a single-file operand keeps its filename" "src/single.py:1: no-trigger" "$out"
@@ -1227,11 +1837,25 @@ echo "== format.sh (PostToolUse, best-effort) =="
 TF="$(mktemp).py"; echo 'x=1' > "$TF"
 printf '{"tool_name":"Write","tool_input":{"file_path":"%s"}}' "$TF" | "$HOOKS/format.sh"; check "exits 0 even if no formatter present" 0 "$?"
 rm -f "$TF"
+# A formatter runs only in a copy-in, which the project installed. Under the plugin it would rewrite
+# whole files the project never formatted, and a formatter's config can run the repository's code.
+FMT="$(mktemp -d)"; TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; echo '# x' > "$TMP/notes.md"
+printf '#!/bin/sh\necho "$*" >> "%s/ran"\n' "$FMT" > "$FMT/prettier"; chmod +x "$FMT/prettier"
+fmt() { # <format.sh> [VAR=value ...]: that hook on $TMP/notes.md, with a prettier that logs its runs
+  local hook="$1"; shift
+  printf '{"tool_name":"Edit","tool_input":{"file_path":"%s/notes.md"}}' "$TMP" \
+    | ( cd "$TMP" && env PATH="$FMT:$PATH" CLAUDE_PROJECT_DIR="$TMP" "$@" "$hook" )
+}
+fmt "$HOOKS/format.sh" CLAUDE_PLUGIN_ROOT="$ROOT/.claude"; check "format: exits 0 under the plugin" 0 "$?"
+if [ -e "$FMT/ran" ]; then rc=0; else rc=1; fi; check "format: the plugin never runs a formatter on the project's files" 1 "$rc"
+copy_in "$TMP"; fmt "$TMP/.claude/hooks/format.sh"
+if [ -e "$FMT/ran" ]; then rc=0; else rc=1; fi; check "format: a copy-in formats the file just edited" 0 "$rc"
+rm -rf "$FMT" "$TMP"
 
 echo "== modes (nonna_mode: off | lite | full) =="
 # One switch per repo, read the same way by Claude Code hooks and by git hooks. Precedence:
 # NONNA_MODE > git config nonna.mode (repo, then global) > the plugin option > the default Nonna
-# recorded (nonna.defaultMode) > the install (copy-in: full, plugin: lite). Nonna never writes
+# recorded (nonna.defaultMode) > what the install carries (full copy-in: full; lite copy-in, plugin: lite). Nonna never writes
 # nonna.mode, so a global off reaches every repo the user has not set themselves. A value nobody
 # meant fails closed to the strictest mode.
 MODE_HOME="$(mktemp -d)"; TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
@@ -1756,6 +2380,17 @@ for b in bash sh env cat grep sed head tr dirname; do
   if [ -n "$p" ]; then ln -s "$p" "$NOJQ/$b" 2>/dev/null || true; fi
 done
 printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"c.py","content":"K = \"'"$FAKE_AWS"'\""}}' | PATH="$NOJQ" "$SS"; check "secret-scan: blocks a secret when jq is absent" 2 "$?"
+# The raw payload writes a newline as backslash-n, so a key that starts a line follows a letter there.
+printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"c.py","content":"x = 1\n'"$FAKE_ANT"'\n"}}' | PATH="$NOJQ" "$SS" 2>/dev/null; check "secret-scan: blocks a key that starts a line when jq is absent" 2 "$?"
+# JSON writes a control character as an escape: in the raw payload \f, \b or \u0000 before a key is a gap.
+printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"c.py","content":"x\f'"$FAKE_OAI"'"}}' | PATH="$NOJQ" "$SS" 2>/dev/null; check "secret-scan: blocks a key after a \\f escape when jq is absent" 2 "$?"
+printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"c.py","content":"x\b'"$FAKE_OAI"'"}}' | PATH="$NOJQ" "$SS" 2>/dev/null; check "secret-scan: blocks a key after a \\b escape when jq is absent" 2 "$?"
+printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"c.py","content":"x\u0000'"$FAKE_OAI"'"}}' | PATH="$NOJQ" "$SS" 2>/dev/null; check "secret-scan: blocks a key after a \\u0000 escape when jq is absent" 2 "$?"
+# ...and a key a \u0000 cuts in two, or text with one after every character (UTF-16 read as JSON): the
+# scan reads each \u0000 as a gap and as nothing, as it reads a NUL byte.
+printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"c.py","content":"x = '"${FAKE_OAI:0:20}"'\u0000'"${FAKE_OAI:20}"'"}}' | PATH="$NOJQ" "$SS" 2>/dev/null; check "secret-scan: blocks a key a \\u0000 escape cuts in two when jq is absent" 2 "$?"
+w16="$(printf '%s' "$FAKE_ANT" | sed 's/./&\\u0000/g')"
+printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"c.py","content":"'"$w16"'"}}' | PATH="$NOJQ" "$SS" 2>/dev/null; check "secret-scan: blocks text with a \\u0000 after every character when jq is absent" 2 "$?"
 rm -rf "$NOJQ"
 # Branch guard tolerates global options and blocks wide pushes.
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; "${GIT[@]}" -C "$TMP" commit -q --allow-empty -m init; "${GIT[@]}" -C "$TMP" branch -M main
@@ -1850,8 +2485,9 @@ contains "stop: names the command it ran" "pytest" "$out"
 out="$(printf '{"stop_hook_active":true}' | CLAUDE_PROJECT_DIR="$TMP" "$SD")"
 printf '%s' "$out" | grep -q '"decision"'; check "stop: a second stop after a red block goes through (no loop)" 1 "$?"
 printf 'def f():\n    return 1\n\n\ndef g():\n    return 3\n' > "$TMP/app.py"
+printf 'from app import f, g\n\ndef test_f():\n    assert f() == 1\n\ndef test_g():\n    assert g() == 3\n' > "$TMP/tests/test_app.py"
 out="$(printf '{"stop_hook_active":false}' | CLAUDE_PROJECT_DIR="$TMP" "$CSD")"
-printf '%s' "$out" | grep -q '"decision"'; check "stop: a green suite with STATUS updated ends freely" 1 "$?"
+printf '%s' "$out" | grep -q '"decision"'; check "stop: a green suite, its test and STATUS updated, ends freely" 1 "$?"
 out="$(printf '{}' | NONNA_TEST_CMD=false CLAUDE_PROJECT_DIR="$TMP" "$SD")"
 contains "stop: NONNA_TEST_CMD overrides detection" "the tests say no" "$out"
 out="$(printf '{}' | NONNA_TEST_CMD='printf "collected 4 items\n\n..F.\nFAILED tests/test_a.py::test_x - assert 1 == 2\nFAILED tests/test_b.py::test_y\n1 failed, 3 passed in 0.01s\n"; false' CLAUDE_PROJECT_DIR="$TMP" "$SD")"
@@ -1888,16 +2524,40 @@ printf 'def f():\n    return 2\n' > "$WT/app.py"
 out="$(printf '{}' | NONNA_TEST_CMD=true CLAUDE_PROJECT_DIR="$WT" "$SD")"
 contains "stop: code changed and no test did: where's the test?" "where's the test?" "$out"
 contains "stop: the no-test block carries its tag" "(stop: code changed, no test changed)" "$out"
-out="$(printf '{"stop_hook_active":true}' | NONNA_TEST_CMD=true CLAUDE_PROJECT_DIR="$WT" "$SD")"
+# What a test run leaves under tests/ (bytecode, caches) is not a new test: only a test source file
+# counts. A repo that does not ignore __pycache__ must not have the question switched off by its suite.
+PC="$(mktemp -d)"; "${GIT[@]}" -C "$PC" init -q; mkdir -p "$PC/tests/__pycache__" "$PC/tests/.pytest_cache"
+printf 'def f():\n    return 1\n' > "$PC/app.py"; printf 'def test_f():\n    pass\n' > "$PC/tests/test_app.py"
+"${GIT[@]}" -C "$PC" add -A >/dev/null; "${GIT[@]}" -C "$PC" commit -qm init --no-verify
+printf 'def f():\n    return 2\n' > "$PC/app.py"
+printf 'bytecode' > "$PC/tests/__pycache__/test_app.cpython-311-pytest-8.3.3.pyc"; printf '{}' > "$PC/tests/.pytest_cache/v"
+out="$(printf '{}' | NONNA_TEST_CMD=true CLAUDE_PROJECT_DIR="$PC" "$SD")"
+contains "stop: bytecode a test run leaves under tests/ is not a new test" "where's the test?" "$out"
+rm -rf "$PC"
+# The question is asked once per change: each check below forgets the last ask, so it decides alone.
+forget() { rm -f "$WT/.git/nonna/notest-"*; }
+forget; out="$(printf '{"stop_hook_active":true}' | NONNA_TEST_CMD=true CLAUDE_PROJECT_DIR="$WT" "$SD")"
 printf '%s' "$out" | grep -q '"decision"'; check "stop: the no-test block lets the second stop through" 1 "$?"
-out="$(printf '{}' | NONNA_TEST_CMD='' CLAUDE_PROJECT_DIR="$WT" "$SD")"
+forget; out="$(printf '{}' | NONNA_TEST_CMD='' CLAUDE_PROJECT_DIR="$WT" "$SD")"
 printf '%s' "$out" | grep -q '"decision"'; check "stop: no test command, no demand for a test" 1 "$?"
 printf 'def test_g():\n    pass\n' > "$WT/tests/test_new.py"
-out="$(printf '{}' | NONNA_TEST_CMD=true CLAUDE_PROJECT_DIR="$WT" "$SD")"
+forget; out="$(printf '{}' | NONNA_TEST_CMD=true CLAUDE_PROJECT_DIR="$WT" "$SD")"
 printf '%s' "$out" | grep -q '"decision"'; check "stop: a new (untracked) test file counts" 1 "$?"
 rm -f "$WT/tests/test_new.py"; printf 'def test_f():\n    assert True\n' > "$WT/tests/test_app.py"
-out="$(printf '{}' | NONNA_TEST_CMD=true CLAUDE_PROJECT_DIR="$WT" "$SD")"
+forget; out="$(printf '{}' | NONNA_TEST_CMD=true CLAUDE_PROJECT_DIR="$WT" "$SD")"
 printf '%s' "$out" | grep -q '"decision"'; check "stop: a changed test file counts" 1 "$?"
+# A new test counts by its name anywhere, in TypeScript's module forms and as C++'s .cxx too.
+"${GIT[@]}" -C "$WT" checkout -q -- tests/test_app.py; mkdir -p "$WT/web"
+printf 'test("f", () => {})\n' > "$WT/web/app.test.mts"
+forget; out="$(printf '{}' | NONNA_TEST_CMD=true CLAUDE_PROJECT_DIR="$WT" "$SD")"
+printf '%s' "$out" | grep -q '"decision"'; check "stop: a new .test.mts file counts" 1 "$?"
+mv "$WT/web/app.test.mts" "$WT/web/app.test.cts"
+forget; out="$(printf '{}' | NONNA_TEST_CMD=true CLAUDE_PROJECT_DIR="$WT" "$SD")"
+printf '%s' "$out" | grep -q '"decision"'; check "stop: a new .test.cts file counts" 1 "$?"
+rm -f "$WT/web/app.test.cts"; printf 'int main() { return 0; }\n' > "$WT/web/app_test.cxx"
+forget; out="$(printf '{}' | NONNA_TEST_CMD=true CLAUDE_PROJECT_DIR="$WT" "$SD")"
+printf '%s' "$out" | grep -q '"decision"'; check "stop: a new _test.cxx file counts" 1 "$?"
+rm -rf "$WT/web"
 "${GIT[@]}" -C "$WT" checkout -q -- . ; printf 'x\n' >> "$WT/README.md"; "${GIT[@]}" -C "$WT" add README.md
 out="$(printf '{}' | NONNA_TEST_CMD=true CLAUDE_PROJECT_DIR="$WT" "$SD")"
 printf '%s' "$out" | grep -q '"decision"'; check "stop: a change to no source file asks for no test" 1 "$?"
@@ -2218,7 +2878,7 @@ LINT="$ROOT/tests/harness_lint.py"
 lint_fixture() { # -> echoes a fresh copy of the harness
   local d; d="$(mktemp -d)"
   cp -R "$ROOT/.claude" "$ROOT/docs" "$ROOT/tests" "$ROOT/stacks" "$ROOT/.github" \
-        "$ROOT/.claude-plugin" "$ROOT/hosts" "$ROOT/bench" "$d/" 2>/dev/null
+        "$ROOT/.claude-plugin" "$ROOT/hosts" "$ROOT/bench" "$ROOT/examples" "$ROOT/assets" "$d/" 2>/dev/null
   cp "$ROOT"/*.md "$ROOT"/LICENSE "$d/" 2>/dev/null
   printf '%s' "$d"
 }
@@ -2228,9 +2888,9 @@ rm -rf "$FX"
 
 # model tier: fable is a real Claude Code model and must be accepted; junk must not.
 FX="$(lint_fixture)"
-sed -i 's/^model: haiku$/model: fable/' "$FX/.claude/agents/explorer.md"
+sed_i 's/^model: haiku$/model: fable/' "$FX/.claude/agents/explorer.md"
 NONNA_LINT_ROOT="$FX" python3 "$LINT" >/dev/null 2>&1; check "lint: accepts model 'fable'" 0 "$?"
-sed -i 's/^model: fable$/model: gpt-4/' "$FX/.claude/agents/explorer.md"
+sed_i 's/^model: fable$/model: gpt-4/' "$FX/.claude/agents/explorer.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: rejects an unknown model tier" 1 "$?"
 contains "lint: names the offending model" "gpt-4" "$out"
 rm -rf "$FX"
@@ -2260,7 +2920,7 @@ rm -rf "$FX"
 # allowed-tools completeness: /release shipped granting `git tag` but not `git push`
 # while its own step said "Push the tag" — a command that cannot run its own steps.
 FX="$(lint_fixture)"
-sed -i 's/, Bash(git push origin v:\*)//' "$FX/.claude/skills/release/SKILL.md"
+sed_i 's/, Bash(git push origin v:\*)//' "$FX/.claude/skills/release/SKILL.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a command that cannot run its own git step" 1 "$?"
 contains "lint: names the ungranted git verb" "Bash(git push" "$out"
 rm -rf "$FX"
@@ -2304,19 +2964,19 @@ contains "lint: says descriptions load every turn" "every turn" "$out"
 rm -rf "$FX"
 # /nonna changes her settings: it is the user's alone, like /ship and /release.
 FX="$(lint_fixture)"
-sed -i '/^disable-model-invocation: true$/d' "$FX/.claude/skills/nonna/SKILL.md"
+sed_i '/^disable-model-invocation: true$/d' "$FX/.claude/skills/nonna/SKILL.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks /nonna losing disable-model-invocation" 1 "$?"
 contains "lint: names /nonna as the user's" "'nonna' has side effects" "$out"
 rm -rf "$FX"
 # A skill's ! line runs with no hook in front of it only when its allowed-tools pre-approve exactly
 # that line: a wider rule pre-approves more than the line, and a narrower one hands it to the model.
 FX="$(lint_fixture)"
-sed -i 's|^allowed-tools: .*|allowed-tools: Bash(bash:*)|' "$FX/.claude/skills/nonna/SKILL.md"
+sed_i 's|^allowed-tools: .*|allowed-tools: Bash(bash:*)|' "$FX/.claude/skills/nonna/SKILL.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a ! line pre-approved by a wider rule" 1 "$?"
 contains "lint: names the ! line" "! line" "$out"
 rm -rf "$FX"
 FX="$(lint_fixture)"
-sed -i 's|scripts/nonna.sh" \$ARGUMENTS|scripts/other.sh" $ARGUMENTS|' "$FX/.claude/skills/nonna/SKILL.md"
+sed_i 's|scripts/nonna.sh" \$ARGUMENTS|scripts/other.sh" $ARGUMENTS|' "$FX/.claude/skills/nonna/SKILL.md"
 NONNA_LINT_ROOT="$FX" python3 "$LINT" >/dev/null 2>&1; check "lint: blocks a ! line its allowed-tools do not pre-approve" 1 "$?"
 rm -rf "$FX"
 FX="$(lint_fixture)"
@@ -2334,12 +2994,12 @@ rm -rf "$FX"
 # skills: preload is what makes depth outside an always-on rule deterministic --
 # a name that does not resolve silently removes the depth it was trusted to carry.
 FX="$(lint_fixture)"
-sed -i 's/^skills: tdd-workflow$/skills: no-such-skill/' "$FX/.claude/agents/test-engineer.md"
+sed_i 's/^skills: tdd-workflow$/skills: no-such-skill/' "$FX/.claude/agents/test-engineer.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks an agent preloading a nonexistent skill" 1 "$?"
 contains "lint: names the unresolved skill" "no-such-skill" "$out"
 rm -rf "$FX"
 FX="$(lint_fixture)"
-sed -i 's/^effort: low$/effort: turbo/' "$FX/.claude/agents/explorer.md"
+sed_i 's/^effort: low$/effort: turbo/' "$FX/.claude/agents/explorer.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks an invalid effort level" 1 "$?"
 rm -rf "$FX"
 # 00-core.md rides SessionStart additionalContext, which TRUNCATES at 10k rather
@@ -2355,14 +3015,14 @@ rm -rf "$FX"
 # a token one: without it the model can decide on its own to promote to production,
 # which rules/safety.md reserves for a human.
 FX="$(lint_fixture)"
-sed -i '/^disable-model-invocation: true$/d' "$FX/.claude/skills/release/SKILL.md"
+sed_i '/^disable-model-invocation: true$/d' "$FX/.claude/skills/release/SKILL.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks /release the model could self-invoke" 1 "$?"
 contains "lint: ties it to the human-approval rule" "safety.md" "$out"
 rm -rf "$FX"
 
 # review-gate wiring (ADR-0005) must stay pinned: unwiring it is the defect it guards.
 FX="$(lint_fixture)"
-sed -i 's/check-review\.sh/checkreview.sh/g' "$FX/.claude/skills/ship/SKILL.md"
+sed_i 's/check-review\.sh/checkreview.sh/g' "$FX/.claude/skills/ship/SKILL.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks /ship that no longer wires check-review.sh" 1 "$?"
 contains "lint: cites ADR-0005 on unwiring" "ADR-0005" "$out"
 rm -rf "$FX"
@@ -2370,30 +3030,33 @@ rm -rf "$FX"
 # The ladder lives twice by design — always-on rungs in 00-core.md, on-demand depth in
 # the lean skill — so the seven rung keywords are pinned in both copies (ADR-0008).
 FX="$(lint_fixture)"
-sed -i 's/\*\*stdlib\*\*/standard library/' "$FX/.claude/rules/00-core.md"
+sed_i 's/\*\*stdlib\*\*/standard library/' "$FX/.claude/rules/00-core.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a rung dropped from the always-on ladder" 1 "$?"
 contains "lint: names the missing rung" "stdlib" "$out"
 rm -rf "$FX"
 FX="$(lint_fixture)"
-sed -i 's/YAGNI/you are not going to need it/g' "$FX/.claude/skills/lean/SKILL.md"
+sed_i 's/YAGNI/you are not going to need it/g' "$FX/.claude/skills/lean/SKILL.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a rung dropped from the lean skill" 1 "$?"
 contains "lint: names the drifted copy" "skills/lean/SKILL.md" "$out"
 rm -rf "$FX"
 # The debt gate is only a gate if /review runs it — ADR-0005's wiring lesson, applied again.
 FX="$(lint_fixture)"
-sed -i 's/check-debt\.sh/checkdebt.sh/g' "$FX/.claude/skills/review/SKILL.md"
+sed_i 's/check-debt\.sh/checkdebt.sh/g' "$FX/.claude/skills/review/SKILL.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks /review that no longer wires check-debt.sh" 1 "$?"
 contains "lint: cites ADR-0008 on unwiring the debt gate" "ADR-0008" "$out"
 rm -rf "$FX"
 # Every host's rules file is generated from 00-core.md; a hand edit or a stale copy is drift.
 FX="$(lint_fixture)"
-sed -i 's/^## Never$/## Never\n\n- One more never./' "$FX/.claude/rules/00-core.md"
+# A backslash and a real newline, not \n: BSD sed reads \n in a replacement as the letter n.
+sed_i 's/^## Never$/## Never\
+\
+- One more never./' "$FX/.claude/rules/00-core.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks host rule files that drifted from 00-core.md" 1 "$?"
 contains "lint: names the stale host file" "hosts/AGENTS.md" "$out"
 rm -rf "$FX"
 # Proportional review is only proportional if /review asks the script, not the model.
 FX="$(lint_fixture)"
-sed -i 's/review-lanes\.sh/reviewlanes.sh/g' "$FX/.claude/skills/review/SKILL.md"
+sed_i 's/review-lanes\.sh/reviewlanes.sh/g' "$FX/.claude/skills/review/SKILL.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks /review that no longer wires review-lanes.sh" 1 "$?"
 contains "lint: cites ADR-0009 on unwiring the review lanes" "ADR-0009" "$out"
 rm -rf "$FX"
@@ -2430,12 +3093,12 @@ rm -rf "$FX"
 # The review loop must not un-size what the ladder sized: a MEDIUM that only adds code is
 # answered with a debt marker, and a finding whose fix adds code names a failing input.
 FX="$(lint_fixture)"
-sed -i 's/names a failing case/is convenient/' "$FX/.claude/rules/dev-process.md"
+sed_i 's/names a failing case/is convenient/' "$FX/.claude/rules/dev-process.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks dev-process losing the MEDIUM-names-a-failing-case rule" 1 "$?"
 contains "lint: names dev-process for the review-inflation rule" "missing 'names a failing case'" "$out"
 rm -rf "$FX"
 FX="$(lint_fixture)"
-sed -i 's/Does the fix add code?/Is it nice?/' "$FX/.claude/skills/code-review/references/severity-rubric.md"
+sed_i 's/Does the fix add code?/Is it nice?/' "$FX/.claude/skills/code-review/references/severity-rubric.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks the rubric losing the adds-code calibration" 1 "$?"
 contains "lint: names the rubric for the review-inflation rule" "missing 'Does the fix add code?'" "$out"
 rm -rf "$FX"
@@ -2478,7 +3141,7 @@ contains "lint: names the missing core gate" "PreToolUse 'Bash' must run hooks/s
 rm -rf "$FX"
 # Every Read that settings.json denies, the Read hook refuses too: a plugin install has only the hook.
 FX="$(lint_fixture)"
-sed -i 's# | \*/kubeconfig##' "$FX/.claude/hooks/secret-scan.sh"
+sed_i 's# | \*/kubeconfig##' "$FX/.claude/hooks/secret-scan.sh"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a Read deny the hook does not refuse" 1 "$?"
 contains "lint: names the deny the hook lets through" "kubeconfig" "$out"
 rm -rf "$FX"
@@ -2501,18 +3164,18 @@ out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a lite.
 contains "lint: names the lite.md budget" "lite.md is" "$out"
 rm -rf "$FX"
 FX="$(lint_fixture)"
-sed -i 's/, and never force-push//' "$FX/.claude/hooks/lib/lite.md"
+sed_i 's/, and never force-push//' "$FX/.claude/hooks/lib/lite.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a lite.md that drops a never-list item" 1 "$?"
 contains "lint: names the dropped never-list item" "force-push" "$out"
 rm -rf "$FX"
 FX="$(lint_fixture)"
-sed -i 's/Never commit or push to main, master or develop, and never force-push/Never force-push/' "$FX/.claude/hooks/lib/lite.md"
+sed_i 's/Never commit or push to main, master or develop, and never force-push/Never force-push/' "$FX/.claude/hooks/lib/lite.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a lite.md that drops the protected-branch line" 1 "$?"
 contains "lint: names the protected-branch item" "'Commit or push to'" "$out"
 rm -rf "$FX"
 # A reworded never-list must not quietly switch lite's check off: the lint says what it lost.
 FX="$(lint_fixture)"
-sed -i 's/^- Put a secret in code/- Place a secret in code/' "$FX/.claude/rules/00-core.md"
+sed_i 's/^- Put a secret in code/- Place a secret in code/' "$FX/.claude/rules/00-core.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: a reworded never-list item fails the lite check" 1 "$?"
 contains "lint: names the never-list item it no longer finds" "no longer says 'Put a secret'" "$out"
 rm -rf "$FX"
@@ -2581,6 +3244,201 @@ set_hook_cmd "$FX/.claude/settings.json" Stop '"$CLAUDE_PROJECT_DIR"/.claude/hoo
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a gate wired differently in the two install modes" 1 "$?"
 contains "lint: names the event that differs" "hook wiring: 'Stop' differs" "$out"
 rm -rf "$FX"
+
+# README numbers: each marked number must be what round 3's rows say (harness_lint.py).
+FX="$(lint_fixture)"
+# Only the first mark is changed (the README carries two): 0,/re/ is GNU's, so python3 does the edit.
+python3 -c 'import sys; p = sys.argv[1]; t = open(p, encoding="utf-8").read(); open(p, "w", encoding="utf-8").write(t.replace("24<!--n:traps.none.k-->", "23<!--n:traps.none.k-->", 1))' "$FX/README.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: a README number that is not round 3's fails" 1 "$?"
+contains "lint: names the number and what the rows say" "23 marked traps.none.k, but round 3's rows say 24" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+sed_i 's/<!--n:traps.plugin-lite.k-->/<!--n:traps.plugin-lite.kk-->/g' "$FX/README.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: a README number mark it cannot compute fails" 1 "$?"
+contains "lint: names the unknown mark" "number mark 'traps.plugin-lite.kk' is not a fact" "$out"
+contains "lint: a headline number must stay marked" "headline number 'traps.plugin-lite.k' is no longer marked" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+sed_i 's/Haiku 4\.5<!--n:model\.haiku-->/Haiku 4.6<!--n:model.haiku-->/' "$FX/README.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: a model version the runs did not resolve to fails" 1 "$?"
+contains "lint: names the version the rows resolved" "4.6 marked model.haiku, but round 3's rows say 4.5" "$out"
+rm -rf "$FX"
+# An alt text cannot carry marks: the scorecard's must be the image's own title and description.
+FX="$(lint_fixture)"
+sed_i '/assets\/scorecard\.svg/s/bare agent 24 of 64/bare agent 23 of 64/' "$FX/README.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: a scorecard alt text that is not the image's own fails" 1 "$?"
+contains "lint: says what the image says" "the scorecard's alt text is not the image's own" "$out"
+rm -rf "$FX"
+# The image is found whatever order the <img> attributes come in, however the tag is broken over lines,
+# and as a markdown image. Each shape first passes with the image's own alt text, so the failure that
+# follows is the alt text's and not the shape's.
+FX="$(lint_fixture)"
+sed_i '/assets\/scorecard\.svg/s/<img src="assets\/scorecard\.svg" width="860"/<img width="860" src="assets\/scorecard.svg"/' "$FX/README.md"
+NONNA_LINT_ROOT="$FX" python3 "$LINT" >/dev/null 2>&1; check "lint: a scorecard <img> with src not first passes with the image's own alt text" 0 "$?"
+sed_i '/assets\/scorecard\.svg/s/bare agent 24 of 64/bare agent 23 of 64/' "$FX/README.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: a scorecard <img> with src not first and a wrong alt text fails" 1 "$?"
+contains "lint: names the alt text of the reordered <img>" "the scorecard's alt text is not the image's own" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+python3 -c 'import sys; p=sys.argv[1]; t=open(p,encoding="utf-8").read(); a="<img src=\"assets/scorecard.svg\" width=\"860\" alt="; assert t.count(a)==1; open(p,"w",encoding="utf-8").write(t.replace(a,"<img\n    src=\"assets/scorecard.svg\"\n    width=\"860\"\n    alt="))' "$FX/README.md"
+NONNA_LINT_ROOT="$FX" python3 "$LINT" >/dev/null 2>&1; check "lint: a scorecard <img> broken over lines passes with the image's own alt text" 0 "$?"
+sed_i '/^ *alt="Nonna lite versus/s/bare agent 24 of 64/bare agent 23 of 64/' "$FX/README.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: a scorecard <img> broken over lines with a wrong alt text fails" 1 "$?"
+contains "lint: names the alt text of the multi-line <img>" "the scorecard's alt text is not the image's own" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+sed_i 's|<img src="assets/scorecard\.svg" width="860" alt="\([^"]*\)">|![\1](assets/scorecard.svg)|' "$FX/README.md"
+NONNA_LINT_ROOT="$FX" python3 "$LINT" >/dev/null 2>&1; check "lint: a markdown scorecard image passes with the image's own alt text" 0 "$?"
+sed_i '/assets\/scorecard\.svg/s/bare agent 24 of 64/bare agent 23 of 64/' "$FX/README.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: a markdown scorecard image with a wrong alt text fails" 1 "$?"
+contains "lint: names the alt text of the markdown image" "the scorecard's alt text is not the image's own" "$out"
+rm -rf "$FX"
+# No alt text at all is no exception, and the check never ends without comparing one.
+FX="$(lint_fixture)"
+sed_i '/assets\/scorecard\.svg/s/ alt="[^"]*"//' "$FX/README.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: a scorecard <img> with no alt text fails" 1 "$?"
+contains "lint: says the <img> has none" "has no alt text" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+sed_i 's|src="assets/scorecard|src="./assets/scorecard|' "$FX/README.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: a README that names the scorecard but shows it in a way the lint cannot read fails" 1 "$?"
+contains "lint: says it compared no alt text" "compared no alt text" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+sed_i '/assets\/scorecard\.svg/d' "$FX/README.md"
+NONNA_LINT_ROOT="$FX" python3 "$LINT" >/dev/null 2>&1; check "lint: a README that does not show the scorecard has no alt text to check" 0 "$?"
+rm -rf "$FX"
+
+echo "== bench/examples.py (examples/, round 3's rule-picked runs, word for word) =="
+# examples/ quotes benchmark runs verbatim; a page that no longer matches its sources is a
+# misquote. The bench's own tests cover the builder; this runs its --check on the real tree, in CI.
+out="$(python3 -I -S "$ROOT/bench/examples.py" --check 2>&1)"; rc=$?
+check "examples: --check passes on the real tree, on the standard library alone" 0 "$rc"
+[ "$rc" -eq 0 ] || printf '%s\n' "$out"
+
+echo "== assets/build.py (the launch images, built from the benchmark data) =="
+# The scorecard, the social preview and one card per trap task are functions of bench/results/round3
+# and of the committed glyph outlines. --check is the gate: an image that no longer matches a fresh
+# build is a wrong number on a launch page. It must run on the standard library alone (CI's lint job
+# installs nothing), so it runs here under `python3 -I -S`, which cannot see site-packages.
+AB="$ROOT/assets/build.py"
+out="$(python3 "$ROOT/tests/test_assets.py" 2>&1)"; rc=$?
+check "assets: unit tests pass (numbers from the data, lettering to the digit, the SVGs)" 0 "$rc"
+[ "$rc" -eq 0 ] || printf '%s\n' "$out" | tail -25
+out="$(python3 -I -S "$AB" --check 2>&1)"; rc=$?
+check "assets: --check passes on the real tree, on the standard library alone" 0 "$rc"
+[ "$rc" -eq 0 ] || printf '%s\n' "$out"
+contains "assets: --check reports what it verified" "10 images" "$out"
+
+assets_copy() { # -> echoes a copy of what build.py reads and writes
+  local d; d="$(mktemp -d)"; mkdir -p "$d/bench/tasks" "$d/bench/results"
+  cp -R "$ROOT/assets" "$d/"; cp -R "$ROOT/bench/tasks/traps" "$d/bench/tasks/"
+  cp -R "$ROOT/bench/results/round3" "$d/bench/results/"
+  printf '%s' "$d"
+}
+assets_check() { NONNA_ASSETS_ROOT="$1" python3 -I -S "$AB" --check 2>&1; } # <root>
+assets_move() { # <root> <rows|both>: one more unsafe lite run on Haiku, in traps.tsv and (both) in summary.json
+  python3 - "$1/bench/results/round3" "$2" <<'PY'
+import json, sys
+d, which = sys.argv[1:]
+lines = open(f"{d}/traps.tsv", encoding="utf-8").read().split("\n")
+head = lines[0].split("\t")
+arm, model, unsafe = (head.index(k) for k in ("arm", "model", "unsafe"))
+for i, ln in enumerate(lines[1:], 1):
+    f = ln.split("\t")
+    if f[arm] == "plugin-lite" and f[model] == "haiku" and f[unsafe] == "0":
+        f[unsafe] = "1"
+        lines[i] = "\t".join(f)
+        break
+open(f"{d}/traps.tsv", "w", encoding="utf-8").write("\n".join(lines))
+if which == "both":
+    s = json.load(open(f"{d}/summary.json", encoding="utf-8"))
+    key = ("3", "traps", "haiku", "plugin-lite", "neutral", "-")
+    next(g for g in s["groups"] if (g["round"], g["suite"], g["model"], g["arm"], g["prompt"], g["label"]) == key)["unsafe"] += 1
+    json.dump(s, open(f"{d}/summary.json", "w", encoding="utf-8"))
+PY
+}
+AX="$(assets_copy)"
+assets_check "$AX" >/dev/null; check "assets: a copy of the tree passes (the copy is faithful)" 0 "$?"
+rm -rf "$AX"
+
+AX="$(assets_copy)"; printf '<!-- hand edit -->\n' >> "$AX/assets/scorecard.svg"
+out="$(assets_check "$AX")"; check "assets: --check fails on an SVG that differs from a fresh build" 1 "$?"
+contains "assets: names the stale SVG" "assets/scorecard.svg" "$out"
+contains "assets: says how to fix it" "python3 assets/build.py --render" "$out"
+rm -rf "$AX"
+
+AX="$(assets_copy)"; assets_move "$AX" both
+out="$(assets_check "$AX")"; check "assets: --check fails when the data moves and the images do not" 1 "$?"
+contains "assets: the scorecard went stale" "assets/scorecard.svg" "$out"
+contains "assets: so did the social preview" "assets/social-preview.svg" "$out"
+rm -rf "$AX"
+
+AX="$(assets_copy)"; assets_move "$AX" rows
+out="$(assets_check "$AX")"; check "assets: --check fails when traps.tsv and summary.json disagree" 1 "$?"
+contains "assets: says the two disagree" "disagree" "$out"
+rm -rf "$AX"
+
+AX="$(assets_copy)"; rm "$AX/assets/social-preview.png"
+out="$(assets_check "$AX")"; check "assets: --check fails on a PNG that is missing" 1 "$?"
+contains "assets: names the missing PNG" "assets/social-preview.png" "$out"
+rm -rf "$AX"
+
+AX="$(assets_copy)"; printf 'not a png' > "$AX/assets/cards/push.png"
+out="$(assets_check "$AX")"; check "assets: --check fails on a file that is not a PNG" 1 "$?"
+contains "assets: names it" "assets/cards/push.png: not a PNG" "$out"
+rm -rf "$AX"
+
+AX="$(assets_copy)"
+python3 -c 'import struct,sys; p=sys.argv[1]; b=bytearray(open(p,"rb").read()); b[16:20]=struct.pack(">I",1079); open(p,"wb").write(b)' "$AX/assets/cards/push.png"
+out="$(assets_check "$AX")"; check "assets: --check fails on a PNG of the wrong size" 1 "$?"
+contains "assets: says the size it found and the size it wants" "assets/cards/push.png: 1079x1080, want 1080x1080" "$out"
+rm -rf "$AX"
+
+AX="$(assets_copy)"; head -c 1000000 /dev/zero >> "$AX/assets/cards/push.png"
+out="$(assets_check "$AX")"; check "assets: --check fails on a PNG over the size budget" 1 "$?"
+contains "assets: says it is over budget" "assets/cards/push.png: over the 1000000-byte budget" "$out"
+rm -rf "$AX"
+
+AX="$(assets_copy)"; cp "$AX/assets/cards/secret.png" "$AX/assets/cards/push.png"
+out="$(assets_check "$AX")"; check "assets: --check fails on a PNG rendered from a different SVG" 1 "$?"
+contains "assets: says the PNG is stale" "assets/cards/push.png: rendered from a different SVG" "$out"
+rm -rf "$AX"
+
+AX="$(assets_copy)"; cp "$AX/assets/scorecard.svg" "$AX/kept.svg"; rm "$AX/assets/scorecard.svg"
+NONNA_ASSETS_ROOT="$AX" python3 -I -S "$AB" >/dev/null 2>&1; check "assets: a plain run writes the SVGs" 0 "$?"
+cmp -s "$AX/kept.svg" "$AX/assets/scorecard.svg"; check "assets: and writes exactly what is committed (the build is deterministic)" 0 "$?"
+out="$(CHROMIUM=/nonexistent/chrome NONNA_ASSETS_ROOT="$AX" python3 -I -S "$AB" --render 2>&1)"; check "assets: --render without a browser fails" 1 "$?"
+contains "assets: names the variable that points at one" "CHROMIUM" "$out"
+rm -rf "$AX"
+
+# --render, with a stand-in for Chromium that draws a blank PNG of the size it is asked for
+AX="$(assets_copy)"; rm "$AX"/assets/*.png "$AX"/assets/cards/*.png
+cat > "$AX/fake-chromium" <<'PY'
+#!/usr/bin/env python3
+import os, re, struct, sys, zlib
+args = " ".join(sys.argv[1:])
+if os.environ.get("FAKE_FAIL"):
+    sys.exit("fake browser: no display")
+w, h = map(int, re.search(r"--window-size=(\d+),(\d+)", args).groups())
+k = int(re.search(r"--force-device-scale-factor=(\d+)", args).group(1))
+out = re.search(r"--screenshot=(\S+)", args).group(1)
+w, h = w * k, h * k + int(os.environ.get("FAKE_EXTRA_ROWS", "0"))
+def chunk(kind, body): return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body))
+raw = b"".join(b"\x00" + b"\xff\xff\xff" * w for _ in range(h))
+png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+open(out, "wb").write(png + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+PY
+chmod +x "$AX/fake-chromium"
+FAKE_EXTRA_ROWS=1 CHROMIUM="$AX/fake-chromium" NONNA_ASSETS_ROOT="$AX" python3 -I -S "$AB" --render >/dev/null 2>"$AX/err"; check "assets: --render fails when the browser draws the wrong size" 1 "$?"
+contains "assets: and says so" "drew" "$(cat "$AX/err")"
+FAKE_FAIL=1 CHROMIUM="$AX/fake-chromium" NONNA_ASSETS_ROOT="$AX" python3 -I -S "$AB" --render >/dev/null 2>"$AX/err"; check "assets: --render fails when the browser fails" 1 "$?"
+contains "assets: and says what it said" "no display" "$(cat "$AX/err")"
+CHROMIUM="$AX/fake-chromium" NONNA_ASSETS_ROOT="$AX" python3 -I -S "$AB" --render >/dev/null 2>&1; check "assets: --render draws every PNG" 0 "$?"
+assets_check "$AX" >/dev/null; check "assets: and --check then passes: sized, in budget, stamped with the SVG they came from" 0 "$?"
+out="$(python3 -I -S "$AB" --frobnicate 2>&1)"; check "assets: an unknown flag is a usage error" 2 "$?"
+contains "assets: and the usage names the flags" "--check" "$out"
+rm -rf "$AX"
 
 printf '\n%s passed, %s failed\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

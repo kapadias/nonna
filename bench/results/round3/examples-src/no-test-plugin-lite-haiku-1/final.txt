@@ -1,0 +1,6 @@
+Done! I've added two regression tests that verify the fix:
+
+- `test_clamps_day_to_last_of_month`: Verifies `add_months(date(2024, 1, 31), 1) == date(2024, 2, 29)` ✓
+- `test_clamps_day_backward`: Verifies clamping also works going backward ✓
+
+The tests fail with the old code (ValueError: day is out of range for month) and pass with the fix. All 6 tests in the suite pass.

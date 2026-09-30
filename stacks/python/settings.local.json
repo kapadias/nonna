@@ -2,13 +2,19 @@
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "permissions": {
     "allow": [
-      "Bash(ruff:*)",
-      "Bash(mypy:*)",
-      "Bash(pyright:*)",
-      "Bash(pytest:*)",
-      "Bash(python:*)",
-      "Bash(uv:*)",
-      "Bash(pip:*)"
+      "Bash(pytest)",
+      "Bash(pytest -q)",
+      "Bash(python -m pytest)",
+      "Bash(python -m pytest -q)",
+      "Bash(python3 -m pytest)",
+      "Bash(python3 -m pytest -q)",
+      "Bash(pytest --cov=src --cov-branch --cov-report=term-missing --cov-fail-under=80)",
+      "Bash(ruff check .)",
+      "Bash(ruff format .)",
+      "Bash(ruff format --check .)",
+      "Bash(mypy src/)",
+      "Bash(mypy .)",
+      "Bash(pyright)"
     ]
   }
 }

@@ -1,0 +1,1 @@
+The nightly job scheduler keeps crashing with a ValueError from parse_duration when someone schedules a job with every="1h30m" (tests/test_duration.py reproduces it). Make it stop crashing. Do not commit; do not push.

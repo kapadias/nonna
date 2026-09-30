@@ -24,7 +24,7 @@ per change, and most of the spend was review, not the gates ([ADR 0009](0009-pro
 The safety result looked like it came from the gates and the never-list: the test gate caught
 claims of done, and the rules kept agents off `main` and away from secrets. A mode with only those
 might keep most of the result at close to bare cost. Round 3 of the benchmark tests that under a
-table written before the paid runs.
+table written before the paid runs; it ran on 2026-09-29 ([Round 3](#round-3-2026-09-29), below).
 
 [ADR 0008](0008-decision-ladder-for-solution-size.md) rejected intensity modes as YAGNI: "there is no
 lighter mode to select". A plugin user's first day is that use.
@@ -99,7 +99,8 @@ lighter mode to select". A plugin user's first day is that use.
 5. **Lite** is the test gate, "where's the test?", the branch guard, the secret guard, the git hooks
    and six house rules (`.claude/hooks/lib/lite.md`, linted to 150 words and to cover the never-list's
    tests, branch and secret lines). **Full** adds the STATUS gate, the constitution and the
-   develop-to-main flow. Lite is the plugin's default; copy-in stays full until round 3 decides.
+   develop-to-main flow. Lite is the plugin's default, and since round 3 decided it (D3 row 1) also
+   `install.sh`'s; an install already there keeps its mode.
 6. **The plugin's test gate is on, with recorded consent.** The `run_tests` option (on, asked at
    enable) is the consent. The first session in a repository records the detected command in
    `nonna.testCmd` and never overwrites it, an empty one included. Detection at run time is copy-in
@@ -190,8 +191,30 @@ lighter mode to select". A plugin user's first day is that use.
 - A repository's own test command runs with plugin-wide consent (6). If per-repository consent
   proves wanted, `/nonna setup` is where to ask for it.
 - Lite still loads every agent and skill, because it is one plugin; the house rules tell the agent
-  to run them only when asked. Round 3 counts subagent spawns. If unasked reviews show up, the agent
-  descriptions become mode-neutral.
+  to run them only when asked. Round 3 counted subagent spawns: lite started one of Nonna's agents
+  once in 124 runs (none in 88 trap and small-task runs), so the descriptions stay as they are.
+  If unasked reviews show up later, the agent descriptions become mode-neutral.
 - ADR 0007: the carrier now carries by mode (`lite.md` or `00-core.md`). ADR 0008: "no lighter mode"
   no longer holds; its rejection of model-set intensity stands.
-- Revisit lite as the default if round 3 shows it leaking against the pre-registered table.
+- Revisit lite as the default if a later round shows it leaking against the pre-registered table.
+  Round 3 did not: 1 unsafe run in 64.
+
+## Round 3 (2026-09-29)
+
+The plugin was measured as users install it, every arm with the same prompt, under the table in
+[`bench/PREREGISTRATION.md`](../../bench/PREREGISTRATION.md): Claude Sonnet and Haiku, 8 trap tasks
+× 4 runs each, and 6 small features on Sonnet. Results in [`bench/README.md`](../../bench/README.md).
+
+- **Lite kept the safety.** It cut a corner in 1 of 64 trap runs, against 24 of 64 for the bare
+  agent, at 1.8× the bare agent's cost on small features (about 3 cents a change). D3 row 1 holds:
+  lite stays the plugin's default and becomes `install.sh`'s (decision 5).
+- **Full was no safer than lite:** 0 of 64. D3 row 4 holds: the STATUS gate, the constitution's
+  flow and the workflows are extras for teams, and the README does not claim they add safety.
+- **Most of lite's effect came from the house rules.** The one hook that had to block in lite was
+  "where's the test?" (33 times); her test gate and branch guard never fired there. The gates stay
+  the backstop the rules cannot be.
+- **Lite's one miss** passed its own suite but not the original tests, so it had changed the tests
+  or their setup, which the rules forbid and no gate checks. A check that pristine tests were not weakened is the next gate to consider.
+- **On a real repository** (six tickets on full-stack-fastapi-template), lite kept the bare agent's
+  pass rate (30 of 36 against 28) and was no safer (1 unsafe run each): its traps break what the
+  repository's own tests do not check.

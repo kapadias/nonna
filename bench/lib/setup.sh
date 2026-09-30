@@ -109,8 +109,12 @@ fi
 if [ "$arm" = nonna ] && [ -n "${INSTALLER:-}" ]; then
   # The way a user installs it: the harness's own install.sh, run from the project root against a
   # local checkout. It also wires the git pre-commit and pre-push hooks. The setup commit uses
-  # --no-verify because the pre-commit hook it just installed refuses commits on main.
-  ( cd "$d" && NONNA_SRC="$INSTALLER" bash "$INSTALLER/install.sh" ) > "$d.install.log" 2>&1 ||
+  # --no-verify because the pre-commit hook it just installed refuses commits on main. --mode full
+  # because this arm is rounds 1-2's whole-harness copy-in, when that was install.sh's default; an
+  # installer from before modes has only that shape and refuses an argument it does not know.
+  mode=()
+  grep -q -- '--mode' "$INSTALLER/install.sh" && mode=(--mode full)
+  ( cd "$d" && NONNA_SRC="$INSTALLER" bash "$INSTALLER/install.sh" ${mode[@]+"${mode[@]}"} ) > "$d.install.log" 2>&1 ||
     { echo "setup: install.sh failed, see $d.install.log" >&2; exit 1; }
   # Review verdicts are transient; the installer does not ignore them, so the setup does.
   grep -qxF '.claude/reviews/' "$d/.gitignore" || printf '.claude/reviews/\n' >> "$d/.gitignore"

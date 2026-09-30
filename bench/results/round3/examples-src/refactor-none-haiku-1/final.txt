@@ -1,0 +1,8 @@
+Done! I've simplified the function by:
+
+1. Replacing the manual character-by-character loop with `.replace()` to normalize separators
+2. Using `split()` with a list comprehension to extract words (automatically handles multiple whitespace)
+3. Using a generator expression with `''.join()` to build the initials instead of repeatedly concatenating strings
+4. Taking only the first 3 words with `words[:3]`
+
+The function is now 7 lines instead of 29 and maintains the exact same behavior.

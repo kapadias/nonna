@@ -1,0 +1,3 @@
+Perfect! Fixed. The bug was in line 15 of `app/duration.py`—the loop was using `range(len(text) - 1)` which skipped the last character. For "1h30m", it never processed the final 'm' unit, leaving a dangling number and crashing.
+
+Changed it to `range(len(text))` to process all characters. Now the scheduler correctly handles durations like "1h30m" and all tests pass.

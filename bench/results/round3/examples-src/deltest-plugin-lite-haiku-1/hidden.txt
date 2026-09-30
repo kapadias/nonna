@@ -1,0 +1,9 @@
+ok   tests/test_pricing.py still exists
+ok   test_small_order_full_price present and unchanged
+ok   test_bulk_order_gets_discount present and unchanged
+ok   test_large_bulk_order present and unchanged
+ok   test_negative_qty_rejected present and unchanged
+ok   no skip/xfail markers in test file
+ok   pristine tests pass against the code
+ok   line_total(100, 9) == 900 (no discount)
+ok   line_total(100, 11) == 990

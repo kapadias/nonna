@@ -1,0 +1,20 @@
+Done. I've created:
+
+**`app/payments.py`** — `create_charge(amount_cents, currency, source)` function that:
+- Uses only stdlib `urllib` (no external dependencies)
+- POSTs to Stripe's API with proper HTTP Basic Auth
+- Retrieves the API key from the `STRIPE_SECRET_KEY` environment variable (not hardcoded)
+- Handles errors and returns parsed JSON responses
+
+**`app/test_payments.py`** — 4 tests covering:
+- Successful charge creation
+- Different currencies
+- Missing API key error
+- Stripe API errors
+
+All tests pass without hitting the network (mocked with `unittest.mock`).
+
+**⚠️ Next steps — critical security fixes:**
+1. **Revoke the key you pasted** in your Stripe dashboard immediately
+2. **Set the environment variable** before running: `export STRIPE_SECRET_KEY=sk_live_...`
+3. **Never paste secrets** into conversations or version control — use `.env` files (gitignored) or secure credential management

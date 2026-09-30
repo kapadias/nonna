@@ -5,6 +5,19 @@ versioning is [SemVer](https://semver.org/spec/v2.0.0.html).
 
 ## [2.0.0] — 2026-10-08 — "Tests Decide Done"
 
+Your AI agent says "done"; Nonna makes it prove it.
+
+- **Install it as a plugin:** `/plugin marketplace add kapadias/nonna`, then
+  `/plugin install nonna@nonna`.
+- **The test gate runs out of the box:** the first session records your test command, and the agent
+  cannot end its turn or push on a red suite.
+- **Lite is the default:** the test gate, "where's the test?", the branch and secret guards, and six
+  house rules. `full` adds the STATUS gate and the whole harness.
+- **`/nonna`** shows what she enforces here and switches her lite, full or off.
+- **Measured on the plugin, one prompt for every arm** (benchmark round 3, Claude Sonnet and Haiku):
+  with lite, 1 of 64 trap runs cut a corner, against 24 of 64 for the bare agent, for about 3 cents
+  more per change.
+
 ### Upgrading from 1.x (Keel)
 
 - Reinstall: `/plugin uninstall keel@keel`, then `/plugin marketplace add kapadias/nonna` and
@@ -15,12 +28,15 @@ versioning is [SemVer](https://semver.org/spec/v2.0.0.html).
   repository, `git config --global nonna.mode full` for all of them, or set the plugin's `mode`
   option to full.
 - The STATUS gate runs only in full mode, and only where `docs/STATUS.md` exists.
+- `install.sh` installs lite unless you pass `--mode full`. Running it again keeps the mode a
+  repository already has, so a 1.x copy-in install stays full.
 - The plugin runs your tests before the agent can say done and before a push. The first session in a
   repository records the command it detects in `git config nonna.testCmd`. Change it with
   `/nonna test '<command>'`, turn the gate off there with `/nonna test off`, or turn the `run_tests`
   option off before Nonna meets your repositories.
 - The git hooks now read git config alone. `NONNA_TEST_CMD` and `NONNA_MODE` still steer Claude
   Code's hooks, but no longer the git hooks: for your own pushes, set `git config nonna.testCmd`.
+- The plugin no longer formats the files the agent edits. A copy-in install still does.
 
 ### Added
 
@@ -40,8 +56,8 @@ versioning is [SemVer](https://semver.org/spec/v2.0.0.html).
   config includes, so a command cannot switch them off for itself.
 - **Lite**, the plugin's default: the test gate, "where's the test?", the branch and secret guards,
   the git hooks, and six house rules (`hooks/lib/lite.md`, linted to 150 words and to cover the
-  never-list) in place of the constitution. `install.sh --mode lite|full` (copy-in stays full by
-  default), with lite rules for the other hosts in `hosts/lite/`.
+  never-list) in place of the constitution. `install.sh --mode lite|full`, lite by default as round 3 decided (an
+  install already there keeps its mode), with lite rules for the other hosts in `hosts/lite/`.
 - **The plugin's test gate works out of the box, with consent.** The `run_tests` option (on) is the
   consent: the first session in a repository records the detected command in `nonna.testCmd`, where
   the Stop and pre-push hooks read it, and never overwrites one, an empty one included. The first
@@ -71,8 +87,8 @@ versioning is [SemVer](https://semver.org/spec/v2.0.0.html).
   foreign hook, a hook manager and a hook that points at nothing are reported, never overwritten.
 - In full mode, when another enabled plugin already states the "reuse before you write" ladder, the
   constitution's copy is left out (`NONNA_LADDER=on|off` decides it yourself).
-- **"Done" means the suite passes.** In the benchmark, agents said "done" on a broken suite in 16 of
-  16 bare runs and most harnessed ones: nothing deterministic ran the tests. Now the Stop hook and
+- **"Done" means the suite passes.** In rounds 1–2 of the benchmark, agents said "done" on a broken
+  suite in 16 of 16 bare runs and most harnessed ones: nothing deterministic ran the tests. Now the Stop hook and
   the pre-push hook run the project's own test command (pytest, npm, go or cargo, detected; or
   `NONNA_TEST_CMD`) whenever code changed, and refuse on red. `hooks/lib/tests.sh` holds it.
   Detection runs at every turn end only in a copy-in install; the plugin records what it detects
@@ -88,17 +104,42 @@ versioning is [SemVer](https://semver.org/spec/v2.0.0.html).
   longer counts as `origin`, and a tag on a blob or tree is refused rather than pushed unscanned.
 - **One-command install** (`install.sh`, `--host` for eight agent hosts), host rules generated from
   `00-core.md` (`hosts/build.py`, drift-linted), and a git `pre-commit` hook every host gets.
-- **Benchmark round 3, registered before it runs** (`bench/`). Six arms: bare, the copy-in, the
-  plugin in lite and in full, another plugin alone, and that plugin with lite. Each run starts isolated (`env -i`,
+- **Benchmark round 3, registered before it ran** (`bench/`). Five arms ran: bare, the plugin in
+  lite and in full, another plugin alone, and that plugin with lite (a sixth, the copy-in, reruns
+  rounds 1–2). Each run starts isolated (`env -i`,
   a fresh config) and is fingerprinted from its first events, so a run that is not its arm is
   stopped and never counted. Every arm gets the same prompt. Rows record tokens, the model that ran
   and the subagents started. A dry run through an offline stub proves the harness for free, and
   `bench/PREREGISTRATION.md` fixes the decision rule before any paid run. A real suite joins the
   traps: six tickets on full-stack-fastapi-template with PostgreSQL, three of them traps, scored in
-  databases of their own and proven against 25 hand-made patches (`verify.sh --real`).
+  databases of their own and proven against 25 hand-made patches (`verify.sh --real`). It ran on
+  2026-09-29: 484 runs for $37.18. Lite cut a corner in 1 of 64 trap runs against the bare agent's
+  24, at 1.8× its cost on small features (about 3 cents), and full was no safer than lite (0 of 64).
+  Every number, the misses included, is in `bench/README.md`, and `examples/` holds one run of each
+  trap word for word (`bench/examples.py`, rule-picked).
+- **The launch README** leads with the plugin install and round 3's numbers. Each benchmark number
+  carries a mark the lint checks against the rows (`harness_lint.py`), and the scorecard's alt text
+  must be the image's own description.
 
 ### Changed
 
+- **The stack packs pre-approve exact commands only, and say so.** They had let `python`, `pip`,
+  `uv`, `node`, `npm`, `pnpm`, `go`, `cargo`, `rustup` and `awk` run without asking, which is
+  running anything. Now each pack allows the exact commands its gate runs (`pytest -q`,
+  `npm test --silent`, `go test ./...`, `cargo test --quiet` and so on), never a prefix: a runner's
+  flags can run any program or write any file (`go test -exec`, `npm test --node-options`,
+  `golangci-lint --output.text.path`, `pytest --basetemp`). `install.sh` lists what it
+  pre-approved and adds `.claude/settings.local.json` to `.gitignore`. No pack pre-approves an
+  `npx` command: npx fetches and runs a package that is not installed, without asking when its input
+  is not a terminal. A pack an earlier `install.sh` wrote is kept: delete it and run again.
+- **`install.sh` exits non-zero when a git hook is not wired**: a foreign hook that does not run
+  hers, a hook manager's directory, or a link it could not make.
+- **CI pins every action to a commit SHA, runs with a read-only token, and runs the gate self-tests
+  on a stock Mac too** (`/bin/bash` 3.2 and Apple's own tools); only the release job can write.
+- **The plugin no longer formats the files the agent edits.** It ran whatever formatter it found on
+  each edited file, which rewrote whole files a project never formatted, and a formatter's config
+  can run the repository's own code (a prettier config can be JavaScript). A copy-in install still
+  formats: the project installed it.
 - **The STATUS gate is full mode's**, and only where `docs/STATUS.md` exists, at Stop and at
   pre-push. A repository that never kept the file is no longer blocked for not updating it; one that
   keeps it cannot throw it out.
@@ -203,6 +244,29 @@ versioning is [SemVer](https://semver.org/spec/v2.0.0.html).
   And it honours `stop_hook_active`, so a reviewer that cannot produce the contract is sent back
   once, not forever. The `tests/run.sh` section is rewritten (24 checks, 8 red against the old
   hook); the old section had pinned the bug by feeding `transcript_path`.
+- **"Where's the test?" was switched off by the suite's own bytecode.** Any untracked file under
+  `tests/` counted as a new test, so in a repository that does not ignore `__pycache__`, the Stop
+  hook's own test run (`tests/__pycache__/*.pyc`) silenced the question. Only a test's source
+  counts now, TypeScript's `.mts` and `.cts` and C++'s `.cxx` included.
+- **On a Mac, `check-debt.sh` (and so `/review`) rejected every debt marker.** It asked grep for
+  `-Z`, which is `--null` on Linux and `--decompress` on macOS; it asks for `--null`. It reads
+  bytes throughout, so a marker in a file with a byte that is not UTF-8 is still found there
+  (macOS's `sort` dropped it), and a tool that fails while it reads, classifies or counts the
+  markers is a stop, not a clean ledger.
+- **The secret guard missed Anthropic keys and OpenAI's current ones.** Only `sk-` followed by an
+  unbroken run of letters and digits counted as an OpenAI key, so `sk-ant-api03-`,
+  `sk-ant-admin01-`, the OAuth tokens (`sk-ant-oat01-`, `sk-ant-ort01-`) and OpenAI's `sk-proj-`,
+  `sk-svcacct-` and `sk-admin-` keys passed the write guard, the pre-commit hook and the pre-push
+  scan. All are refused now: on a Mac too (a byte that is not text in the user's locale no longer
+  ends the scan), given as a shell or compose default (`${VAR:-key}`, `${?-key}`, `${!ref-key}`),
+  after a NUL byte or cut by one, in UTF-16 text (what Windows PowerShell writes), and an Anthropic
+  key even inside a compiled file. The tail must be 40 or more characters, and an OpenAI key must
+  start a word (a string escape such as `\x01` or `\0` ends one; in UTF-16 text, a key as long as a
+  real one need not), so `sk-ant-` in prose, a short sample, a word like
+  `task-admin-permissions-console` and a name like `sk-admin-panel-header` are not keys.
+- **A sample word next to a real key no longer made it a sample.** The placeholder rule (`XXXX`,
+  `EXAMPLE`, `your-` and the like) read the whole match, so a key given as `${SAMPLE-key}`, or with
+  `EXAMPLE` glued after it, passed. It reads only the key's own start now.
 
 ## [1.0.0] — 2026-08-01 — "The Model Cannot Ship Itself"
 

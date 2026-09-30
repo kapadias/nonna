@@ -2,11 +2,14 @@
   "$schema": "https://json.schemastore.org/claude-code-settings.json",
   "permissions": {
     "allow": [
-      "Bash(go:*)",
-      "Bash(gofmt:*)",
-      "Bash(goimports:*)",
-      "Bash(golangci-lint:*)",
-      "Bash(awk:*)"
+      "Bash(go test ./...)",
+      "Bash(go test -race -coverprofile=coverage.out -covermode=atomic ./...)",
+      "Bash(go vet ./...)",
+      "Bash(golangci-lint run ./...)",
+      "Bash(gofmt -l .)",
+      "Bash(gofmt -w .)",
+      "Bash(goimports -l .)",
+      "Bash(goimports -w .)"
     ]
   }
 }

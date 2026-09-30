@@ -114,6 +114,12 @@ cargo tarpaulin --all-features --fail-under 80
 
 ---
 
+## Pre-approved commands
+
+`settings.local.json` lets exactly these run without a prompt: `cargo test` (also with `--quiet`, the command Nonna's test gate runs), `cargo check` and `cargo clippy`, bare or as the gate above runs them, and `cargo fmt` (also with `--check`). Only those exact commands: a runner's flags can run any program or write any file, so any other form of them asks first. (Cargo's `--config` can set a test runner or a compiler wrapper.) The other `cargo` commands (`cargo run`, `cargo install`, `cargo llvm-cov`), `rustfmt` on a path and `rustup` are not on the list, so the coverage line of the gate above asks first, and so do the install commands below.
+
+---
+
 ## Install all dev dependencies
 
 ```bash

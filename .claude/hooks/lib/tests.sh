@@ -97,8 +97,8 @@ nonna_is_test_file() {
 # nonna_is_source_file <path>  0 when the path is program source (by extension): what a test covers.
 nonna_is_source_file() {
   case "${1##*.}" in
-    py | js | jsx | ts | tsx | mjs | cjs | go | rs | java | kt | kts | rb | php | cs | swift | c | h | cc \
-      | cpp | hpp | m | mm | scala | ex | exs | erl | clj | dart | lua | vue | svelte) return 0 ;;
+    py | js | jsx | ts | tsx | mjs | cjs | mts | cts | go | rs | java | kt | kts | rb | php | cs | swift | c \
+      | h | cc | cpp | cxx | hpp | m | mm | scala | ex | exs | erl | clj | dart | lua | vue | svelte) return 0 ;;
   esac
   return 1
 }

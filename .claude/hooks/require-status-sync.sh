@@ -142,7 +142,9 @@ fi
 # lib/secret-patterns.sh.
 # Added lines, with file headers dropped by position (between "diff " and the first "@@"), never by
 # text: an octopus merge prints a line added over all parents as "+++", and content can start "++ ".
-added_lines() { LC_ALL=C awk '/^diff /{h=1} h && /^@@/{h=0; next} !h && /^\+/' "$1"; }
+# NUL bytes (UTF-16 text, a binary file) reach the scan as \001, which it reads both ways, and never
+# reach awk, which may end a line at one.
+added_lines() { LC_ALL=C tr '\000' '\001' < "$1" | LC_ALL=C awk '/^diff /{h=1} h && /^@@/{h=0; next} !h && /^\+/'; }
 "${LOG[@]}" -p -U0 "${revs[@]}" > "$tmp/patch" || unreadable
 if class="$(added_lines "$tmp/patch" | nonna_scan_secrets)"; then
   fail=1
@@ -151,11 +153,11 @@ if class="$(added_lines "$tmp/patch" | nonna_scan_secrets)"; then
   while IFS= read -r -d '' f; do
     "${LOG[@]}" -p -U0 --full-history "${revs[@]}" -- "$f" > "$tmp/one" || unreadable
     if c="$(added_lines "$tmp/one" | nonna_scan_secrets)"; then
-      echo "✗ Push blocked: ${f} introduces what looks like a ${c}." >&2
+      echo "✗ Push blocked: ${f} introduces what looks like $(nonna_a "$c")." >&2
       named=1
     fi
   done < <(sort -zu "$tmp/files")
-  [ -n "$named" ] || echo "✗ Push blocked: this push introduces what looks like a ${class}." >&2
+  [ -n "$named" ] || echo "✗ Push blocked: this push introduces what looks like $(nonna_a "$class")." >&2
   echo "  Remove it and ROTATE the secret (rules/safety.md). Never push secrets." >&2
 fi
 

@@ -4,15 +4,19 @@
 #   curl -fsSL https://raw.githubusercontent.com/kapadias/nonna/main/install.sh | bash
 #   curl -fsSL https://raw.githubusercontent.com/kapadias/nonna/main/install.sh | bash -s -- --host cursor
 #
-# Run it from the root of a git repository. It copies the harness (.claude/), the chosen hosts'
-# rules files, a blank docs/STATUS.md and your stack's test-gate permissions, and wires the git
-# pre-commit and pre-push hooks. It never overwrites a file or a git hook that already exists: it
-# says so and moves on.
+# Run it from the root of a git repository. By default (lite) it copies the gates: the hooks and
+# their settings.json wiring, /nonna, short house rules for the chosen hosts and your stack's
+# test-gate permissions (its test, lint, format and type-check runners, git-ignored); and it wires
+# the git pre-commit and pre-push hooks. --mode full copies the whole harness (.claude/, the hosts'
+# rules files and a blank docs/STATUS.md). It never overwrites a file or a git hook that already
+# exists: it says so and moves on, and exits 1 when that leaves a gate not in place.
 #
 # Hosts: claude (default), agents (AGENTS.md: Codex, Zed, Amp, opencode, Roo, Jules, Junie…),
 #        cursor, copilot, gemini, windsurf, cline, kiro, all. Several: --host cursor,agents
 # Mode:  --mode lite  the gates and short house rules only (hooks, settings.json, git hooks, /nonna)
-#        --mode full  the whole harness: rules, agents, workflows, docs/STATUS.md (the default)
+#                     (the default for a new install)
+#        --mode full  the whole harness: rules, agents, workflows, docs/STATUS.md
+#        Without --mode an install already here keeps its mode: running me again never downgrades it.
 # Env:   NONNA_REF  branch or tag to install (default: main)
 #        NONNA_SRC  install from a local checkout instead of cloning (used by the tests)
 set -uo pipefail
@@ -42,7 +46,8 @@ install.sh — Nonna in one command, for any agent host. Run it from the root of
 
 --host  claude (default), agents (AGENTS.md: Codex, Zed, Amp, opencode, Roo, Jules, Junie…),
         cursor, copilot, gemini, windsurf, cline, kiro, all. Several: --host cursor,agents
---mode  lite: the gates, /nonna and short house rules only. full: the whole harness (the default).
+--mode  lite (the default): the gates, /nonna and short house rules only. full: the whole harness.
+        Without --mode an install already here keeps its mode; --mode changes it.
 Env:    NONNA_REF  branch or tag to install (default: main)
         NONNA_SRC  install from a local checkout instead of cloning
 USAGE
@@ -84,6 +89,30 @@ top="$(git rev-parse --show-toplevel 2>/dev/null)" || {
   exit 1
 }
 cd "$top" || exit 1
+
+# Without --mode a new install is lite (bench/PREREGISTRATION.md, D3 row 1), and one already here
+# keeps its mode, so running me again never downgrades it. It is read from what an install leaves,
+# before this run adds anything: the mode it recorded, else the hooks and rules only a full install
+# copies (lib/core.sh reads a clone the same way). The user's nonna.mode outranks whatever I record,
+# at run time; I neither read it nor write it. A recorded value that is neither lite nor full (say
+# Full) is read as full, as nonna_mode reads it: I never turn what her hooks enforce into a lite.
+# debt: nonna.mode unread here (a global full gets lite files), read it here when a user hits that
+hint=""
+if [ -z "$mode" ]; then
+  mode="$(git config --local --get nonna.defaultMode 2>/dev/null)"
+  case "$mode" in
+    lite | full) hint="kept as this repository has it; --mode lite|full changes it" ;;
+    "" | off) # no record (off is a mode her hooks know, but not one I install)
+      if [ -f .claude/hooks/require-status-sync.sh ] && [ -f .claude/rules/00-core.md ]; then
+        mode=full hint="kept as this repository has it; --mode lite|full changes it"
+      else
+        mode=lite hint="the default; --mode full brings the whole harness"
+      fi ;;
+    *)
+      hint="'$mode' is neither lite nor full, and her hooks read that as full; --mode lite|full changes it"
+      mode=full ;;
+  esac
+fi
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
@@ -187,7 +216,25 @@ stack=""
 if [ -n "$stack" ] && [ -f "$P/stacks/$stack/settings.local.json" ]; then
   n=${#copied[@]}
   put "$P/stacks/$stack/settings.local.json" ".claude/settings.local.json"
-  [ "${#copied[@]}" -gt "$n" ] && done_msgs+=(".claude/settings.local.json ($stack)")
+  if [ "${#copied[@]}" -gt "$n" ]; then
+    # What it lets run without asking is read back from the file, so the message cannot drift from the pack.
+    grants="$(grep -o '"Bash([^"]*)"' .claude/settings.local.json | sed 's/^"Bash(//; s/:\*)"$//; s/)"$//' | paste -sd, -)"
+    done_msgs+=(".claude/settings.local.json ($stack): pre-approves ${grants//,/, }")
+    # It is this machine's alone: committed, it would pre-approve the same commands for every clone.
+    if through_link .gitignore; then
+      warn_msgs+=(".gitignore: a symlink is on the way, and I do not write through links, so add .claude/settings.local.json to it yourself")
+      failed=1
+    elif ! grep -qxF .claude/settings.local.json .gitignore 2>/dev/null; then
+      lead="" # a last line with no newline would swallow ours
+      [ ! -s .gitignore ] || [ -z "$(tail -c1 .gitignore)" ] || lead=$'\n'
+      if printf '%s.claude/settings.local.json\n' "$lead" 2>/dev/null >> .gitignore; then
+        done_msgs+=(".gitignore: added .claude/settings.local.json (yours alone, so it stays out of git)")
+      else
+        warn_msgs+=(".gitignore: could not write it, so add .claude/settings.local.json to it yourself")
+        failed=1
+      fi
+    fi
+  fi
 fi
 
 # A settings.json you already had was kept; without Nonna's hooks in it, her Claude Code gates are off.
@@ -197,22 +244,54 @@ if [ -f .claude/settings.json ] && ! grep -q '\.claude/hooks/' .claude/settings.
 fi
 
 hooks_dir="$(git rev-parse --git-path hooks)"
+# Her own links are told apart by nonna_hook_is_hers, as session start and /nonna tell them. It is
+# loaded from the source I fetched, not from the core.sh in this repository: put keeps a file that
+# was already there (an older one, or not mine), and sourcing it would run the repository's code in me.
+# shellcheck source=/dev/null
+. "$P/.claude/hooks/lib/core.sh"
 link_hook() { # <git hook name> <script under .claude/hooks>
-  local dest="$hooks_dir/$1"
+  local dest="$hooks_dir/$1" link hers=""
   if [ -L .claude ] || [ -L .claude/hooks ] || [ ! -x ".claude/hooks/$2" ] || [ ! -f .claude/hooks/lib/secret-patterns.sh ]; then
     warn_msgs+=("$1: .claude/hooks/$2 is not here, so this gate is not running")
     failed=1
     return 0
   fi
   if [ -e "$dest" ] || [ -L "$dest" ]; then
-    # It runs hers only when it names her script's path, not a file that merely shares its name.
-    grep -qsF ".claude/hooks/$2" "$dest" || warn_msgs+=("$1: you already have a $1 hook — chain .claude/hooks/$2 from it, or my gates do not run")
+    # Her own link is hers: one from an earlier run of mine, one her plugin wired, or, in a linked
+    # worktree, the one the main checkout made in the hooks they share. Her ../../.claude/hooks link
+    # counts only in a .git/hooks, where ../../ leads back to a repository root; from a hook
+    # manager's directory (.husky) it leads elsewhere, so it is judged like any other hook, which
+    # runs hers only when it names her script's path, not a file that merely shares its name.
+    link="$(readlink "$dest" 2>/dev/null)"
+    if [ "$link" = "../../.claude/hooks/$2" ]; then
+      case "$hooks_dir" in .git/hooks | */.git/hooks) hers=1 ;; esac
+    elif nonna_hook_is_hers "$link" "$2"; then
+      hers=1
+    fi
+    if [ -n "$hers" ]; then
+      # Git skips, in silence, a hook that points at nothing or at a file it cannot run: that gate is off.
+      if [ ! -x "$dest" ]; then
+        warn_msgs+=("$1: $dest points at nothing git can run, so this gate is not running")
+        failed=1
+      fi
+      return 0
+    fi
+    grep -qsF ".claude/hooks/$2" "$dest" || {
+      warn_msgs+=("$1: you already have a $1 hook — chain .claude/hooks/$2 from it, or my gates do not run")
+      failed=1
+    }
     return 0
   fi
+  # A gate that is not wired is off, and for hosts other than Claude Code the git hooks are all there is.
   if [ "$hooks_dir" = ".git/hooks" ]; then
-    mkdir -p "$hooks_dir" && ln -s "../../.claude/hooks/$2" "$dest"
+    { mkdir -p "$hooks_dir" && ln -s "../../.claude/hooks/$2" "$dest"; } || {
+      warn_msgs+=("$1: could not link $dest, so this gate is not running")
+      failed=1
+      return 0
+    }
   else
-    warn_msgs+=("$1: git hooks live in '$hooks_dir' (a hook manager?) — point its $1 at .claude/hooks/$2")
+    warn_msgs+=("$1: git hooks live in '$hooks_dir', not .git/hooks (a hook manager, or a linked worktree), so this gate is not running: point its $1 at .claude/hooks/$2")
+    failed=1
     return 0
   fi
   done_msgs+=("$dest -> .claude/hooks/$2")
@@ -221,15 +300,12 @@ link_hook pre-commit pre-commit.sh
 link_hook pre-push require-status-sync.sh
 
 # The mode lives in the repo's own git config, where every hook reads it (never committed, never
-# cloned), as the repo's default: nonna.mode, in the repo or --global, is the user's and outranks
-# it. Without --mode a copy-in install is full, and nothing is written.
-if [ -n "$mode" ]; then
-  if git config nonna.defaultMode "$mode"; then
-    done_msgs+=("mode: $mode (git config nonna.defaultMode)")
-  else
-    warn_msgs+=("could not record the mode in git config, so she runs as full")
-    failed=1
-  fi
+# cloned), as the repo's default: nonna.mode, in the repo or --global, is the user's and outranks it.
+if git config nonna.defaultMode "$mode"; then
+  done_msgs+=("mode: $mode (git config nonna.defaultMode)${hint:+ — $hint}")
+else
+  warn_msgs+=("could not record the mode in git config, so she goes by what this repository carries")
+  failed=1
 fi
 
 if [ "$failed" = 1 ]; then
