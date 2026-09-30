@@ -1,4 +1,4 @@
-<!-- Translated from README.md at c9d0c6c. -->
+<!-- Translated from README.md at c9d0c6c, plus #31's "From Nonna v2.0.0". -->
 <div align="center">
 
 [English](README.md) · [简体中文](README.zh-CN.md) · **한국어** · [日本語](README.ja.md) · [Español](README.es.md)
@@ -18,7 +18,7 @@
 
 </div>
 
-에이전트는 테스트 파일 하나가 통과하면, 다른 파일이 깨져 있어도 "완료"라고 말합니다. Nonna는 에이전트가 작업을 끝내려 하면 먼저 테스트 스위트 전체를 실행하고, 빨간불이면 다시 돌려보냅니다. `main`에 커밋하거나 푸시하는 것, 강제 푸시, 파일에 시크릿을 써 넣는 것도 막습니다. 이 가운데 어느 것도 모델이 판단하지 않습니다. 판단하는 것은 테스트 명령의 종료 코드입니다.
+에이전트는 테스트 파일 하나가 통과하면, 다른 파일이 깨져 있어도 "완료"라고 말합니다. Nonna는 에이전트가 작업을 끝내려 하면 먼저 테스트 스위트 전체를 실행하고, 빨간불이면 다시 돌려보냅니다. `main`에 커밋하거나 푸시하는 것, 강제 푸시, 파일에 시크릿을 써넣는 것도 막습니다. 이 가운데 어느 것도 모델이 판단하지 않습니다. 판단하는 것은 테스트 명령의 종료 코드입니다.
 
 ## 설치
 
@@ -145,9 +145,9 @@ curl -fsSL https://raw.githubusercontent.com/kapadias/nonna/main/install.sh | ba
 
 `install.sh`는 lite를 설치합니다: 게이트, git 훅, `/nonna`, 집안 규칙. `--mode full`을 붙이면 하네스 전체가 설치됩니다: 전체 규칙, 에이전트, 워크플로, `docs/STATUS.md`. 다시 실행해도 저장소에 이미 설정된 모드는 그대로 유지됩니다.
 
-Codex는 Nonna를 플러그인으로도 설치할 수 있으며, 이렇게 하면 Nonna의 훅도 추가됩니다. `codex plugin marketplace add kapadias/nonna`를 실행하고, `/plugins`에서 Nonna를 설치한 뒤, `/hooks`에서 Nonna의 훅을 신뢰하도록 설정하세요([`docs/INSTALL.md`](docs/INSTALL.md#codex-the-plugin)).
+Codex에서는 Nonna를 플러그인으로도 설치할 수 있으며, 이렇게 하면 Nonna의 훅도 추가됩니다. `codex plugin marketplace add kapadias/nonna`를 실행하고, `/plugins`에서 Nonna를 설치한 뒤, `/hooks`에서 Nonna의 훅을 신뢰하도록 설정하세요([`docs/INSTALL.md`](docs/INSTALL.md#codex-the-plugin)).
 
-GitHub Copilot CLI도 Nonna를 플러그인으로 설치할 수 있으며, 이렇게 하면 Nonna의 게이트가 에이전트 자체의 훅에서 실행됩니다:
+GitHub Copilot CLI에서도 Nonna를 플러그인으로 설치할 수 있으며, 이렇게 하면 Nonna의 게이트가 에이전트 자체의 훅에서 실행됩니다:
 
 ```bash
 copilot plugin marketplace add kapadias/nonna
@@ -164,13 +164,13 @@ copilot plugin install nonna@nonna
 | 빨간 테스트로는 턴을 끝낼 수 없음; "where's the test?"       |    있음     |     연결됨¹     |        연결됨²        |         없음³         |
 | 모든 파일 쓰기와 읽기에 시크릿 가드, 모든 명령에 브랜치 가드 |    있음     |     연결됨¹     |        연결됨²        |         없음³         |
 
-¹ 같은 스크립트를 Codex의 이벤트에서 실행하며, Codex가 문서로 공개한 훅 페이로드로 테스트했습니다. 실제 Codex 세션에서 처음부터 끝까지 실행해 본 적은 아직 없고 벤치마크에도 Codex 비교군이 없으므로, 여기서는 이 스크립트가 Claude Code에서 하는 일을 Codex에서도 한다고 말하지 않습니다. Codex는 셸을 통해 파일을 읽으며, 시크릿 가드는 그 셸에서 명령이 무엇을 읽는지 검사합니다. 이미 실행 중인 셸에 보낸 입력은 보지 못하고, 셸이 쓰는 내용도 검사하지 않습니다. 그 부분은 git 훅이 안전망입니다([`docs/INSTALL.md`](docs/INSTALL.md#codex-the-plugin)).
+¹ 같은 스크립트를 Codex의 이벤트에서 실행하며, Codex가 문서로 공개한 훅 페이로드로 테스트했습니다. 실제 Codex 세션에서 처음부터 끝까지 실행해 본 적은 아직 없고 벤치마크에서도 Codex는 돌려 보지 않았으므로, 여기서는 이 스크립트가 Claude Code에서 하는 일을 Codex에서도 한다고 말하지 않습니다. Codex는 셸을 통해 파일을 읽으며, 시크릿 가드는 그 셸에서 명령이 무엇을 읽는지 검사합니다. 이 스크립트들은 이미 실행 중인 셸에 보낸 입력은 보지 못하고, 셸이 쓰는 내용도 검사하지 않습니다. 그 부분은 git 훅이 안전망 역할을 합니다([`docs/INSTALL.md`](docs/INSTALL.md#codex-the-plugin)).
 
-² Copilot CLI가 플러그인용으로 문서화한 Copilot의 `sessionStart`, `preToolUse`, `agentStop` 훅을 통해 실행됩니다(1.0.72 이상). Copilot이 문서로 공개한 훅 페이로드로 골든 테스트를 했지만, 실제 Copilot 세션에서는 아직 실행해 보지 않았습니다. `apply_patch`는 Codex에서와 마찬가지로 파일 단위로 판단합니다. 무엇이 다른지는 [`docs/INSTALL.md`](docs/INSTALL.md#github-copilot-cli-the-plugin)에 있습니다.
+² Copilot CLI가 플러그인용으로 문서화한 Copilot의 `sessionStart`, `preToolUse`, `agentStop` 훅을 통해 실행됩니다(1.0.72 이상). Copilot이 문서로 공개한 훅 페이로드로 골든 테스트를 했지만, 실제 Copilot 세션에서는 아직 실행해 보지 않았습니다. `apply_patch`는 Codex에서와 마찬가지로 파일 단위로 판단됩니다. 무엇이 다른지는 [`docs/INSTALL.md`](docs/INSTALL.md#github-copilot-cli-the-plugin)에 있습니다.
 
-³ Copilot CLI는 `install.sh`가 `.claude/settings.json`에 써 넣은 훅도 변환 없이 그대로 실행합니다. 이 훅들은 Copilot의 명령은 읽지만 파일 도구는 읽지 못하고, 플러그인과 함께 있으면 게이트가 모두 두 번씩 실행됩니다. Copilot에서는 플러그인을 쓰세요.
+³ Copilot CLI는 `install.sh`가 `.claude/settings.json`에 써넣은 훅도 변환 없이 그대로 실행합니다. 이 훅들은 Copilot의 명령은 읽지만 파일 도구는 읽지 못하고, 플러그인과 함께 있으면 게이트가 모두 두 번씩 실행됩니다. Copilot에서는 플러그인을 쓰세요.
 
-v2.0.0부터는 Gemini CLI도 집안 규칙을 확장 프로그램으로 불러올 수 있습니다: `gemini extensions install https://github.com/kapadias/nonna`. 확장 프로그램에는 규칙만 들어 있고 git 훅은 없습니다. 훅은 `install.sh --host gemini`가 추가합니다([자세히](docs/INSTALL.md#gemini-cli-the-extension)).
+Nonna v2.0.0부터는 Gemini CLI도 집안 규칙을 확장 프로그램으로 불러올 수 있습니다: `gemini extensions install https://github.com/kapadias/nonna`. 확장 프로그램에는 규칙만 들어 있고 git 훅은 없습니다. 훅은 `install.sh --host gemini`가 추가합니다([자세히](docs/INSTALL.md#gemini-cli-the-extension)).
 
 이미 있는 것은 아무것도 덮어쓰지 않습니다. 자세한 내용: [`docs/INSTALL.md`](docs/INSTALL.md).
 
@@ -190,7 +190,7 @@ v2.0.0부터는 Gemini CLI도 집안 규칙을 확장 프로그램으로 불러�
 
 **테스트 없이 배포해야 하면요?** 브랜치에서, 언제 테스트를 추가할지 적은 `debt:` 마커를 달고 하세요. Nonna가 기억할 겁니다.
 
-**Windows는요?** WSL 2를 쓰세요(또는 macOS나 Linux). 네이티브 Windows에서는 여러 게이트가 지켜야 할 것을 막지 못하고, 일부는 아예 시작되지도 않습니다: [측정 결과](docs/INSTALL.md#windows).
+**Windows는요?** WSL 2를 쓰세요(또는 macOS나 Linux). 네이티브 Windows에서는 여러 게이트가 막아야 할 것을 막지 못하고, 일부는 아예 시작되지도 않습니다: [측정 결과](docs/INSTALL.md#windows).
 
 **왜 Nonna인가요?** 컴파일이 됐다고 해서 할머니가 봐주지는 않으니까요.
 

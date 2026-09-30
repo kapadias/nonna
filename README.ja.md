@@ -1,4 +1,4 @@
-<!-- Translated from README.md at c9d0c6c. -->
+<!-- Translated from README.md at c9d0c6c, plus #31's "From Nonna v2.0.0". -->
 <div align="center">
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [한국어](README.ko.md) · **日本語** · [Español](README.es.md)
@@ -164,13 +164,13 @@ copilot plugin install nonna@nonna
 | テストが赤のままではターンを終えられない／「where's the test?」                        |    あり     |      接続済み¹      |         接続済み²         |           なし³            |
 | ファイルの書き込み・読み込みのたびにシークレットガード、コマンドのたびにブランチガード |    あり     |      接続済み¹      |         接続済み²         |           なし³            |
 
-¹ 同じスクリプトを Codex のイベントで実行し、Codex が公開しているフックのペイロードでテストしています。まだ Codex のセッションでエンドツーエンドに動かしたことはなく、ベンチマークにも Codex での計測はないため、Claude Code でしていることを Codex でもしているとは、ここでは言っていません。Codex はシェル経由でファイルを読み、シークレットガードはそこでコマンドが読むものをチェックします。すでに動いているシェルに送られた入力は見えず、シェルが書き出す内容もスキャンしません。そこは git フックが最後の砦です（[`docs/INSTALL.md`](docs/INSTALL.md#codex-the-plugin)）。
+¹ 同じスクリプトを Codex のイベントで実行し、Codex のドキュメントに記載されたフックのペイロードでテストしています。まだ Codex のセッションでエンドツーエンドで動かしたことはなく、ベンチマークにも Codex での計測はないため、Claude Code でしていることを Codex でもしているとは、ここでは言っていません。Codex はシェル経由でファイルを読み、シークレットガードはそこでコマンドが読むものをチェックします。これらのスクリプトは、すでに動いているシェルに送られた入力を検知できず、シェルが書き出す内容もスキャンしません。そこは git フックが次の防衛線になります（[`docs/INSTALL.md`](docs/INSTALL.md#codex-the-plugin)）。
 
-² Copilot CLI がプラグイン向けに文書化している Copilot の `sessionStart`、`preToolUse`、`agentStop` フックを通じて動きます（1.0.72 以降）。Copilot が公開しているフックのペイロードでゴールデンテストをしていますが、実際の Copilot セッションではまだ動かしていません。`apply_patch` は Codex と同じく、ファイルごとに判定します。何が違うかは [`docs/INSTALL.md`](docs/INSTALL.md#github-copilot-cli-the-plugin) にあります。
+² Copilot CLI がプラグイン向けにドキュメントに記載している `sessionStart`、`preToolUse`、`agentStop` フックを通じて動きます（1.0.72 以降）。Copilot のドキュメントに記載されたフックのペイロードでゴールデンテストをしていますが、実際の Copilot セッションではまだ動かしていません。`apply_patch` は Codex と同じく、ファイルごとに判定します。何が違うかは [`docs/INSTALL.md`](docs/INSTALL.md#github-copilot-cli-the-plugin) にあります。
 
 ³ Copilot CLI は、`install.sh` が `.claude/settings.json` に書き込むフックも変換せずにそのまま実行します。これらのフックは Copilot のコマンドは読めてもファイルツールは読めず、プラグインと併用すると各ゲートが二重に動きます。Copilot ではプラグインを使ってください。
 
-v2.0.0 からは、Gemini CLI でもハウスルールを拡張機能として読み込めます：`gemini extensions install https://github.com/kapadias/nonna`。入るのはルールだけで、git フックは付きません。フックは `install.sh --host gemini` で追加します（[詳細](docs/INSTALL.md#gemini-cli-the-extension)）。
+Nonna v2.0.0 からは、Gemini CLI でもハウスルールを拡張機能として読み込めます：`gemini extensions install https://github.com/kapadias/nonna`。入るのはルールだけで、git フックは付きません。フックは `install.sh --host gemini` で追加します（[詳細](docs/INSTALL.md#gemini-cli-the-extension)）。
 
 既存のものは何も上書きしません。詳しくは [`docs/INSTALL.md`](docs/INSTALL.md) へ。
 

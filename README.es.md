@@ -1,4 +1,4 @@
-<!-- Translated from README.md at c9d0c6c. -->
+<!-- Translated from README.md at c9d0c6c, plus #31's "From Nonna v2.0.0". -->
 <div align="center">
 
 [English](README.md) · [简体中文](README.zh-CN.md) · [한국어](README.ko.md) · [日本語](README.ja.md) · **Español**
@@ -185,12 +185,12 @@ Para otro agente, añade `-s -- --host <name>`:
 `--mode full` para el harness completo: las reglas completas, los agentes, los flujos de trabajo y
 `docs/STATUS.md`. Volver a ejecutarlo mantiene el modo que ya tenga el repositorio.
 
-Codex también puede instalarla como plugin, lo que añade sus hooks: ejecuta
+Codex también puede instalarla como plugin, lo que añade los hooks de Nonna: ejecuta
 `codex plugin marketplace add kapadias/nonna`, instala Nonna desde `/plugins` y confía en sus hooks
 desde `/hooks` ([`docs/INSTALL.md`](docs/INSTALL.md#codex-the-plugin)).
 
-GitHub Copilot CLI también puede instalarla como plugin, lo que ejecuta sus controles en los propios
-hooks del agente:
+GitHub Copilot CLI también puede instalarla como plugin, y así sus controles se ejecutan en los
+propios hooks del agente:
 
 ```bash
 copilot plugin marketplace add kapadias/nonna
@@ -216,16 +216,16 @@ shell; ahí la red de seguridad son los hooks de git
 ([`docs/INSTALL.md`](docs/INSTALL.md#codex-the-plugin)).
 
 ² A través de los hooks `sessionStart`, `preToolUse` y `agentStop` de Copilot, que Copilot CLI
-documenta para plugins (1.0.72 o posterior). Probados con golden tests frente a los payloads de hooks
+documenta para plugins (1.0.72 o posterior). Probados con golden tests sobre los payloads de hooks
 que documenta Copilot; todavía no se han ejecutado en una sesión real de Copilot. Un `apply_patch`
 se juzga archivo por archivo, como el de Codex.
 [`docs/INSTALL.md`](docs/INSTALL.md#github-copilot-cli-the-plugin) explica qué cambia.
 
 ³ Copilot CLI también ejecuta, sin traducir, los hooks que `install.sh` escribe en
-`.claude/settings.json`: leen sus comandos pero no sus herramientas de archivos, y junto al plugin
-cada control se ejecuta dos veces. Con Copilot, usa el plugin.
+`.claude/settings.json`: leen los comandos de Copilot, pero no sus herramientas de archivos, y junto
+al plugin cada control se ejecuta dos veces. Con Copilot, usa el plugin.
 
-A partir de la v2.0.0, Gemini CLI también puede cargar las reglas de la casa como extensión:
+A partir de Nonna v2.0.0, Gemini CLI también puede cargar las reglas de la casa como extensión:
 `gemini extensions install https://github.com/kapadias/nonna`. Solo lleva las reglas, sin hooks de
 git; `install.sh --host gemini` los añade ([detalles](docs/INSTALL.md#gemini-cli-the-extension)).
 
