@@ -62,7 +62,7 @@ never offered to the model, so it is not counted.
   `review-lanes.sh` sends the manifest and a root `hooks/hooks.json` to security review. The lint
   holds the manifest to what the CLI loads, and the release workflow holds its version to the tag.
 - **Docs** — this `STATUS.md`, `INSTALL.md`, `OVERVIEW.md`, `docs/benchmarks/`, `CHANGELOG.md`, the
-  `docs/adr/` index, and ADRs 0001–0013.
+  `docs/adr/` index, and ADRs 0001–0014.
 - **Launch images** — `assets/build.py` builds the scorecard, the social preview and one card per
   trap task from round 3's files; `--check` (standard library only) is run by `tests/run.sh`.
 - **CI** — `.github/workflows/ci.yml`: shellcheck (all scripts) + harness-lint + gate self-tests
@@ -73,6 +73,25 @@ never offered to the model, so it is not counted.
 ## Recently changed
 
 History lives in `CHANGELOG.md` and `git log`. Entries here describe the current unit of work.
+
+- **2026-09-30** — A test command per directory, for monorepos (#29, ADR-0014). A monorepo's whole
+  suite runs past the Stop hook's 240 seconds, so it got no verdict until the push. Now
+  `git config nonna.<dir>.testCmd` (set with `/nonna test --dir`) gives a directory its own command.
+  A changed file belongs to the longest such directory it is in, else to the repository's command.
+  The Stop hook runs each owning command once, in its directory and only inside the repository,
+  within the shared budget, and blocks on the first red, naming the directory; new files count, and
+  a listing that fails runs every command. A directory's green run is remembered by the whole tree
+  but the directories beside it, so a change in one of those does not run it again, and a shared
+  file or a package inside it does. The pre-push hook chooses the same way from the pushed range,
+  reading each merge against each parent (for every repository, a clean merge used to push with no
+  tests), with a signer's `log.showSignature` pinned off so the verifier's lines cannot move a file
+  out of its package, every submodule read (the working-tree check's too), whatever `.gitmodules`
+  says to ignore, and replace refs off, so a look-alike cannot stand in for what is pushed. `/nonna`
+  lists the directories' commands, and `/nonna uninstall` removes every `nonna` subsection (it used
+  to leave them behind). With no such keys, what runs is chosen as before, while that pre-push
+  hardening holds for every repository. Golden tests for each hook and for `/nonna`, a property test
+  for ownership, and each fix pinned against a mutant of it. Two gaps it found are follow-ups (Next
+  / open).
 
 - **2026-09-30** — A Codex plugin (#25, ADR-0013), because Codex could end a turn on a red suite and
   its edits passed both guards: an `apply_patch` adding a key or editing `.git/config` exited 0.
@@ -527,6 +546,11 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   `\v`, a no-break space) as a trigger; it should trim all of it (the security review's LOW). It
   also reads only the first marker on a line, so one inside a string before it, or a file with
   CR-only line endings, hides a marker with no trigger later on that line (also LOW).
+- The branch guard keeps `.git/nonna/` and `.git/nonna-green` (her green runs) from the agent's
+  file tools, not from a shell redirection, so a green run can be written from the shell (#29's
+  security review, LOW). Its shell-write refusal names `.git/config` and `.git/hooks` in four
+  patterns, and misses a linked worktree's state, so closing it needs new parsing.
+- The pre-push hook only warns when a pushed branch is not checked out, and runs no tests for it.
 
 - The Codex plugin (#25) in a real Codex session: install it from `/plugins`, trust its hooks in
   `/hooks`, and see a red suite send the agent back and a patch with a key refused; then a Codex

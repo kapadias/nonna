@@ -42,12 +42,15 @@ Using another agent, or want the gates committed for your whole team? See
 /nonna setup             record the test command she finds, wire the git hooks, offer the rest
 /nonna lite|full|off     this repository's mode
 /nonna test 'make test'  this repository's test command (/nonna test off turns the gate off)
+/nonna test --dir packages/api 'pytest -q'
+                         that directory's own test command, for a monorepo (off takes it out)
 /nonna uninstall         take her git hooks, settings and state back out of this repository
 ```
 
 - `/nonna` shows her version, the mode and where it comes from, then one line each for the test
-  gate (the command, where it comes from, and whether this tree already passed), the branch guard,
-  the secret guard, the STATUS gate and the two git hooks. It changes nothing.
+  gate (the command, where it comes from, and whether this tree already passed), each directory's
+  own test command, the branch guard, the secret guard, the STATUS gate and the two git hooks. It
+  changes nothing.
 - `/nonna setup` records the test command detection finds, unless one is already recorded (an empty
   one included), and wires the git hooks. Then it offers what only you can decide: Claude Code's
   [deny-list](#optional-claude-codes-own-deny-list) in `.claude/settings.json`, and in full mode a
@@ -58,6 +61,10 @@ Using another agent, or want the gates committed for your whole team? See
 - `/nonna test '<command>'` sets `git config nonna.testCmd`; `/nonna test off` sets it empty, which
   turns the test gate off. If `NONNA_TEST_CMD` is set, it tells you that the variable still decides
   at the end of a turn.
+- `/nonna test --dir <directory> '<command>'` gives a directory of the repository its own command,
+  `git config nonna.<directory>.testCmd`, with the directory named from the repository's top; see
+  [A test command per directory](#a-test-command-per-directory). `/nonna test --dir <directory> off`
+  takes it out.
 - `/nonna uninstall` takes out what is hers: see [Uninstall](#uninstall).
 
 `/nonna` is yours. Claude Code runs it when you type it; the agent cannot invoke it, and the branch
@@ -80,9 +87,10 @@ In each git repository where a session starts:
 - **`.git/config`**: `nonna.testCmd` (the [test command](#the-test-command)), `nonna.defaultMode`
   (the plugin's `mode` option, mirrored for the git hooks, which cannot read it; or the mode
   `install.sh` installed) and `nonna.announced` (the first-session notice was shown). `nonna.mode`
-  only when you set it.
+  and a directory's `nonna.<directory>.testCmd` only when you set them.
 - **`.git/nonna/`**: where each session began, so work committed during a session cannot dodge the
   test gate, and which changes were already asked for a test. Files older than a week are deleted.
+  Also the last green run of each directory's own test command.
 - **`.git/nonna-green`**: the last tree and test command the suite passed on.
 - **`.git/.nonna-branch-warned-<branch>`**: an empty file, so the warning about editing on `main`,
   `master` or `develop` shows once.
@@ -96,6 +104,7 @@ committed, and her hooks make no network calls.
 ls -l .git/hooks/pre-push .git/hooks/pre-commit     # remove them only if they point at Nonna
 rm .git/hooks/pre-push .git/hooks/pre-commit
 git config --remove-section nonna
+git config --remove-section nonna.packages/api      # and each other directory with its own command
 rm -rf .git/nonna .git/nonna-green .git/.nonna-branch-warned-*
 ```
 
@@ -107,6 +116,7 @@ rm -rf .git/nonna .git/nonna-green .git/.nonna-branch-warned-*
 | ---------------------- | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `nonna.mode`           | git config, the repository or `--global`  | `off`, `lite` or `full`. Yours alone: Nonna never writes it, and `/nonna lite\|full\|off` sets it for you.                                                |
 | `nonna.testCmd`        | git config, the repository or `--global`  | The [test command](#the-test-command). Empty turns the test gate off.                                                                                     |
+| `nonna.<dir>.testCmd`  | git config, the repository only           | A [directory's own test command](#a-test-command-per-directory), run when a change is in it. Empty is none.                                               |
 | `NONNA_MODE`           | the environment Claude Code runs in       | Outranks `nonna.mode` in Claude Code's hooks. The git hooks ignore it.                                                                                    |
 | `NONNA_TEST_CMD`       | the environment Claude Code runs in       | Outranks `nonna.testCmd` at the end of a turn; empty turns that gate off. The `pre-push` hook ignores it.                                                 |
 | `NONNA_TEST_TIMEOUT`   | the environment of Claude Code, or of git | Seconds the suite may run. Unset: 240 at the end of a turn, 600 before a push.                                                                            |
@@ -192,8 +202,41 @@ there; Claude Code stops the Stop hook at 300 seconds, whatever `NONNA_TEST_TIME
 push it has 600 seconds, and a suite that runs out of time there is refused.
 
 The `pre-push` test gate tastes what you push. It runs in the working tree, so it refuses a push
-while the tree differs from `HEAD`, untracked files included. A pushed branch that is not checked
-out gets a warning that its tests did not run; tags and deletes run nothing.
+while the tree differs from `HEAD`, untracked files included, and a submodule checked out at another
+commit, edited inside, or holding untracked files, whatever `.gitmodules` says to ignore
+(`ignore = untracked` for build output included). A pushed branch that is not checked out gets a
+warning that its tests did not run; tags and deletes run nothing. A pushed merge counts for what it
+takes from each side, not only for what its resolution changed, so a clean merge runs the tests too.
+
+### A test command per directory
+
+In a monorepo the whole suite often takes longer than those 240 seconds. Give each package its own
+command instead ([ADR 0014](adr/0014-a-test-command-per-directory.md)):
+
+```
+/nonna test --dir packages/api 'pytest -q'
+/nonna test --dir packages/web 'npm test'
+```
+
+That sets `git config nonna.packages/api.testCmd`, the directory named from the repository's top. A
+changed file belongs to the longest such directory it is in, and a file in none belongs to the
+repository's own command, if there is one. At the end of a turn, the Stop hook runs the command of
+each directory that owns a file changed this session (a new file git does not ignore counts), once
+and in that directory, then the repository's command if a changed file is in no directory. If it
+cannot list the changes, it runs every command. The commands run in the order `/nonna` lists them,
+share the 240 seconds, and the first red one sends the agent back, named with its directory. A
+directory's command is not run again while nothing but the directories beside it has changed since
+it last passed; a shared file outside every package, such as a lockfile, or a package inside it,
+runs it again. A directory that
+leads out of the repository, through a link, is red. Before a push, the `pre-push` hook chooses the
+same way from the pushed commits, and each command gets its 600 seconds.
+
+`NONNA_TEST_CMD` still replaces them all at the end of a turn. A directory's command is read from the
+repository's own config, never the global one. An empty one is no command, so the directory's files
+go to the repository's command; to test nothing there, give it a command that passes, such as
+`true`. With directory commands set, `/nonna test off` turns off only the repository's own command.
+A change in one package that breaks another is caught only by a command that runs the other
+package's tests.
 
 ### These switches are yours
 
