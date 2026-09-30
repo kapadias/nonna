@@ -2744,9 +2744,12 @@ check "tests.sh: PHP: phpunit.xml.dist and vendor/bin/phpunit: vendor/bin/phpuni
 check "tests.sh: PHP: phpunit.xml but no vendor/bin/phpunit (composer install not run): nothing" "" "$(named "$RUNNERS" phpunit.xml)"
 # Java and Kotlin: the Gradle wrapper is its own marker and runner; Maven needs mvn.
 check "tests.sh: Gradle: an executable gradlew: ./gradlew test" "./gradlew test" "$(named "$RUNNERS" gradlew)"
-TMP="$(mktemp -d)"; fx "$TMP" gradlew package.json; chmod -x "$TMP/gradlew"
+TMP="$(mktemp -d)"; fx "$TMP" gradlew; chmod -x "$TMP/gradlew"
 # shellcheck disable=SC2086  # a word list on purpose
-check "tests.sh: Gradle: a gradlew that cannot run (mode lost in a zip): nothing, not its package.json" "" "$(det "$TMP" $RUNNERS)"
+check "tests.sh: Gradle: a gradlew that cannot run (mode lost in a zip): nothing" "" "$(det "$TMP" $RUNNERS)"
+fx "$TMP" package.json
+# shellcheck disable=SC2086  # a word list on purpose
+check "tests.sh: Gradle: ...with a package.json beside it, npm test" "npm test --silent" "$(det "$TMP" $RUNNERS)"
 rm -rf "$TMP"
 check "tests.sh: Maven: a pom.xml: mvn test" "mvn test" "$(named "$RUNNERS" pom.xml)"
 check "tests.sh: Maven: mvn off PATH: nothing" "" "$(named "" pom.xml)"
@@ -2761,11 +2764,17 @@ check "tests.sh: .NET: a solution and a project of another name: nothing" "" "$(
 # Elixir
 check "tests.sh: Elixir: a mix.exs: mix test" "mix test" "$(named "$RUNNERS" mix.exs)"
 check "tests.sh: Elixir: mix off PATH: nothing" "" "$(named "" mix.exs)"
-# An arm that matches and finds no runner ends the search, as pytest's always has: a Rails app without
-# Bundler is not gated by the tests of its front end.
-check "tests.sh: a Rails app without bundle is not handed to its package.json: nothing" "" "$(named "" Gemfile .rspec package.json)"
-check "tests.sh: nor a Laravel app without vendor/bin/phpunit" "" "$(named "$RUNNERS" phpunit.xml package.json)"
-check "tests.sh: nor a pytest config without pytest, beside a Rails app" "" "$(named "" pytest.ini Gemfile .rspec)"
+# A row whose runner is missing is skipped and the search goes on to the rows below, so a repository that
+# is gated today (by package.json, go.mod or Cargo.toml) is gated still. pytest's row keeps its own older
+# rule: a pytest config without pytest names nothing.
+check "tests.sh: fall through: a Rails app without bundle keeps its package.json: npm test" "npm test --silent" "$(named "" Gemfile .rspec package.json)"
+check "tests.sh: fall through: a Laravel app before composer install keeps its package.json: npm test" "npm test --silent" "$(named "$RUNNERS" phpunit.xml package.json)"
+check "tests.sh: fall through: a JHipster app (pom.xml, mvnw) with neither java nor mvn keeps its package.json: npm test" "npm test --silent" "$(named "" pom.xml mvnw package.json)"
+check "tests.sh: fall through: a pom.xml without mvn keeps its package.json: npm test" "npm test --silent" "$(named "java" pom.xml package.json)"
+check "tests.sh: fall through: a Phoenix app without mix keeps its go.mod: go test" "go test ./..." "$(named "" mix.exs go.mod)"
+check "tests.sh: fall through: a .NET solution without dotnet keeps its Cargo.toml: cargo test" "cargo test --quiet" "$(named "" App.sln Cargo.toml)"
+check "tests.sh: fall through: every back end without its runner: the first row below them" "go test ./..." "$(named "" Gemfile .rspec phpunit.xml pom.xml mix.exs App.sln Cargo.toml go.mod)"
+check "tests.sh: fall through: ...but pytest's row claims its repository: a pytest config without pytest, beside a Rails app, names nothing" "" "$(named "bundle" pytest.ini Gemfile .rspec package.json)"
 # The order: pytest first, then the back ends, then package.json, go.mod and Cargo.toml. The name that
 # comes later in the order is listed first where it can be, to show the listing does not decide.
 check "tests.sh: order: pytest before Ruby" "python3 -m pytest -q" "$(named "$RUNNERS" Gemfile .rspec pytest.ini)"
@@ -2784,7 +2793,7 @@ check "tests.sh: order: go.mod before Cargo.toml" "go test ./..." "$(named "$RUN
 # be the one expected.
 ALL=(Gemfile .rspec spec/ Rakefile test/ phpunit.xml vendor/bin/phpunit gradlew pom.xml App.sln mix.exs package.json go.mod Cargo.toml)
 check "tests.sh: property: every ecosystem at once, 12 creation orders: always Ruby" "bundle exec rspec" "$(answers "$RUNNERS" "${ALL[@]}")"
-check "tests.sh: property: ...with no runner anywhere, always nothing" "" "$(answers "" "${ALL[@]}")"
+check "tests.sh: property: ...with no runner anywhere (no wrapper scripts either), always its package.json" "npm test --silent" "$(answers "" Gemfile .rspec spec/ Rakefile test/ phpunit.xml pom.xml App.sln mix.exs package.json go.mod Cargo.toml)"
 check "tests.sh: property: Gradle, Maven, JavaScript, Go and Rust, 12 creation orders: always Gradle" "./gradlew test" "$(answers "$RUNNERS" gradlew pom.xml package.json go.mod Cargo.toml)"
 check "tests.sh: property: Elixir, JavaScript, Go and Rust, 12 creation orders: always Elixir" "mix test" "$(answers "$RUNNERS" mix.exs package.json go.mod Cargo.toml)"
 check "tests.sh: property: ...and the 12 creation orders are 12 different orders" 12 "$(for ((s = 1; s <= 12; s++)); do shuffled "$s" "${ALL[@]}" | tr '\n' ' '; echo; done | sort -u | wc -l | tr -d ' ')"

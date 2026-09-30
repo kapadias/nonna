@@ -12,8 +12,10 @@
 #                  NONNA_TEST_CMD, which the command that runs git could set.
 # nonna_detect_test_cmd  prints the command detection finds here: the first row of this list that
 #                  matches, and only when its runner is there. A missing runner would read as a red suite
-#                  and block every push, so a row that matches and lacks its runner names nothing and the
-#                  search ends there. Detection looks for a runner and never starts one.
+#                  and block every push, so a row whose runner is missing is skipped and the search goes
+#                  on below it: a repository that package.json, go.mod or Cargo.toml gates is gated still.
+#                  pytest's row is the old exception: its files claim the repository, and without pytest
+#                  nothing is named. Detection looks for a runner and never starts one.
 #                    pytest config or tests, pytest installed        python3 -m pytest -q
 #                    Gemfile, and .rspec or spec/; bundle            bundle exec rspec
 #                    Gemfile, Rakefile and test/; bundle             bundle exec rake test
@@ -52,6 +54,8 @@ nonna_test_cmd() { # [git-hook]: a git hook takes nothing from the environment (
   nonna_detect_test_cmd
 }
 
+nonna_have() { command -v "$1" >/dev/null 2>&1; } # <command>: found on PATH; looking runs nothing
+
 nonna_detect_test_cmd() {
   local t f dotnet_files=0 has_py_tests=0
   for t in tests/test_*.py tests/*_test.py test/test_*.py test_*.py; do
@@ -64,25 +68,25 @@ nonna_detect_test_cmd() {
     python3 -c 'import sys; sys.path[:] = [p for p in sys.path if p not in ("", ".")]; import importlib.util; sys.exit(importlib.util.find_spec("pytest") is None)' >/dev/null 2>&1 \
       && printf 'python3 -m pytest -q'
   # The back ends come before package.json, which in a Rails, Laravel or Phoenix app serves the front
-  # end. As with pytest, an arm whose files match and whose runner is missing names nothing, and the
-  # search ends: the front end's tests must not stand in for the back end's. A runner is looked for
-  # (command -v, -x), never started.
-  elif [ -f Gemfile ] && { [ -f .rspec ] || [ -d spec ]; }; then # spec/ is also Jasmine's: the Gemfile makes it Ruby
-    command -v bundle >/dev/null 2>&1 && printf 'bundle exec rspec'
-  elif [ -f Gemfile ] && [ -f Rakefile ] && [ -d test ]; then
-    command -v bundle >/dev/null 2>&1 && printf 'bundle exec rake test'
-  elif [ -f phpunit.xml ] || [ -f phpunit.xml.dist ]; then
-    [ -x vendor/bin/phpunit ] && printf 'vendor/bin/phpunit'
-  elif [ -f gradlew ]; then
-    [ -x gradlew ] && printf './gradlew test'
-  elif [ -f pom.xml ]; then
-    command -v mvn >/dev/null 2>&1 && printf 'mvn test'
-  elif [ "$dotnet_files" -gt 0 ]; then
+  # end. A row whose runner is missing is skipped, not claimed: the search goes on below it, so a
+  # repository that package.json, go.mod or Cargo.toml gates stays gated. A runner is looked for
+  # (nonna_have, -x), never started.
+  elif [ -f Gemfile ] && { [ -f .rspec ] || [ -d spec ]; } && nonna_have bundle; then # spec/ is also Jasmine's: the Gemfile makes it Ruby
+    printf 'bundle exec rspec'
+  elif [ -f Gemfile ] && [ -f Rakefile ] && [ -d test ] && nonna_have bundle; then
+    printf 'bundle exec rake test'
+  elif { [ -f phpunit.xml ] || [ -f phpunit.xml.dist ]; } && [ -x vendor/bin/phpunit ]; then
+    printf 'vendor/bin/phpunit'
+  elif [ -x gradlew ]; then
+    printf './gradlew test'
+  elif [ -f pom.xml ] && nonna_have mvn; then
+    printf 'mvn test'
+  elif [ "$dotnet_files" = 1 ] && nonna_have dotnet; then
     # dotnet test exits with MSB1011, which reads as a red suite, where several solution or project files sit.
-    # debt: a .sln and a .csproj of one name count as two and name nothing, name the solution when a repository reports it
-    [ "$dotnet_files" -eq 1 ] && command -v dotnet >/dev/null 2>&1 && printf 'dotnet test'
-  elif [ -f mix.exs ]; then
-    command -v mix >/dev/null 2>&1 && printf 'mix test'
+    # debt: a .sln and a .csproj of one name count as two and are skipped, name the solution when a repository reports it
+    printf 'dotnet test'
+  elif [ -f mix.exs ] && nonna_have mix; then
+    printf 'mix test'
   elif [ -f package.json ] && grep -qE '"test"[[:space:]]*:' package.json && ! grep -q 'no test specified' package.json; then
     printf 'npm test --silent'
   elif [ -f go.mod ]; then
