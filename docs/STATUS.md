@@ -86,7 +86,8 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   agent the branch guard now refuses writes to Copilot's repository settings and hooks
   (`disableAllHooks` turns every hook off). Golden tests from Copilot's documented payloads, one of
   them holding the adapter equal to Claude Code's goldens; no live Copilot session has run it.
-  `release.yml` checks both new manifests against the tag.
+  `release.yml` checks both new manifests against the tag, and `review-lanes.sh` sends a change to
+  the hooks file to security review.
 
 - **2026-09-30** — A Codex plugin (#25, ADR-0013), because Codex could end a turn on a red suite and
   its edits passed both guards: an `apply_patch` adding a key or editing `.git/config` exited 0.

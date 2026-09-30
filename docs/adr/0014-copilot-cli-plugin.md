@@ -102,6 +102,9 @@ while a file in `.github/hooks/` adds hooks of its own.
 - Copilot's and Codex's patches share one reader and one shape: a change to `lib/patch.sh` or to
   `_nonna_codex_files` changes what both hosts' gates judge, and the Copilot adapter sources
   Codex's to reach it. Only the lines a patch adds are scanned, as only an Edit's new text is.
+- `review-lanes.sh` counts `hooks/copilot-hooks.json` a risky path, as it does a root
+  `hooks/hooks.json`: a change to which gates Copilot runs always reaches the security reviewer.
+  The manifests, under `.github/`, already did.
 - `nonna_hook_is_hers` knows Claude Code's plugin directories, not Copilot's: `/nonna`'s scripts
   leave the git hooks the Copilot plugin wired, and a later Claude Code session in the same
   repository warns about them. Revisit when both plugins share repositories in practice.

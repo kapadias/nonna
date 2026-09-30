@@ -168,9 +168,9 @@ Your AI agent says "done"; Nonna makes it prove it.
   reader Codex's plugin brought; a call not in Copilot's shape is refused, never read untranslated)
   and gives her replies in Copilot's form, a refusal's reason included. Under either agent, the
   branch guard also refuses the agent writing Copilot's repository settings, where one
-  `disableAllHooks` line turns every hook off, or its repository hooks. Golden-tested against
-  Copilot's documented payloads and held equal to Claude Code's goldens; not yet run in a live
-  Copilot session.
+  `disableAllHooks` line turns every hook off, or its repository hooks, and `review-lanes.sh` sends
+  a change to the hooks file to a security review. Golden-tested against Copilot's documented
+  payloads and held equal to Claude Code's goldens; not yet run in a live Copilot session.
 
 ### Changed
 

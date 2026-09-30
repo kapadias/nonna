@@ -40,7 +40,8 @@ Three principles govern everything here:
   (numbered decisions). `CHANGELOG.md` lives at the repository root.
 - **`.github/`**: CI (`workflows/ci.yml`), `workflows/release.yml`, `scripts/` (release tooling),
   the PR template, the issue templates (`ISSUE_TEMPLATE/`), and `plugin/`, the Copilot CLI plugin's
-  marketplace and manifest, whose hooks are the root `hooks/copilot-hooks.json`.
+  marketplace and manifest, whose hooks are the root `hooks/copilot-hooks.json`; `review-lanes.sh`
+  sends a change to that file to a security review.
 
 ## How to add to the harness
 
