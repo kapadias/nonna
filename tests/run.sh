@@ -2232,6 +2232,17 @@ contains "/nonna test: says when NONNA_TEST_CMD still overrides it here" "NONNA_
 ns "$TMP" test off >/dev/null; check "/nonna test off: turns the gate off" "" "$(git -C "$TMP" config --get nonna.testCmd)"
 git -C "$TMP" config --get nonna.testCmd >/dev/null; check "/nonna test off: recorded as empty, so nothing re-detects it" 0 "$?"
 contains "/nonna: a gate turned off says so, not that there is no command" "as you set it" "$(ns "$TMP")"
+# A directory's own command (ADR-0012): named from the repository's top, and only a directory in it.
+mkdir -p "$TMP/packages/api"
+out="$(ns "$TMP" test --dir ./packages/api/ pytest -q)"
+check "/nonna test --dir: records the directory's command under its name from the top" "pytest -q" "$(git -C "$TMP" config --get nonna.packages/api.testCmd)"
+contains "/nonna test --dir: says what runs, and where" "in packages/api" "$out"
+contains "/nonna: lists each directory's command" "packages/api: pytest -q" "$(ns "$TMP")"
+contains "/nonna test --dir: refuses what is not a directory of this repository" "not a directory" "$(ns "$TMP" test --dir packages/nope pytest)"
+ns "$TMP" test --dir .. pytest >/dev/null
+check "/nonna test --dir: ...nor records one outside it" 1 "$(git -C "$TMP" config --get-regexp '^nonna\..+\.testcmd$' | grep -c .)"
+ns "$TMP" test --dir packages/api off >/dev/null
+git -C "$TMP" config --get nonna.packages/api.testCmd >/dev/null; check "/nonna test --dir off: takes the directory's command out" 1 "$?"
 contains "/nonna: an unknown word says what she knows" "Nonna does not know 'spicy'" "$(ns "$TMP" spicy)"
 mkdir -p "$TMP/.claude"; printf '{"disableAllHooks": true}\n' > "$TMP/.claude/settings.local.json"
 contains "/nonna: says the guards are off when Claude Code runs no hooks" "disableAllHooks" "$(ns "$TMP")"
@@ -2292,6 +2303,19 @@ TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; "${GIT[@]}" -C "$TMP" commit 
 : > "$(gp "$TMP/wt" nonna-green)"
 ns "$TMP" uninstall >/dev/null
 if [ -e "$(gp "$TMP/wt" nonna-green)" ]; then rc=1; else rc=0; fi; check "/nonna uninstall: takes her state from every worktree" 0 "$rc"
+rm -rf "$TMP"
+# Every nonna section goes, each directory's own included, and each setting is named (ADR-0012).
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
+git -C "$TMP" config nonna.testCmd "make check"; git -C "$TMP" config nonna.packages/api.testCmd "pytest -q"
+git -C "$TMP" config "nonna.packages/web ui.testCmd" "npm test"
+out="$(ns "$TMP" uninstall)"
+grep -q '^\[nonna' "$TMP/.git/config"; check "/nonna uninstall: leaves no nonna section or subsection" 1 "$?"
+contains "/nonna uninstall: names each directory's command it removes" "git config nonna.packages/api.testCmd=pytest -q" "$out"
+contains "/nonna uninstall: ...a name with a space in it whole" "git config nonna.packages/web ui.testCmd=npm test" "$out"
+git -C "$TMP" config nonna.packages/api.testCmd "pytest -q"
+out="$(ns "$TMP" uninstall)"
+git -C "$TMP" config --get-regexp '^nonna\.' >/dev/null; check "/nonna uninstall: takes a directory's command that is her only setting" 1 "$?"
+printf '%s' "$out" | grep -q 'could not remove'; check "/nonna uninstall: ...and nothing failed" 1 "$?"
 rm -rf "$TMP"
 # A hook that is not hers stays, named; so does the user's own link named like her script, and a
 # hook of the user's that chains hers is left for the user to edit.

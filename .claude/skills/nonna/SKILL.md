@@ -1,7 +1,7 @@
 ---
 name: nonna
 description: See or change what Nonna enforces in this repository — status, setup, lite, full, off, test, uninstall.
-argument-hint: "[setup | lite | full | off | test <command> | uninstall]"
+argument-hint: "[setup | lite | full | off | test [--dir <directory>] <command> | uninstall]"
 disable-model-invocation: true
 model: haiku
 allowed-tools: Bash(bash "${CLAUDE_SKILL_DIR}/scripts/nonna.sh":*)

@@ -6,6 +6,8 @@
 #                           else would help
 #   /nonna lite|full|off    this repository's mode (git config nonna.mode), then status
 #   /nonna test <command>   this repository's test command (`/nonna test off` turns the gate off)
+#   /nonna test --dir <directory> <command>
+#                           that directory's own command, run when it changes (`off` takes it out)
 #   /nonna uninstall        take her git hooks, settings and state back out of this repository
 #
 # Only a person runs this: the skill's ! line runs it when the user types /nonna, and the skill sets
@@ -34,18 +36,44 @@ case "${1:-}" in
     ;;
   test)
     shift
+    # --dir: a directory's own command (ADR-0012), keyed by its name from the repository's top, as git
+    # names its files: ./, a trailing /, .. and links resolved. The top itself is the repository's.
+    dir=""
+    if [ "${1:-}" = --dir ]; then
+      top="$(git rev-parse --show-toplevel 2>/dev/null)" && top="$(cd "$top" 2>/dev/null && pwd -P)"
+      real=""
+      [ -z "$top" ] || real="$(cd "$top/${2:-}" 2>/dev/null && pwd -P)"
+      case "$real" in
+        "$top"/?*) dir="${real#"$top"/}" ;;
+        *)
+          echo "'${2:-}' is not a directory of this repository. Name one from its top: /nonna test --dir packages/api '<command>'."
+          exit 0
+          ;;
+      esac
+      shift 2
+    fi
     # One argument is the command as the user quoted it; several are the words of one, each kept
     # whole (a quoted word with a space inside stays one word).
     if [ "$#" -le 1 ]; then cmd="${1:-}"; else cmd="$(printf '%q ' "$@")" && cmd="${cmd% }"; fi
     case "$cmd" in
-      "") echo "Say which: /nonna test '<command>', or /nonna test off." ;;
+      "") echo "Say which: /nonna test${dir:+ --dir $dir} '<command>', or /nonna test${dir:+ --dir $dir} off." ;;
       off | none | '""' | "''")
-        git config nonna.testCmd ""
-        echo "The test gate is off in this repository (git config nonna.testCmd is empty)."
+        if [ -z "$dir" ]; then
+          git config nonna.testCmd ""
+          echo "The test gate is off in this repository (git config nonna.testCmd is empty)."
+        elif git config --unset "nonna.$dir.testCmd"; then
+          echo "$dir has no test command of its own now: a change there counts for the directory around it that has one, or for the repository."
+        else
+          echo "$dir had no test command of its own."
+        fi
         ;;
       *)
-        git config nonna.testCmd "$cmd"
-        echo "Before the agent can say done, and before a push, Nonna now runs: $cmd"
+        git config "nonna.${dir:+$dir.}testCmd" "$cmd"
+        if [ -z "$dir" ]; then
+          echo "Before the agent can say done, and before a push, Nonna now runs: $cmd"
+        else
+          echo "Before the agent can say done, and before a push, a change in $dir now runs this there: $cmd"
+        fi
         ;;
     esac
     [ -z "$cmd" ] || [ "${NONNA_TEST_CMD+set}" != set ] \
