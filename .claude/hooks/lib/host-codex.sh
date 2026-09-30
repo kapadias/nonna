@@ -59,6 +59,7 @@ nonna_codex_payload() {
 #   lib/patch.sh reads the patch by its grammar; its status stands when it refuses one, and so does a
 #   patch that is there and could not be decoded. jq writes a \u0000 in the patch as a NUL byte, which
 #   the shell would drop: it reaches lib/patch.sh as \001, as the secret scan reads a NUL.
+#   lib/host-copilot.sh calls this too, so a change here must keep Copilot's tests green as well.
 _nonna_codex_files() {
   local payload patch records
   payload="$(cat)"

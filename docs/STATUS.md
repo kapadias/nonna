@@ -61,8 +61,13 @@ never offered to the model, so it is not counted.
   `hooks/hooks.json`, `commands/`, `skills/`, `agents/` or `policies/`, in any letter case.
   `review-lanes.sh` sends the manifest and a root `hooks/hooks.json` to security review. The lint
   holds the manifest to what the CLI loads, and the release workflow holds its version to the tag.
+- **Copilot CLI plugin** — `.github/plugin/plugin.json` and `marketplace.json` (the plugin's
+  version; the repository is the plugin) and `hooks/copilot-hooks.json`, which runs `session-start`,
+  `guard-branch`, `secret-scan` and `stop-dod` with `NONNA_HOST=copilot`. `lib/host-copilot.sh`
+  reads Copilot's payloads as Claude Code's, an `apply_patch` a file at a time. The release workflow
+  holds both manifests to the tag, and `review-lanes.sh` sends the hooks file to security review.
 - **Docs** — this `STATUS.md`, `INSTALL.md`, `OVERVIEW.md`, `docs/benchmarks/`, `CHANGELOG.md`, the
-  `docs/adr/` index, and ADRs 0001–0014.
+  `docs/adr/` index, and ADRs 0001–0015.
 - **Launch images** — `assets/build.py` builds the scorecard, the social preview and one card per
   trap task from round 3's files; `--check` (standard library only) is run by `tests/run.sh`.
 - **CI** — `.github/workflows/ci.yml`: shellcheck (all scripts) + harness-lint + gate self-tests
@@ -82,6 +87,22 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   comment, and every link target and inline code span `README.md` has, so no number, command or
   link goes stale in one language. The credit is allowed in each
   file by name; none repeats the golden-test count, and one left behind is checked all the same.
+
+- **2026-09-30** — A GitHub Copilot CLI plugin (#26, ADR-0015), so Copilot's agent meets the stop
+  gate and both guards in its own hooks, not only at the next push. `.github/plugin/` holds the
+  marketplace and the manifest (the repository is the plugin), and `hooks/copilot-hooks.json` wires
+  `session-start.sh`, `guard-branch.sh`, `secret-scan.sh` and `stop-dod.sh` with
+  `NONNA_HOST=copilot`, under PascalCase event names, for which Copilot sends Claude Code's field
+  and tool names. `.claude/hooks/lib/host-copilot.sh` renames the tools' arguments, Copilot's names
+  winning over any decoy, judges each path of a grep and each file of an `apply_patch` (through
+  `lib/patch.sh` and `_nonna_codex_files`, as Codex's are), refuses a call not in Copilot's shape,
+  and gives her replies in Copilot's form; one block in each of three scripts calls it. Under either
+  agent the branch guard now refuses writes to Copilot's repository settings and hooks
+  (`disableAllHooks` turns every hook off). Golden tests from Copilot's documented payloads, one of
+  them holding the adapter equal to Claude Code's goldens; no live Copilot session has run it.
+  `release.yml` checks both new manifests against the tag, and `review-lanes.sh` sends a change to
+  the hooks file to security review. macOS CI caught one collision on a disk that ignores case: the
+  lint fixture now carries the root `hooks/`, so the Gemini `Hooks` cases start without it.
 
 - **2026-09-30** — Native Windows is measured, and it is not safe (#30). CI's `windows-latest` job
   reports and does not block. It runs `tests/run.sh` under Git Bash in three legs (`core.autocrlf`
@@ -595,6 +616,10 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   `\v`, a no-break space) as a trigger; it should trim all of it (the security review's LOW). It
   also reads only the first marker on a line, so one inside a string before it, or a file with
   CR-only line endings, hides a marker with no trigger later on that line (also LOW).
+- The Copilot CLI plugin has not run in a live Copilot session: a smoke run (a commit on `main`, a
+  key in a new file, a turn ending on a red suite) belongs on the go/no-go list. Its git hooks point
+  into Copilot's plugin data, which `nonna_hook_is_hers` does not know, so `/nonna`'s scripts leave
+  them and a Claude Code session in the same repository warns about them (ADR-0015).
 - The branch guard keeps `.git/nonna/` and `.git/nonna-green` (her green runs) from the agent's
   file tools, not from a shell redirection, so a green run can be written from the shell (#29's
   security review, LOW). Its shell-write refusal names `.git/config` and `.git/hooks` in four

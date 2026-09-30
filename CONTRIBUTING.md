@@ -40,7 +40,9 @@ Three principles govern everything here:
 - **`docs/`**: `STATUS.md` (the living state), `INSTALL.md`, `OVERVIEW.md`, `benchmarks/`, and `adr/`
   (numbered decisions). `CHANGELOG.md` lives at the repository root.
 - **`.github/`**: CI (`workflows/ci.yml`), `workflows/release.yml`, `scripts/` (release tooling),
-  the PR template, and the issue templates (`ISSUE_TEMPLATE/`).
+  the PR template, the issue templates (`ISSUE_TEMPLATE/`), and `plugin/`, the Copilot CLI plugin's
+  marketplace and manifest, whose hooks are the root `hooks/copilot-hooks.json`; `review-lanes.sh`
+  sends a change to that file to a security review.
 
 ## How to add to the harness
 
@@ -78,15 +80,16 @@ needs:
 2. **`install.sh`.** Add the key and its path to `host_file()`, and the key to the `all` list, the
    unknown-host message and the `--help` text. The host loop then copies the lite file by default and
    the full one with `--mode full`.
-3. **A hook manifest, if the host has hooks.** Claude Code and Codex have one; every other host gets
-   its rules file and the git hooks. Hooks for a new host need a manifest that wires Nonna's scripts
-   to its events (Claude Code's are `.claude/settings.json` and, for the plugin,
-   `.claude/hooks/hooks.json`; Codex's plugin loads `.claude/hooks/codex-hooks.json`), code in
-   `install.sh` to copy it unless the host installs the plugin, and a way for the scripts to read
-   that host's hook input. They read Claude Code's JSON (`tool_name`, `tool_input`) and block the way
-   Claude Code expects: exit code 2, or `{"decision": "block"}`. Each command in the manifest names
-   its host (`NONNA_HOST=codex`), and where the host's input differs, `lib/host-<host>.sh` reads it
-   as Claude Code's, run by one small block in each script that needs it (ADR-0013).
+3. **A hook manifest, if the host has hooks.** Claude Code, Codex and Copilot CLI have one; every
+   other host gets its rules file and the git hooks. Hooks for a new host need a manifest that wires
+   Nonna's scripts to its events (Claude Code's are `.claude/settings.json` and, for the plugin,
+   `.claude/hooks/hooks.json`; Codex's plugin loads `.claude/hooks/codex-hooks.json`, and Copilot
+   CLI's `hooks/copilot-hooks.json`), code in `install.sh` to copy it unless the host installs the
+   plugin, and a way for the scripts to read that host's hook input. They read Claude Code's JSON
+   (`tool_name`, `tool_input`) and block the way Claude Code expects: exit code 2, or
+   `{"decision": "block"}`. Each command in the manifest names its host (`NONNA_HOST=codex`,
+   `NONNA_HOST=copilot`), and where the host's input differs, `lib/host-<host>.sh` reads it as Claude
+   Code's, run by one small block in each script that needs it (ADR-0013, ADR-0015).
 4. **The docs.** In `README.md`, a row in the `--host` table under "Other agents"; if the host gets
    more than every other agent (its own hooks), a column in "What each agent gets" that says what. In
    `docs/INSTALL.md`, a row in the host table.

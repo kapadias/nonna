@@ -33,7 +33,7 @@ CLAUDE_CONFIG_DIR="$(mktemp -d)"; export CLAUDE_CONFIG_DIR
 GIT_CONFIG_GLOBAL="$CLAUDE_CONFIG_DIR/gitconfig"; : > "$GIT_CONFIG_GLOBAL"; export GIT_CONFIG_GLOBAL
 GIT_CONFIG_NOSYSTEM=1; export GIT_CONFIG_NOSYSTEM
 unset NONNA_MODE NONNA_TEST_CMD NONNA_TEST_TIMEOUT NONNA_LADDER CLAUDE_PLUGIN_OPTION_MODE \
-  CLAUDE_PLUGIN_OPTION_RUN_TESTS CLAUDE_PLUGIN_ROOT CLAUDE_PLUGIN_DATA CLAUDE_PROJECT_DIR
+  CLAUDE_PLUGIN_OPTION_RUN_TESTS CLAUDE_PLUGIN_ROOT CLAUDE_PLUGIN_DATA CLAUDE_PROJECT_DIR NONNA_HOST
 
 check() { # <desc> <expected_exit> <actual_exit>
   if [ "$2" = "$3" ]; then
@@ -1673,6 +1673,11 @@ mkdir -p "$TMP/Hooks"; printf '{}\n' > "$TMP/Hooks/Hooks.json"
 out="$(cd "$TMP" && bash "$RL" main 2>/dev/null)"
 contains "review-lanes: a root Hooks/Hooks.json triggers it in any letter case" "security=yes" "$out"
 rm -rf "$TMP/Hooks"
+# So is the Copilot CLI plugin's hooks file (ADR-0015): it decides which of her gates Copilot runs.
+mkdir -p "$TMP/hooks"; printf '{}\n' > "$TMP/hooks/copilot-hooks.json"
+out="$(cd "$TMP" && bash "$RL" main 2>/dev/null)"
+contains "review-lanes: the Copilot plugin's hooks/copilot-hooks.json triggers security review" "security=yes" "$out"
+rm -rf "$TMP/hooks"
 mkdir -p "$TMP/agents"; printf 'Plans the work.\n' > "$TMP/agents/planner.md"
 out="$(cd "$TMP" && bash "$RL" main 2>/dev/null)"
 contains "review-lanes: an ordinary root agents/ file needs no security review" "security=no" "$out"
@@ -3474,8 +3479,8 @@ rm -rf "$TMP"
 echo "== release.yml (the tag must agree with every manifest) =="
 # The release job refuses a tag that disagrees with a manifest. `gemini extensions install` takes the
 # latest release's archive and lists the version in gemini-extension.json, so that manifest is held to
-# the tag too, and so is Codex's. The step's script is run here as GitHub runs it, on a copy of the four
-# manifests.
+# the tag too, and so are Codex's and Copilot CLI's. The step's script is run here as GitHub runs it,
+# on a copy of the six manifests.
 REL="$ROOT/.github/workflows/release.yml"
 rel_script() { # -> the run: script of the step that checks the manifests against the tag, dedented
   python3 - "$REL" <<'PY'
@@ -3490,13 +3495,14 @@ for l in lines[run + 1:]:
     print(l[indent:])
 PY
 }
-rel_repo() { # -> a directory holding the four manifests, as the release job sees them
+rel_repo() { # -> a directory holding the six manifests, as the release job sees them
   local d; d="$(mktemp -d)"
-  mkdir -p "$d/.claude/.claude-plugin" "$d/.claude/.codex-plugin" "$d/.claude-plugin"
+  mkdir -p "$d/.claude/.claude-plugin" "$d/.claude/.codex-plugin" "$d/.claude-plugin" "$d/.github/plugin"
   cp "$ROOT/.claude/.claude-plugin/plugin.json" "$d/.claude/.claude-plugin/"
   cp "$ROOT/.claude/.codex-plugin/plugin.json" "$d/.claude/.codex-plugin/"
   cp "$ROOT/.claude-plugin/marketplace.json" "$d/.claude-plugin/"
   cp "$ROOT/gemini-extension.json" "$d/"
+  cp "$ROOT/.github/plugin/plugin.json" "$ROOT/.github/plugin/marketplace.json" "$d/.github/plugin/"
   printf '%s' "$d"
 }
 RV="$(sed -n 's/.*"version"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' "$ROOT/.claude/.claude-plugin/plugin.json" | head -n 1)"
@@ -3512,6 +3518,11 @@ RD="$(rel_repo)"
 sed_i 's/"version": "[^"]*"/"version": "9.9.9"/' "$RD/.claude/.codex-plugin/plugin.json"
 out="$(cd "$RD" && GITHUB_REF_NAME="v$RV" bash "$RS" 2>&1)"; check "release: a tag the Codex manifest disagrees with fails" 1 "$?"
 contains "release: ...and names that manifest" ".codex-plugin/plugin.json says 9.9.9" "$out"
+rm -rf "$RD"
+RD="$(rel_repo)"
+sed_i 's/"version": "[^"]*"/"version": "9.9.9"/' "$RD/.github/plugin/plugin.json"
+out="$(cd "$RD" && GITHUB_REF_NAME="v$RV" bash "$RS" 2>&1)"; check "release: a tag the Copilot CLI manifest disagrees with fails" 1 "$?"
+contains "release: ...and names that manifest" ".github/plugin/plugin.json says 9.9.9" "$out"
 rm -rf "$RD"
 RD="$(rel_repo)"
 out="$(cd "$RD" && GITHUB_REF_NAME="v9.9.9" bash "$RS" 2>&1)"; check "release: a tag none of the manifests agree with fails" 1 "$?"
@@ -3798,6 +3809,453 @@ check "gemini extension: it does not claim the git hooks are already in the repo
 case "$GX" in "" | *@*) rc=1 ;; *) rc=0 ;; esac
 check "gemini extension: it holds no @ (Gemini CLI reads @path in a context file as an import)" 0 "$rc"
 
+echo "== Copilot CLI plugin (hooks/copilot-hooks.json runs her gates with NONNA_HOST=copilot) =="
+# The plugin's root is this repository. Its hooks file names the events in PascalCase, so Copilot sends
+# its VS Code compatible payload: snake_case, with Claude Code's tool name. The payloads are the
+# documented ones (docs.github.com/en/copilot/reference/hooks-reference), each tool's arguments as
+# Copilot CLI 1.0.89 defines them: bash {command, description, mode, initial_wait}, create {path,
+# file_text}, edit {path, old_str, new_str}, view {path}, grep {pattern, paths}, str_replace_editor
+# {command, path}, apply_patch its raw patch text. No Copilot runs: each gate runs as the file wires it.
+CPH="$ROOT/hooks/copilot-hooks.json"
+cop_cmd() { # <event> <matcher, - for none> <script>: the command the hooks file runs for it, its env first
+  python3 -c 'import json, shlex, sys
+try:
+    hooks = json.load(open(sys.argv[1]))["hooks"]
+except Exception:
+    sys.exit(0)
+for e in hooks.get(sys.argv[2], []):
+    if e.get("matcher", "-") == sys.argv[3] and "/.claude/hooks/" + sys.argv[4] in e.get("bash", ""):
+        env = [k + "=" + shlex.quote(v) for k, v in sorted(e.get("env", {}).items())]
+        print(" ".join(["env"] + env + [e["bash"]]))
+        break' "$CPH" "$1" "$2" "$3"
+}
+cop() { # <event> <matcher> <script> <repo> <payload>: runs it as Copilot would; its stdout and exit
+  local cmd; cmd="$(cop_cmd "$1" "$2" "$3")"
+  [ -n "$cmd" ] || return 99 # not wired
+  printf '%s' "$5" | (cd "$4" && CLAUDE_PLUGIN_ROOT="$ROOT" CLAUDE_PROJECT_DIR="$4" bash -c "$cmd" 2>/dev/null)
+}
+CPR="$(mktemp -d)"; "${GIT[@]}" -C "$CPR" init -q; "${GIT[@]}" -C "$CPR" commit -q --allow-empty -m init; "${GIT[@]}" -C "$CPR" branch -M main
+pre() { # <tool_name> <tool_input>: Copilot's PreToolUse payload for a tool call in $CPR
+  printf '{"hook_event_name":"PreToolUse","session_id":"c0p1l07-5e55","timestamp":"2026-09-30T12:00:00.000Z","cwd":"%s","tool_name":"%s","tool_input":%s}' "$CPR" "$1" "$2"
+}
+out="$(cop PreToolUse Bash guard-branch.sh "$CPR" "$(pre Bash '{"command":"git commit -m x","description":"Commit the change","mode":"sync","initial_wait":30}')")"
+check "copilot: git commit on main exits 2" 2 "$?"
+contains "copilot: the refusal is Copilot's deny, which it shows the agent" '"permissionDecision":"deny"' "$out"
+contains "copilot: with her reason as permissionDecisionReason" "Make a branch" "$(printf '%s' "$out" | jq -r '.permissionDecisionReason // empty' 2>/dev/null)"
+out="$(cop PreToolUse 'Edit|Write' secret-scan.sh "$CPR" "$(pre Write '{"path":"'"$CPR"'/settings.py","file_text":"aws_id = \"'"$FAKE_AWS"'\"\n"}')")"
+check "copilot: a new file holding a key (create's file_text) exits 2" 2 "$?"
+contains "copilot: and the agent is told why" "house key" "$out"
+edit='{"path":"'"$CPR"'/app.py","old_str":"x = 1","new_str":"x = 2"}'
+cop PreToolUse 'Edit|Write' secret-scan.sh "$CPR" "$(pre Edit "$edit")" >/dev/null; check "copilot: a clean edit exits 0 (secret guard)" 0 "$?"
+cop PreToolUse 'Edit|Write' guard-branch.sh "$CPR" "$(pre Edit "$edit")" >/dev/null; check "copilot: a clean edit exits 0 (branch guard, which only warns on main)" 0 "$?"
+cop PreToolUse 'Edit|Write' guard-branch.sh "$CPR" "$(pre Edit '{"path":"'"$CPR"'/.git/config","old_str":"[core]","new_str":"[core]\n\tbare = false"}')" >/dev/null
+check "copilot: an edit of .git/config (edit's path) exits 2" 2 "$?"
+cop PreToolUse 'Read|Grep' secret-scan.sh "$CPR" "$(pre Read '{"path":"'"$CPR"'/.env"}')" >/dev/null; check "copilot: a view of .env exits 2" 2 "$?"
+cop PreToolUse 'Read|Grep' secret-scan.sh "$CPR" "$(pre Grep '{"pattern":".","paths":["'"$CPR"'/.env"]}')" >/dev/null; check "copilot: a grep of .env (grep's paths) exits 2" 2 "$?"
+cop PreToolUse 'Edit|Write' secret-scan.sh "$CPR" "$(pre Edit '{"command":"view","path":"'"$CPR"'/.env"}')" >/dev/null; check "copilot: a view of .env through str_replace_editor (an Edit) exits 2" 2 "$?"
+cop PreToolUse 'Edit|Write' secret-scan.sh "$CPR" "$(pre Edit '"*** Begin Patch\n*** Add File: settings.py\n+aws_id = \"'"$FAKE_AWS"'\"\n*** End Patch\n"')" >/dev/null
+check "copilot: an apply_patch that adds a key (raw patch text) exits 2" 2 "$?"
+cop PreToolUse 'Edit|Write' secret-scan.sh "$CPR" "$(pre Edit '"*** Begin Patch\n*** Update File: app.py\n@@\n-x = 1\n+x = 2\n*** End Patch\n"')" >/dev/null
+check "copilot: a clean apply_patch exits 0" 0 "$?"
+cop PreToolUse 'Edit|Write' secret-scan.sh "$CPR" "$(pre Edit '{"input":"*** Begin Patch\n*** Add File: settings.py\n+aws_id = \"'"$FAKE_AWS"'\"\n*** End Patch\n"}')" >/dev/null
+check "copilot: an apply_patch given as {input} that adds a key exits 2" 2 "$?"
+# An apply_patch is read as Codex's is (lib/patch.sh): each file it touches reaches both gates as Claude
+# Code's Write or Edit, with the lines it adds, whether its text comes raw or as input or patch.
+cpatch() { # <raw|input|patch> <patch line>...: an apply_patch's tool_input, its text in that form
+  printf '%s\n' '*** Begin Patch' "${@:2}" '*** End Patch' | python3 -c 'import json, sys
+text = sys.stdin.read()
+print(json.dumps(text if sys.argv[1] == "raw" else {sys.argv[1]: text}))' "$1"
+}
+for form in raw input patch; do
+  cop PreToolUse 'Edit|Write' guard-branch.sh "$CPR" "$(pre Edit "$(cpatch "$form" '*** Update File: .git/config' '@@' '+[core]')")" >/dev/null
+  check "copilot: an apply_patch ($form) that updates .git/config exits 2" 2 "$?"
+  cop PreToolUse 'Edit|Write' guard-branch.sh "$CPR" "$(pre Edit "$(cpatch "$form" '*** Update File: app.py' '@@' '-x = 1' '+x = 2' '*** Add File: .git/hooks/pre-commit' '+exit 0')")" >/dev/null
+  check "copilot: an apply_patch ($form) whose second file is .git/hooks/pre-commit exits 2" 2 "$?"
+  cop PreToolUse 'Edit|Write' secret-scan.sh "$CPR" "$(pre Edit "$(cpatch "$form" '*** Add File: tests/fixtures/keys.py' "+aws_id = \"$FAKE_AWS\"" '*** Add File: src/settings.py' "+aws_id = \"$FAKE_AWS\"")")" >/dev/null
+  check "copilot: an apply_patch ($form) with a fixture first and a key in its second file exits 2" 2 "$?"
+  clean="$(cpatch "$form" '*** Update File: app.py' '@@' '-x = 1' '+x = 2' '*** Add File: docs/notes.md' '+Notes.' '*** Delete File: old.py')"
+  cop PreToolUse 'Edit|Write' secret-scan.sh "$CPR" "$(pre Edit "$clean")" >/dev/null
+  check "copilot: a clean apply_patch ($form) over three files exits 0 (secret guard)" 0 "$?"
+  cop PreToolUse 'Edit|Write' guard-branch.sh "$CPR" "$(pre Edit "$clean")" >/dev/null
+  check "copilot: a clean apply_patch ($form) over three files exits 0 (branch guard)" 0 "$?"
+done
+# An Edit that names a path and carries a patch is judged both ways.
+jstr="$(cpatch input '*** Update File: .git/config' '@@' '+[core]' | python3 -c 'import json, sys
+d = json.load(sys.stdin); d.update({"path": "app.py", "old_str": "x = 1", "new_str": "x = 2"}); print(json.dumps(d))')"
+cop PreToolUse 'Edit|Write' guard-branch.sh "$CPR" "$(pre Edit "$jstr")" >/dev/null
+check "copilot: an edit of app.py that also carries a patch to .git/config exits 2" 2 "$?"
+# What the patch reader refuses is refused: a line outside its grammar, a patch over 256 KB, or one over
+# 200 files, too much to judge a file at a time before the hook times out (which lets the call through).
+cop PreToolUse 'Edit|Write' guard-branch.sh "$CPR" "$(pre Edit "$(cpatch raw '*** Frobnicate File: app.py' '+x = 2')")" >/dev/null
+check "copilot: an apply_patch outside the patch grammar exits 2" 2 "$?"
+out="$(cop PreToolUse 'Edit|Write' secret-scan.sh "$CPR" "$(pre Edit "$(cpatch raw '*** Add File: notes.md' "+$(printf '%0270000d' 0)")")")"
+check "copilot: an apply_patch over 256 KB exits 2" 2 "$?"
+contains "copilot: and the refusal says why" "over 256 KB" "$out"
+many=(); for i in $(seq 1 201); do many+=("*** Delete File: f$i.py"); done
+out="$(cop PreToolUse 'Edit|Write' guard-branch.sh "$CPR" "$(pre Edit "$(cpatch raw "${many[@]}")")")"
+check "copilot: an apply_patch over 200 files exits 2" 2 "$?"
+contains "copilot: and the refusal says why" "over 200 files" "$out"
+# Copilot's argument names are what its tools act on, so they are what the gates read: a Claude-named key
+# beside one (a decoy) never stands in for it, and every content key of a write is scanned.
+cop PreToolUse 'Edit|Write' secret-scan.sh "$CPR" "$(pre Write '{"path":"src/config.py","file_text":"aws_id = \"'"$FAKE_AWS"'\"","content":"x = 1"}')" >/dev/null
+check "copilot: a decoy content beside create's file_text does not hide its key" 2 "$?"
+cop PreToolUse 'Edit|Write' secret-scan.sh "$CPR" "$(pre Write '{"path":"src/config.py","file_text":"aws_id = \"'"$FAKE_AWS"'\"","file_path":"tests/fixtures/x.py"}')" >/dev/null
+check "copilot: a decoy fixture file_path beside create's path does not exempt its key" 2 "$?"
+cop PreToolUse 'Edit|Write' secret-scan.sh "$CPR" "$(pre Edit '{"path":"src/a.py","old_str":"a","new_str":"aws_id = \"'"$FAKE_AWS"'\"","new_string":"b"}')" >/dev/null
+check "copilot: a decoy new_string beside edit's new_str does not hide its key" 2 "$?"
+cop PreToolUse 'Edit|Write' guard-branch.sh "$CPR" "$(pre Edit '{"path":".git/config","old_str":"a","new_str":"b","file_path":"app.py"}')" >/dev/null
+check "copilot: a decoy file_path beside edit's path does not hide .git/config" 2 "$?"
+# A grep over several paths is judged path by path, a decoy path among them; any refusal refuses.
+out="$(cop PreToolUse 'Read|Grep' secret-scan.sh "$CPR" "$(pre Grep '{"pattern":".","paths":["src",".env"]}')")"
+check "copilot: a grep over several paths is refused when any is a secret file (src, .env)" 2 "$?"
+contains "copilot: and the agent is told why" "that drawer is private" "$out"
+cop PreToolUse 'Read|Grep' secret-scan.sh "$CPR" "$(pre Grep '{"pattern":".","paths":[".env"],"path":"src"}')" >/dev/null
+check "copilot: a decoy path beside grep's paths does not stand in for them" 2 "$?"
+cop PreToolUse 'Read|Grep' secret-scan.sh "$CPR" "$(pre Grep '{"pattern":".","paths":["src","docs"]}')" >/dev/null
+check "copilot: a grep over several ordinary paths exits 0" 0 "$?"
+# Each path is judged in a gate of its own, so past a cap the hook would outrun its timeout, which Copilot
+# lets through: a grep over more than 32 paths is refused up front.
+cp_paths() { # <count> [last path...]: a JSON list of that many paths, ordinary ones first
+  python3 -c 'import json, sys; n = int(sys.argv[1]); last = sys.argv[2:]; print(json.dumps(["docs/p%d" % i for i in range(n - len(last))] + last))' "$@"
+}
+cop PreToolUse 'Read|Grep' secret-scan.sh "$CPR" "$(pre Grep '{"pattern":".","paths":'"$(cp_paths 32)"'}')" >/dev/null
+check "copilot: a grep over 32 ordinary paths, the cap, is judged and exits 0" 0 "$?"
+cop PreToolUse 'Read|Grep' secret-scan.sh "$CPR" "$(pre Grep '{"pattern":".","paths":'"$(cp_paths 32 .env)"'}')" >/dev/null
+check "copilot: a grep over 32 paths, the last .env, is judged and exits 2" 2 "$?"
+out="$(cop PreToolUse 'Read|Grep' secret-scan.sh "$CPR" "$(pre Grep '{"pattern":".","paths":'"$(cp_paths 33)"'}')")"
+check "copilot: a grep over 33 paths is refused up front" 2 "$?"
+contains "copilot: and the refusal names the cap" "more than 32 paths" "$out"
+# A call that is not the shape Copilot sends is refused, not read untranslated: arguments that are not an
+# object (only apply_patch's raw text comes as a string, and never as JSON in one), a path that is not a
+# string, paths that are not one path or a flat, non-empty list, and a payload that is not JSON.
+cop PreToolUse Bash guard-branch.sh "$CPR" "$(pre Bash '"git commit -m x"')" >/dev/null
+check "copilot: a Bash call whose arguments are a string exits 2" 2 "$?"
+# Each JSON string is set first: inside "$(...)", bash 3.2 brace-expands '"{..,..}"' into several words.
+jstr='"{\"path\":\"a.py\",\"file_text\":\"x = 1\"}"'
+cop PreToolUse 'Edit|Write' secret-scan.sh "$CPR" "$(pre Write "$jstr")" >/dev/null
+check "copilot: a Write whose arguments are JSON in a string exits 2" 2 "$?"
+jstr='"{\"path\":\".env\"}"'
+cop PreToolUse 'Read|Grep' secret-scan.sh "$CPR" "$(pre Read "$jstr")" >/dev/null
+check "copilot: a Read whose arguments are JSON in a string exits 2" 2 "$?"
+jstr='"{\"path\":\".git/config\",\"old_str\":\"a\",\"new_str\":\"b\"}"'
+cop PreToolUse 'Edit|Write' guard-branch.sh "$CPR" "$(pre Edit "$jstr")" >/dev/null
+check "copilot: an Edit whose arguments are JSON in a string exits 2" 2 "$?"
+cop PreToolUse 'Read|Grep' secret-scan.sh "$CPR" "$(pre Read '[".env"]')" >/dev/null
+check "copilot: a Read whose arguments are a list exits 2" 2 "$?"
+cop PreToolUse 'Read|Grep' secret-scan.sh "$CPR" "$(pre Read '{"path":[".env"]}')" >/dev/null
+check "copilot: a Read whose path is a list exits 2" 2 "$?"
+cop PreToolUse 'Read|Grep' secret-scan.sh "$CPR" "$(pre Grep '{"pattern":".","paths":[[".env"]]}')" >/dev/null
+check "copilot: a grep whose paths nest a list exits 2" 2 "$?"
+cop PreToolUse 'Read|Grep' secret-scan.sh "$CPR" "$(pre Grep '{"pattern":".","paths":[]}')" >/dev/null
+check "copilot: a grep over an empty list of paths exits 2" 2 "$?"
+cop PreToolUse 'write_bash|write_powershell' guard-branch.sh "$CPR" "$(pre write_bash '"git commit --no-verify -m x"')" >/dev/null
+check "copilot: a write_bash whose arguments are a string exits 2" 2 "$?"
+cop PreToolUse 'Edit|Write' secret-scan.sh "$CPR" "$(pre Write '{"path":"a.py","file_text":"aws_id = \"'"$FAKE_AWS"'\""')" >/dev/null
+check "copilot: truncated JSON holding a key exits 2" 2 "$?"
+# A write's text, an edit's strings and a patch's text are strings, as a path is: one of another type is
+# refused, never skipped as if it were not there.
+cop PreToolUse 'Edit|Write' secret-scan.sh "$CPR" "$(pre Write '{"path":"a.py","file_text":["aws_id = \"'"$FAKE_AWS"'\""]}')" >/dev/null
+check "copilot: a Write whose file_text is a list exits 2" 2 "$?"
+cop PreToolUse 'Edit|Write' secret-scan.sh "$CPR" "$(pre Edit '{"path":"a.py","old_str":"x = 1","new_str":{"s":"aws_id = \"'"$FAKE_AWS"'\""}}')" >/dev/null
+check "copilot: an Edit whose new_str is an object exits 2" 2 "$?"
+cop PreToolUse 'Edit|Write' guard-branch.sh "$CPR" "$(pre Edit '{"path":"app.py","old_str":"x = 1","new_str":"x = 2","input":["*** Begin Patch\n*** Update File: .git/config\n@@\n+[core]\n*** End Patch\n"]}')" >/dev/null
+check "copilot: an Edit whose patch text (input) is a list exits 2" 2 "$?"
+# A file tool that names no path and carries no patch leaves the gates nothing to judge: no Copilot tool
+# sends that, so it is refused.
+cop PreToolUse 'Edit|Write' guard-branch.sh "$CPR" "$(pre Edit '{"command":"apply_patch","actions":[{"path":".git/config"}]}')" >/dev/null
+check "copilot: an Edit that names no path and carries no patch exits 2" 2 "$?"
+# Input written to an async shell is a command too.
+cop PreToolUse 'write_bash|write_powershell' guard-branch.sh "$CPR" "$(pre write_bash '{"shellId":"7","input":"git commit --no-verify -m x"}')" >/dev/null
+check "copilot: a command written to an async shell (write_bash's input) is read: --no-verify exits 2" 2 "$?"
+cop PreToolUse 'write_bash|write_powershell' secret-scan.sh "$CPR" "$(pre write_bash '{"shellId":"7","input":"cat .env"}')" >/dev/null
+check "copilot: and the secret guard reads it (cat .env exits 2)" 2 "$?"
+# One line in Copilot's repository settings (disableAllHooks) or in its repository hooks turns her gates off:
+# those files are the user's, as .git/config is, under either agent.
+cop PreToolUse 'Edit|Write' guard-branch.sh "$CPR" "$(pre Write '{"path":"'"$CPR"'/.github/copilot/settings.local.json","file_text":"{\"disableAllHooks\":true}"}')" >/dev/null
+check "copilot: a write of .github/copilot/settings.local.json exits 2" 2 "$?"
+cop PreToolUse 'Edit|Write' guard-branch.sh "$CPR" "$(pre Write '{"path":"'"$CPR"'/.github/hooks/quiet.json","file_text":"{\"version\":1}"}')" >/dev/null
+check "copilot: a write under .github/hooks/ exits 2" 2 "$?"
+cop PreToolUse 'Edit|Write' guard-branch.sh "$CPR" "$(pre Write '{"path":"'"$CPR"'/.GitHub/Copilot/Settings.json","file_text":"{}"}')" >/dev/null
+check "copilot: in any letter case, which a case-folding disk reads as the same file" 2 "$?"
+cop PreToolUse 'Edit|Write' guard-branch.sh "$CPR" "$(pre Write '{"path":"'"$CPR"'/.github/copilot-instructions.md","file_text":"# House rules"}')" >/dev/null
+check "copilot: .github/copilot-instructions.md stays writable" 0 "$?"
+printf '%s' '{"tool_name":"Write","tool_input":{"file_path":".github/copilot/settings.json","content":"{}"}}' | CLAUDE_PROJECT_DIR="$CPR" "$HOOKS/guard-branch.sh" 2>/dev/null
+check "Claude Code's agent may not write Copilot's settings either" 2 "$?"
+cpgb() { # <command>: the branch guard's exit on a Claude Code Bash call in $CPR
+  printf '{"tool_name":"Bash","tool_input":{"command":%s}}' "$(printf '%s' "$1" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')" \
+    | CLAUDE_PROJECT_DIR="$CPR" "$HOOKS/guard-branch.sh" 2>/dev/null
+  echo $?
+}
+check "a shell write of Copilot's settings (echo >) exits 2" 2 "$(cpgb "echo '{\"disableAllHooks\":true}' > .github/copilot/settings.local.json")"
+check "a copy into .github/hooks/ exits 2" 2 "$(cpgb 'cp quiet.json .github/hooks/')"
+check "an in-place edit under .github/hooks/ exits 2" 2 "$(cpgb "sed -i 's/a/b/' .github/hooks/nonna.json")"
+check "reading .github/hooks/ exits 0" 0 "$(cpgb 'cat .github/hooks/nonna.json')"
+check "a shell write into .github/hooks/ (echo >) exits 2" 2 "$(cpgb 'echo x > .github/hooks/nonna.json')"
+check "tee onto .github/copilot/settings.json exits 2" 2 "$(cpgb 'echo x | tee .github/copilot/settings.json')"
+check "a copy onto .github/copilot/settings.json exits 2" 2 "$(cpgb 'cp quiet.json .github/copilot/settings.json')"
+check "a copy into -t .github/hooks exits 2" 2 "$(cpgb 'cp -t .github/hooks quiet.json')"
+# Only those names: a file beside them whose name merely starts the same is an ordinary file.
+check "a shell write of .github/hooks-notes.md exits 0" 0 "$(cpgb 'echo x > .github/hooks-notes.md')"
+check "a shell write of .github/copilot/settings-notes.md exits 0" 0 "$(cpgb 'echo x > .github/copilot/settings-notes.md')"
+check "tee onto .github/copilot/settings-notes.md exits 0" 0 "$(cpgb 'echo x | tee .github/copilot/settings-notes.md')"
+check "a copy onto .github/copilot/settings-notes.md exits 0" 0 "$(cpgb 'cp notes.md .github/copilot/settings-notes.md')"
+check "a copy into -t .github/hooks-notes exits 0" 0 "$(cpgb 'cp -t .github/hooks-notes notes.md')"
+# The host is whatever the hooks file says, never guessed from the payload; Claude Code's own payloads
+# go through the adapter byte for byte.
+printf '%s' "$(pre Write '{"path":"a.py","file_text":"aws_id = \"'"$FAKE_AWS"'\""}')" | CLAUDE_PROJECT_DIR="$CPR" "$HOOKS/secret-scan.sh" 2>/dev/null
+check "copilot: without NONNA_HOST=copilot, Copilot's argument names are not read (the host is never sniffed)" 0 "$?"
+cl='{"tool_name":"Grep", "tool_input":{"pattern":"x","path":"src"}}'
+check "copilot: a Claude Code payload passes the adapter byte for byte" 0 "$( . "$HOOKS/lib/host-copilot.sh" 2>/dev/null
+  if [ "$(printf '%s' "$cl" | nonna_copilot_payload 2>/dev/null)" = "$cl" ]; then echo 0; else echo 1; fi)"
+# Without jq the adapter renames Copilot's path in the text, where the guard's own reader finds it.
+NJC="$(mktemp -d)"
+for b in bash sh env cat grep sed head tail tr cut awk dirname basename git mktemp touch; do
+  p="$(command -v "$b" 2>/dev/null || true)"; if [ -n "$p" ]; then ln -s "$p" "$NJC/$b" 2>/dev/null || true; fi
+done
+njc() { # <matcher> <script> <tool_name> <tool_input>: that gate as the hooks file runs it, without jq
+  local c; c="$(cop_cmd PreToolUse "$1" "$2")"
+  pre "$3" "$4" | (cd "$CPR" && PATH="$NJC" CLAUDE_PLUGIN_ROOT="$ROOT" CLAUDE_PROJECT_DIR="$CPR" bash -c "${c:-exit 99}" 2>/dev/null)
+}
+njc 'Edit|Write' guard-branch.sh Edit '{"path":"'"$CPR"'/.git/config","old_str":"[core]","new_str":"[core]"}'
+check "copilot: without jq, an edit of .git/config still exits 2" 2 "$?"
+# What the text alone cannot read safely is refused: a decoy key, a list of paths, a shell's input.
+njc 'Edit|Write' guard-branch.sh Edit '{"file_path":"app.py","path":".git/config","old_str":"a","new_str":"b"}'
+check "copilot: without jq, a decoy file_path is refused, not read" 2 "$?"
+njc 'Read|Grep' secret-scan.sh Grep '{"pattern":".","paths":["src"]}'
+check "copilot: without jq, a grep over a list of paths is refused" 2 "$?"
+njc 'Read|Grep' secret-scan.sh Grep '{"pattern":".","paths":".env"}'
+check "copilot: without jq, grep's paths as one string is its path (.env exits 2)" 2 "$?"
+njc 'Read|Grep' secret-scan.sh Grep '{"pattern":".","paths":"src"}'
+check "copilot: without jq, grep's paths as one string is its path (src exits 0)" 0 "$?"
+njc 'write_bash|write_powershell' guard-branch.sh write_bash '{"shellId":"7","input":"ls"}'
+check "copilot: without jq, a shell's input is refused" 2 "$?"
+njc Bash guard-branch.sh Bash '"git commit -m x"'
+check "copilot: without jq, a Bash call whose arguments are a string exits 2" 2 "$?"
+njc 'Read|Grep' secret-scan.sh Read '[".env"]'
+check "copilot: without jq, a Read whose arguments are a list exits 2" 2 "$?"
+njc 'Edit|Write' guard-branch.sh Edit '"{\"path\":\".git/config\",\"old_str\":\"a\",\"new_str\":\"b\"}"'
+check "copilot: without jq, an Edit whose arguments are JSON in a string exits 2" 2 "$?"
+njc 'Read|Grep' secret-scan.sh Read '{"path":[".env"]}'
+check "copilot: without jq, a path that is not a string exits 2" 2 "$?"
+njc 'Edit|Write' secret-scan.sh Write '{"path":"a.py","file_text":"x = 1"'
+check "copilot: without jq, a payload that never closes exits 2" 2 "$?"
+njc 'Edit|Write' secret-scan.sh Edit '"*** Begin Patch\n*** Update File: app.py\n@@\n-x = 1\n+x = 2\n*** End Patch\n"'
+check "copilot: without jq, apply_patch's raw text is still read (a clean patch exits 0)" 0 "$?"
+njc 'Edit|Write' guard-branch.sh Edit "$(cpatch raw '*** Update File: .git/config' '@@' '+[core]')"
+check "copilot: without jq, an apply_patch that updates .git/config exits 2" 2 "$?"
+njc 'Edit|Write' guard-branch.sh Edit "$(cpatch input '*** Update File: app.py' '@@' '+x = 2' '*** Add File: .git/hooks/pre-commit' '+exit 0')"
+check "copilot: without jq, an apply_patch ({input}) whose second file is .git/hooks/pre-commit exits 2" 2 "$?"
+njc 'Edit|Write' secret-scan.sh Edit "$(cpatch patch '*** Add File: tests/fixtures/keys.py' "+aws_id = \"$FAKE_AWS\"" '*** Add File: src/settings.py' "+aws_id = \"$FAKE_AWS\"")"
+check "copilot: without jq, an apply_patch ({patch}) with a fixture first and a key in its second file exits 2" 2 "$?"
+njc 'Edit|Write' guard-branch.sh Edit '{"path":"app.py","old_str":"x = 1","new_str":"x = 2","input":"*** Begin Patch\n*** Update File: app.py\n@@\n+x = 3\n*** End Patch\n"}'
+check "copilot: without jq, a patch beside an edit's own arguments is refused" 2 "$?"
+njc 'Edit|Write' secret-scan.sh Edit "$(cpatch raw '*** Frobnicate File: app.py' '+x = 2')"
+check "copilot: without jq, an apply_patch outside the patch grammar exits 2" 2 "$?"
+# Without jq the reader takes the first "path" in the text, so a decoy object before the real path would be
+# judged in its place: arguments holding an object, or a payload with two paths, are refused. Copilot's own
+# calls have neither (view_range and paths are lists), and they still pass.
+njc 'Edit|Write' guard-branch.sh Write '{"meta":{"path":"'"$CPR"'/app.py"},"path":"'"$CPR"'/.git/config","file_text":"x"}'
+check "copilot: without jq, a decoy object before a Write's path to .git/config is refused" 2 "$?"
+njc 'Edit|Write' guard-branch.sh Edit '{"meta":{"path":"'"$CPR"'/app.py"},"path":"'"$CPR"'/.git/hooks/pre-push","old_str":"a","new_str":"b"}'
+check "copilot: without jq, a decoy object before an Edit's path to .git/hooks/pre-push is refused" 2 "$?"
+njc 'Read|Grep' secret-scan.sh Read '{"meta":{"path":"'"$CPR"'/app.py"},"path":"'"$CPR"'/.env"}'
+check "copilot: without jq, a decoy object before a view's path to .env is refused" 2 "$?"
+njc Bash guard-branch.sh Bash '{"command":"ls -la","description":"List the files","mode":"sync","initial_wait":30}'
+check "copilot: without jq, bash's own call passes" 0 "$?"
+njc 'Edit|Write' secret-scan.sh Write '{"path":"'"$CPR"'/src/app.py","file_text":"x = 1\n"}'
+check "copilot: without jq, create's own call passes" 0 "$?"
+njc 'Edit|Write' guard-branch.sh Edit '{"path":"'"$CPR"'/src/app.py","old_str":"x = 1","new_str":"x = 2"}'
+check "copilot: without jq, edit's own call passes" 0 "$?"
+njc 'Read|Grep' secret-scan.sh Read '{"path":"'"$CPR"'/src/app.py","view_range":[1,20]}'
+check "copilot: without jq, view's own call, with its view_range, passes" 0 "$?"
+njc 'Edit|Write' secret-scan.sh Edit '{"command":"view","path":"'"$CPR"'/src/app.py","view_range":[1,-1]}'
+check "copilot: without jq, str_replace_editor's view passes" 0 "$?"
+njc 'Read|Grep' secret-scan.sh Grep '{"pattern":"TODO","paths":"src","glob":"*.py","output_mode":"content","-n":true}'
+check "copilot: without jq, grep's own call over one path passes" 0 "$?"
+# A jq that cannot run the translation: the call is refused, not read untranslated.
+printf '#!/bin/sh\nexit 5\n' > "$NJC/jq"; chmod +x "$NJC/jq"
+njc 'Edit|Write' secret-scan.sh Write '{"path":"a.py","file_text":"x = 1"}'
+check "copilot: when jq cannot translate a payload, the call is refused" 2 "$?"
+rm -rf "$NJC"
+# Stop: the same Stop payload (stop_hook_active, decision/reason) as Claude Code's, a session_id in it.
+SR="$(mktemp -d)"; "${GIT[@]}" -C "$SR" init -q; printf 'x = 1\n' > "$SR/app.py"; "${GIT[@]}" -C "$SR" add -A >/dev/null; "${GIT[@]}" -C "$SR" commit -qm init
+git -C "$SR" config nonna.testCmd false # what session start records under the plugin; here the suite is red
+printf 'x = 2\n' > "$SR/app.py"
+stop() { printf '{"hook_event_name":"Stop","session_id":"c0p1l07-5e55","timestamp":"2026-09-30T12:00:00.000Z","cwd":"%s","transcript_path":"/tmp/t.jsonl","stop_reason":"end_turn","stop_hook_active":%s}' "$SR" "$1"; }
+out="$(cop Stop - stop-dod.sh "$SR" "$(stop false)")"
+contains "copilot: agentStop (Stop) on a red suite blocks" '"decision":"block"' "$out"
+contains "copilot: and says the tests said no" "the tests say no" "$out"
+out="$(cop Stop - stop-dod.sh "$SR" "$(stop true)")"
+printf '%s' "$out" | grep -q '"decision"'; check "copilot: the next stop, stop_hook_active true, goes through" 1 "$?"
+# SessionStart: what it records and wires, and its context as Copilot reads it (top-level additionalContext).
+SSR="$(mktemp -d)"; "${GIT[@]}" -C "$SSR" init -q; printf 'module x\n' > "$SSR/go.mod"; "${GIT[@]}" -C "$SSR" add -A >/dev/null; "${GIT[@]}" -C "$SSR" commit -qm init
+CPD="$(mktemp -d)"
+out="$(CLAUDE_PLUGIN_DATA="$CPD" cop SessionStart - session-start.sh "$SSR" '{"hook_event_name":"SessionStart","session_id":"c0p1l07-5e55","timestamp":"2026-09-30T12:00:00.000Z","cwd":"'"$SSR"'","source":"startup"}')"
+contains "copilot: session start's context is a top-level additionalContext" "Nonna is on (lite)" "$(printf '%s' "$out" | tail -n 1 | jq -r '.additionalContext // empty' 2>/dev/null)"
+contains "copilot: and what she did is shown to the user as a progress line" '"type":"progress"' "$out"
+check "copilot: session start records the test command for the stop gate" "go test ./..." "$(git -C "$SSR" config --get nonna.testCmd)"
+check "copilot: session start records where the session began" 0 \
+  "$(if [ -f "$(git -C "$SSR" rev-parse --absolute-git-dir)/nonna/base-c0p1l07-5e55" ]; then echo 0; else echo 1; fi)"
+check "copilot: session start wires both git hooks, through the plugin's data directory" "$CPD/current/hooks/require-status-sync.sh $CPD/current/hooks/pre-commit.sh" \
+  "$(readlink "$SSR/.git/hooks/pre-push") $(readlink "$SSR/.git/hooks/pre-commit")"
+# Equivalence, as the adapter sits on the critical surface: Claude Code's own golden payloads for Write,
+# Edit, Read and Grep, rewritten in Copilot's argument names, get the same exit code from each gate; and a
+# grep over several paths, in every order, is refused exactly when one of its paths is.
+EQ="$(mktemp -d)"; "${GIT[@]}" -C "$EQ" init -q; "${GIT[@]}" -C "$EQ" commit -q --allow-empty -m init
+"${GIT[@]}" -C "$EQ" checkout -q -b feature/x; mkdir -p "$EQ/src" "$EQ/docs"; printf 'x\n' > "$EQ/src/app.py"; printf 'K=1\n' > "$EQ/.env"
+EQC="$(mktemp)"
+cat > "$EQC" <<'EOF'
+{"tool_name":"Write","tool_input":{"file_path":"config.py","content":"aws_id = \"@AWS@\""}}
+{"tool_name":"Write","tool_input":{"file_path":"config.py","content":"x = 1"}}
+{"tool_name":"Write","tool_input":{"file_path":"tests/fixtures/keys.py","content":"aws_id = \"@AWS@\""}}
+{"tool_name":"Edit","tool_input":{"file_path":"app.js","old_string":"a","new_string":"const k = \"@AWS@\""}}
+{"tool_name":"Write","tool_input":{"file_path":"config.py","content":"k = \"@ANT@\""}}
+{"tool_name":"Write","tool_input":{"file_path":"config.py","content":"k = \"@OAI@\""}}
+{"tool_name":"Write","tool_input":{"file_path":"tests/fixtures/keys.py","content":"k = \"@ANT@\""}}
+{"tool_name":"Write","tool_input":{"file_path":"docs/keys.md","content":"Anthropic keys start with sk-ant- and OpenAI project keys with sk-proj-."}}
+{"tool_name":"Write","tool_input":{"file_path":"a.py"}}
+{"tool_name":"Edit","tool_input":{"file_path":"src/app.py","old_string":"x","new_string":"y = 2"}}
+{"tool_name":"Edit","tool_input":{"file_path":".git/config","old_string":"a","new_string":"b"}}
+{"tool_name":"Write","tool_input":{"file_path":".git/hooks/pre-push","content":"exit 0"}}
+{"tool_name":"Edit","tool_input":{"file_path":".git/nonna/base-x","old_string":"a","new_string":"b"}}
+{"tool_name":"Read","tool_input":{"file_path":"/repo/.env"}}
+{"tool_name":"Read","tool_input":{"file_path":".env.local"}}
+{"tool_name":"Read","tool_input":{"file_path":"/home/a/.ssh/id_ed25519"}}
+{"tool_name":"Read","tool_input":{"file_path":"certs/server.key"}}
+{"tool_name":"Read","tool_input":{"file_path":"config/secrets/db.yml"}}
+{"tool_name":"Read","tool_input":{"file_path":".env.example"}}
+{"tool_name":"Read","tool_input":{"file_path":"src/environment.py"}}
+{"tool_name":"Read","tool_input":{"file_path":".ENV"}}
+{"tool_name":"Grep","tool_input":{"pattern":".","path":".env","output_mode":"content"}}
+{"tool_name":"Grep","tool_input":{"pattern":"AKIA","path":".aws"}}
+{"tool_name":"Grep","tool_input":{"pattern":"def ","path":"src","glob":"*.py"}}
+{"tool_name":"Grep","tool_input":{"pattern":"X","path":".env.example"}}
+{"tool_name":"Grep","tool_input":{"pattern":"x","glob":"*"}}
+{"tool_name":"Grep","tool_input":{"pattern":"x","glob":"*.py"}}
+EOF
+eq_pairs="$(sed -e "s/@AWS@/$FAKE_AWS/g" -e "s/@ANT@/$FAKE_ANT/g" -e "s/@OAI@/$FAKE_OAI/g" "$EQC" | python3 -c 'import json, sys
+names = {"file_path": "path", "content": "file_text", "old_string": "old_str", "new_string": "new_str"}
+for line in sys.stdin:
+    p = json.loads(line)
+    tool, args = p["tool_name"], p["tool_input"]
+    if tool == "Grep":
+        cop = {("paths" if k == "path" else k): ([v] if k == "path" else v) for k, v in args.items()}
+    else:
+        cop = {names.get(k, k): v for k, v in args.items()}
+    env = {"hook_event_name": "PreToolUse", "session_id": "eq", "timestamp": "2026-09-30T12:00:00.000Z", "cwd": sys.argv[1], "tool_name": tool, "tool_input": cop}
+    print(json.dumps(p) + "\t" + json.dumps(env))' "$EQ")"
+rm -f "$EQC"
+eq_run() { # <script> <payload> [copilot]: that gate's exit on the payload, in $EQ
+  printf '%s' "$2" | (cd "$EQ" && NONNA_HOST="${3:-}" CLAUDE_PROJECT_DIR="$EQ" "$HOOKS/$1" >/dev/null 2>&1)
+  echo $?
+}
+eq_n=0; eq_bad=""
+while IFS="$(printf '\t')" read -r claude copilot; do
+  [ -n "$copilot" ] || continue
+  for s in secret-scan.sh guard-branch.sh; do
+    a="$(eq_run "$s" "$claude")"; b="$(eq_run "$s" "$copilot" copilot)"; eq_n=$((eq_n + 1))
+    [ "$a" = "$b" ] || eq_bad="$eq_bad [$s: $a vs $b on ${claude:0:70}]"
+  done
+done <<<"$eq_pairs"
+check "copilot: $eq_n verdicts on Claude Code's goldens rewritten in Copilot's names are the same${eq_bad:+ (differ:$eq_bad)}" "" "$eq_bad"
+# One secret file sorts before the ordinary paths and one after, so judging only some of them fails.
+EQP=(".env" "src" ".env.example" "z.pem")
+eq_one=()
+for i in 0 1 2 3; do eq_one[i]="$(eq_run secret-scan.sh "{\"tool_name\":\"Grep\",\"tool_input\":{\"pattern\":\"x\",\"path\":\"${EQP[i]}\"}}")"; done
+eq_n=0; eq_bad=""
+while IFS= read -r order; do
+  want=0; list=""
+  for i in $order; do [ "${eq_one[i]}" = 2 ] && want=2; list="$list${list:+,}\"${EQP[i]}\""; done
+  got="$(eq_run secret-scan.sh "{\"hook_event_name\":\"PreToolUse\",\"session_id\":\"eq\",\"cwd\":\"$EQ\",\"tool_name\":\"Grep\",\"tool_input\":{\"pattern\":\"x\",\"paths\":[$list]}}" copilot)"
+  eq_n=$((eq_n + 1))
+  [ "$got" = "$want" ] || eq_bad="$eq_bad [$list: $got, want $want]"
+done <<<"$(python3 -c 'import itertools; [print(" ".join(map(str, p))) for r in (2, 3) for p in itertools.permutations(range(4), r)]')"
+check "copilot: a grep over several paths, in each of $eq_n orders, is refused exactly when one of them is${eq_bad:+ (not:$eq_bad)}" "" "$eq_bad"
+rm -rf "$EQ"
+# A copy-in install under Copilot, as it stands: Copilot also runs a repository's .claude/settings.json hooks,
+# with no NONNA_HOST, so they read its commands but not its file tools; beside the plugin, each gate runs
+# twice. Copilot users take the plugin.
+CI="$(mktemp -d)"; "${GIT[@]}" -C "$CI" init -q; "${GIT[@]}" -C "$CI" commit -q --allow-empty -m init; "${GIT[@]}" -C "$CI" branch -M main; copy_in "$CI"
+ci_cmd() { # <matcher> <script>: the command settings.json runs for it
+  python3 -c 'import json, sys
+for e in json.load(open(sys.argv[1]))["hooks"]["PreToolUse"]:
+    for h in e["hooks"] if e.get("matcher") == sys.argv[2] else []:
+        if h["command"].endswith("/" + sys.argv[3]):
+            print(h["command"]); sys.exit()' "$ROOT/.claude/settings.json" "$1" "$2"
+}
+pre Bash '{"command":"git commit -m x"}' | (cd "$CI" && CLAUDE_PROJECT_DIR="$CI" bash -c "$(ci_cmd Bash guard-branch.sh)" 2>/dev/null)
+check "copy-in under Copilot: its settings.json hooks still refuse a commit on main" 2 "$?"
+pre Write '{"path":"'"$CI"'/settings.py","file_text":"aws_id = \"'"$FAKE_AWS"'\""}' | (cd "$CI" && CLAUDE_PROJECT_DIR="$CI" bash -c "$(ci_cmd 'Edit|Write|MultiEdit' secret-scan.sh)" 2>/dev/null)
+check "copy-in under Copilot: they do not read create's file_text, so a key passes (the plugin reads it)" 0 "$?"
+pre Bash '{"command":"ls"}' | (cd "$CI" && CLAUDE_PROJECT_DIR='' bash -c "$(ci_cmd Bash guard-branch.sh)" 2>/dev/null)
+check "copy-in under Copilot: without CLAUDE_PROJECT_DIR its command cannot start (127, which Copilot takes as a denial)" 127 "$?"
+rm -rf "$CPR" "$SR" "$SSR" "$CPD" "$CI"
+# The files themselves: the hooks file, the plugin manifest and the marketplace entry.
+out="$(python3 -c 'import json, os, sys
+root = sys.argv[1]
+bad = []
+try:
+    cfg = json.load(open(os.path.join(root, "hooks/copilot-hooks.json")))
+except Exception as e:
+    print("unreadable: %s" % e); sys.exit(0)
+if cfg.get("version") != 1: bad.append("version is not 1")
+if sorted(cfg.get("hooks", {})) != ["PreToolUse", "SessionStart", "Stop"]: bad.append("events %s" % sorted(cfg.get("hooks", {})))
+want = {("PreToolUse", "Bash"): ["guard-branch.sh", "secret-scan.sh"], ("PreToolUse", "Edit|Write"): ["guard-branch.sh", "secret-scan.sh"],
+        ("PreToolUse", "write_bash|write_powershell"): ["guard-branch.sh", "secret-scan.sh"],
+        ("PreToolUse", "Read|Grep"): ["secret-scan.sh"], ("Stop", "-"): ["stop-dod.sh"], ("SessionStart", "-"): ["session-start.sh"]}
+got = {}
+for ev, entries in cfg.get("hooks", {}).items():
+    for e in entries:
+        cmd = e.get("bash", "")
+        script = cmd.split("/.claude/hooks/")[-1].split(" ")[0] if cmd.startswith("\"${CLAUDE_PLUGIN_ROOT}\"/.claude/hooks/") else None
+        if not script or not os.path.isfile(os.path.join(root, ".claude/hooks", script)): bad.append("command %r" % cmd)
+        if e.get("type") != "command": bad.append("type of %r" % cmd)
+        if e.get("env") != {"NONNA_HOST": "copilot"}: bad.append("env of %r" % cmd)
+        if not isinstance(e.get("timeoutSec"), int) or e["timeoutSec"] < (300 if ev == "Stop" else 60): bad.append("timeoutSec of %r" % cmd)
+        got.setdefault((ev, e.get("matcher", "-")), []).append(script)
+if got != want: bad.append("wiring %s" % sorted(got.items()))
+print("; ".join(bad))' "$ROOT")"
+check "copilot hooks: version 1, PascalCase events, the core gates, NONNA_HOST=copilot, timeouts no shorter than Claude Code's${out:+ ($out)}" "" "$out"
+# A patch is judged a file at a time, up to 200 files, and a grep path by path, up to 32, each finding
+# the files a glob picks; Copilot lets a call through when its hook times out. So the guards on the
+# file and read tools wait as long as Codex's do (600 seconds).
+out="$(python3 -c 'import json, sys
+entries = json.load(open(sys.argv[1]))["hooks"]["PreToolUse"]
+print(" ".join(e["matcher"] + ":" + e["bash"].split("/")[-1] for e in entries
+               if e.get("matcher") in ("Edit|Write", "Read|Grep") and e.get("timeoutSec", 30) < 600))' "$CPH" 2>&1)"
+check "copilot hooks: the file and read tools' guards wait 600 seconds, for a patch of 200 files or a grep of 32 paths${out:+ (not: $out)}" "" "$out"
+out="$(python3 -c 'import json, os, sys
+root = sys.argv[1]
+bad = []
+try:
+    plugin = json.load(open(os.path.join(root, ".github/plugin/plugin.json")))
+    market = json.load(open(os.path.join(root, ".github/plugin/marketplace.json")))
+    claude = json.load(open(os.path.join(root, ".claude/.claude-plugin/plugin.json")))
+except Exception as e:
+    print("unreadable: %s" % e); sys.exit(0)
+entry = (market.get("plugins") or [{}])[0]
+if plugin.get("name") != "nonna" or market.get("name") != "nonna" or entry.get("name") != "nonna": bad.append("names")
+if not (plugin.get("version") == entry.get("version") == claude.get("version")): bad.append("versions")
+if plugin.get("hooks") != "hooks/copilot-hooks.json": bad.append("hooks path %r" % plugin.get("hooks"))
+if os.path.realpath(os.path.join(root, entry.get("source", "-"))) != os.path.realpath(root): bad.append("source %r" % entry.get("source"))
+print("; ".join(bad))' "$ROOT")"
+check "copilot plugin: .github/plugin/ names nonna at Claude Code's version, this root, and its hooks file${out:+ ($out)}" "" "$out"
+SP="$(mktemp -d)/with space"; mkdir -p "$SP/hooks"; cp -R "$ROOT/.claude" "$SP/.claude"; cp "$CPH" "$SP/hooks/" 2>/dev/null; "${GIT[@]}" -C "$SP" init -q
+cop_unrunnable() { # each command in the Copilot hooks file that the shell could not start from $SP
+  python3 -c 'import json, shlex, sys
+for es in json.load(open(sys.argv[1]))["hooks"].values():
+    for e in es:
+        print(" ".join(["env"] + [k + "=" + shlex.quote(v) for k, v in sorted(e.get("env", {}).items())] + [e["bash"]]))' "$SP/hooks/copilot-hooks.json" 2>/dev/null \
+    | while IFS= read -r cmd; do
+      (cd "$SP" && printf '{}' | CLAUDE_PLUGIN_ROOT="$SP" CLAUDE_PLUGIN_DATA="$SP/.data" CLAUDE_PROJECT_DIR="$SP" bash -c "$cmd" >/dev/null 2>&1)
+      case $? in 126 | 127) printf '%s\n' "$cmd" ;; esac
+    done
+}
+bad_cmds="$(cop_unrunnable)"
+if [ -f "$SP/hooks/copilot-hooks.json" ] && [ -z "$bad_cmds" ]; then rc=0; else rc=1; fi
+check "copilot hooks: every command runs from a plugin root with a space${bad_cmds:+ (not: $bad_cmds)}" 0 "$rc"
+rm -rf "$(dirname "$SP")"
+
 echo "== harness_lint.py (the linter is itself a gate) =="
 # A linter with no failing-case test is an unverified gate: it would still print
 # "OK" if a check silently stopped firing. Each case copies the real tree, breaks
@@ -3806,7 +4264,7 @@ LINT="$ROOT/tests/harness_lint.py"
 lint_fixture() { # -> echoes a fresh copy of the harness
   local d; d="$(mktemp -d)"
   cp -R "$ROOT/.claude" "$ROOT/docs" "$ROOT/tests" "$ROOT/stacks" "$ROOT/.github" \
-        "$ROOT/.claude-plugin" "$ROOT/hosts" "$ROOT/bench" "$ROOT/examples" "$ROOT/assets" "$d/" 2>/dev/null
+        "$ROOT/.claude-plugin" "$ROOT/hosts" "$ROOT/bench" "$ROOT/examples" "$ROOT/assets" "$ROOT/hooks" "$d/" 2>/dev/null
   cp "$ROOT"/*.md "$ROOT"/LICENSE "$ROOT/gemini-extension.json" "$d/" 2>/dev/null
   printf '%s' "$d"
 }
@@ -4062,7 +4520,7 @@ rm -rf "$FX"
 # Nor may the repository root carry what Gemini CLI loads from an extension root: hooks/hooks.json and the
 # commands, skills, agents and policies directories would run or steer the agent in every session.
 FX="$(lint_fixture)"
-mkdir "$FX/hooks"; printf '{"hooks":{"BeforeTool":[{"hooks":[{"type":"command","command":"true"}]}]}}\n' > "$FX/hooks/hooks.json"
+mkdir -p "$FX/hooks"; printf '{"hooks":{"BeforeTool":[{"hooks":[{"type":"command","command":"true"}]}]}}\n' > "$FX/hooks/hooks.json"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a root hooks/hooks.json, which Gemini CLI loads as extension hooks" 1 "$?"
 contains "lint: names hooks/hooks.json" "hooks/hooks.json: Gemini CLI loads" "$out"
 rm -rf "$FX"
@@ -4088,13 +4546,16 @@ contains "lint: names policies/" "policies/: Gemini CLI loads" "$out"
 rm -rf "$FX"
 # Only Gemini's own hooks file is refused: Copilot keeps hooks/copilot-hooks.json at the root.
 FX="$(lint_fixture)"
-mkdir "$FX/hooks"; printf '{}\n' > "$FX/hooks/copilot-hooks.json"
+rm -rf "$FX/hooks"; mkdir "$FX/hooks"; printf '{}\n' > "$FX/hooks/copilot-hooks.json"
 NONNA_LINT_ROOT="$FX" python3 "$LINT" >/dev/null 2>&1; check "lint: a root hooks/copilot-hooks.json is not Gemini's hooks file" 0 "$?"
 rm -rf "$FX"
 # Gemini CLI reads these on macOS's default disk, which ignores letter case: Skills/ is skills/, and a
 # Hooks symlink to a directory holding hooks.json is hooks/hooks.json. The lint compares every root entry
 # case-folded, whatever its type, because CI's disk does not fold and the check must not depend on it.
+# The fixture carries Copilot's root hooks/, which a disk that ignores case (macOS, Windows) would take
+# for Hooks, so each case below starts without it.
 FX="$(lint_fixture)"
+rm -rf "$FX/hooks"
 ln -s .claude/hooks "$FX/Hooks"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a root Hooks symlink to a directory holding hooks.json" 1 "$?"
 contains "lint: names the hooks file it would load" "Hooks/hooks.json: Gemini CLI loads hooks/hooks.json" "$out"
@@ -4105,6 +4566,7 @@ out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a root 
 contains "lint: names Skills/" "Skills/: Gemini CLI loads skills/" "$out"
 rm -rf "$FX"
 FX="$(lint_fixture)"
+rm -rf "$FX/hooks"
 mkdir "$FX/Hooks"; printf '{}\n' > "$FX/Hooks/hooks.json"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a root Hooks/hooks.json" 1 "$?"
 contains "lint: names it" "Hooks/hooks.json: Gemini CLI loads hooks/hooks.json" "$out"

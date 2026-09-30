@@ -173,6 +173,7 @@ nonna/
 ├── CHANGELOG.md               # release history
 ├── install.sh                 # the copy-in install, for any agent host
 ├── gemini-extension.json      # the Gemini CLI extension: lite's rules, no hooks
+├── hooks/                     # the Copilot CLI plugin's hooks (its manifest is in .github/plugin/)
 ├── .claude/
 │   ├── README.md              # harness index
 │   ├── settings.json          # secret-deny + hook wiring

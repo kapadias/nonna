@@ -1,9 +1,9 @@
 # Installing Nonna
 
-Two ways in: the Claude Code plugin, or `install.sh`, which puts the gates in the repository itself,
-for Claude Code and for other agents. Both start in lite mode. Codex can install the plugin too
-([Codex: the plugin](#codex-the-plugin)). On native Windows, read [Windows](#windows) first: some
-gates do not run there.
+Three ways in: the Claude Code plugin, the [GitHub Copilot CLI plugin](#github-copilot-cli-the-plugin),
+or `install.sh`, which puts the gates in the repository itself, for Claude Code and for other agents.
+All three start in lite mode. Codex can install the plugin too ([Codex: the plugin](#codex-the-plugin)).
+On native Windows, read [Windows](#windows) first: some gates do not run there.
 
 ## Claude Code: the plugin
 
@@ -353,6 +353,74 @@ What differs from Claude Code:
 
 Without the plugin, `install.sh --host agents` gives Codex the house rules in `AGENTS.md` and the git
 hooks, as every other agent gets them.
+
+## GitHub Copilot CLI: the plugin
+
+```bash
+copilot plugin marketplace add kapadias/nonna
+copilot plugin install nonna@nonna
+```
+
+Copilot CLI reads this repository's `.github/plugin/marketplace.json`, which it checks before the
+Claude Code one in `.claude-plugin/`. The plugin is the repository itself: `.github/plugin/plugin.json`
+points at [`hooks/copilot-hooks.json`](../hooks/copilot-hooks.json), which runs her scripts from
+`.claude/hooks/`. It needs Copilot CLI 1.0.72 or later on macOS or Linux (the hooks are bash; there
+are no PowerShell entries), and it runs in the CLI only: Copilot cloud agent installs no plugins.
+
+| Copilot event  | Her script                          | What it does                                                                                                                                                                                                                          |
+| -------------- | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `sessionStart` | `session-start.sh`                  | records the test command detection finds in `git config nonna.testCmd`, wires the git `pre-push` and `pre-commit` hooks through the plugin's data directory, carries the house rules into the session, and tells you once what it did |
+| `preToolUse`   | `guard-branch.sh`, `secret-scan.sh` | the branch guard on every command and file edit; the secret guard on every command, file write and file read                                                                                                                          |
+| `agentStop`    | `stop-dod.sh`                       | when code changed, runs the suite and sends the agent back on red, once, and asks "where's the test?"                                                                                                                                 |
+
+The hooks file names the events in PascalCase (`SessionStart`, `PreToolUse`, `Stop`), and for those
+Copilot sends its VS Code compatible payload: snake_case, with Claude Code's tool names, which her
+scripts read as they read Claude Code's. Each hook runs with `NONNA_HOST=copilot` (the entry's `env`),
+and [`host-copilot.sh`](../.claude/hooks/lib/host-copilot.sh) translates what still differs: the
+tools' argument names (`path`, `file_text`, `old_str`, `new_str`, grep's `paths`, `write_bash`'s
+`input`), which win over any Claude-named key beside them, and her replies. A grep over several paths
+is judged path by path, and any refusal refuses; more than 32, too many to judge before the hook
+times out, are refused up front. A call not in the shape Copilot sends (arguments that are not an
+object, where only `apply_patch`'s raw text comes as a string; a path that is not a string; paths
+that are not one path or a flat, non-empty list; a write's text, an edit's strings or a patch's
+text that is not a string; a file tool that names no path and carries no patch) is refused, never
+read untranslated. A refusal
+also goes out as `permissionDecision: "deny"` with her message as the reason, the form Copilot
+shows the agent, and session start's context as `additionalContext`
+([ADR 0015](adr/0015-copilot-cli-plugin.md)).
+
+What differs from Claude Code:
+
+- **No `/nonna` and no plugin options.** The defaults hold (lite; record and run the test command).
+  Change them in git config, as `/nonna` does: `git config nonna.mode full` (or `off`),
+  `git config nonna.testCmd '<command>'`. Or run her script yourself from the repository:
+  `bash ~/.copilot/installed-plugins/nonna/nonna/.claude/skills/nonna/scripts/nonna.sh test '<command>'`
+  (under `$COPILOT_HOME` if you set it).
+- **An `apply_patch` is read a file at a time.** `lib/patch.sh` reads it by its grammar, as it reads
+  Codex's, and each file the patch adds, updates, moves or deletes reaches both guards as Claude
+  Code's Write or Edit, with the lines the patch adds to it: a patch that touches `.git/config` or
+  adds a key to any of its files is refused. So is a patch the reader cannot read with certainty,
+  and one over 256 KB or 200 files, too much to judge before the hook times out. A guard that
+  crashes denies the tool call, as Copilot rules, where Claude Code lets it through. Without jq,
+  what the text alone cannot show safely (a payload that does not close, arguments that are not an
+  object or that hold one, more than one path, a list of paths, a Claude-named key beside Copilot's,
+  input to a shell, a patch beside other arguments) is refused.
+- **Copilot's own switches are the user's.** Under either agent, the branch guard refuses the agent
+  writing `.github/copilot/settings*.json`, where one `disableAllHooks` line turns every hook off, or
+  anything under `.github/hooks/`, by file tool or by shell.
+- **A copy-in install's hooks run too.** Copilot CLI also runs the hooks in a repository's
+  `.claude/settings.json`, which `install.sh` writes: untranslated, so they read Copilot's commands
+  but not its file tools, and beside the plugin each gate runs twice. Where Copilot leaves
+  `CLAUDE_PROJECT_DIR` unset for them, they cannot start, and Copilot counts that as a denial. With
+  Copilot, use the plugin.
+- **Her git hooks point into Copilot's plugin data.** `/nonna` and its scripts do not take those
+  links for hers: `uninstall` leaves them in place and says so. Remove `.git/hooks/pre-push` and
+  `.git/hooks/pre-commit` yourself.
+- **Not yet run in a live Copilot session.** The wiring is golden-tested against Copilot's
+  documented hook payloads (`tests/run.sh`, "Copilot CLI plugin").
+
+To remove her: `copilot plugin uninstall nonna@nonna`, then her two git hooks, and
+`git config --remove-section nonna` if you want her settings gone too.
 
 ## Other agents: install.sh
 

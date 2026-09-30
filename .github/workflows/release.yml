@@ -47,7 +47,8 @@ jobs:
         run: |
           set -euo pipefail
           version="${GITHUB_REF_NAME#v}"
-          for f in .claude/.claude-plugin/plugin.json .claude/.codex-plugin/plugin.json .claude-plugin/marketplace.json gemini-extension.json; do
+          for f in .claude/.claude-plugin/plugin.json .claude/.codex-plugin/plugin.json .claude-plugin/marketplace.json gemini-extension.json \
+            .github/plugin/plugin.json .github/plugin/marketplace.json; do
             got="$(python3 -c "
           import json,sys
           d = json.load(open(sys.argv[1]))
