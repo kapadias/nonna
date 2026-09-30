@@ -3253,10 +3253,34 @@ mkdir "$FX/policies"; printf '[[rule]]\n' > "$FX/policies/x.toml"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a root policies/ directory" 1 "$?"
 contains "lint: names policies/" "policies/: Gemini CLI loads" "$out"
 rm -rf "$FX"
-# Only Gemini's own hooks file is refused: the Codex plugin keeps hooks/codex-hooks.json at the root.
+# Only Gemini's own hooks file is refused: Copilot keeps hooks/copilot-hooks.json at the root.
 FX="$(lint_fixture)"
-mkdir "$FX/hooks"; printf '{}\n' > "$FX/hooks/codex-hooks.json"
-NONNA_LINT_ROOT="$FX" python3 "$LINT" >/dev/null 2>&1; check "lint: a root hooks/codex-hooks.json is not Gemini's hooks file" 0 "$?"
+mkdir "$FX/hooks"; printf '{}\n' > "$FX/hooks/copilot-hooks.json"
+NONNA_LINT_ROOT="$FX" python3 "$LINT" >/dev/null 2>&1; check "lint: a root hooks/copilot-hooks.json is not Gemini's hooks file" 0 "$?"
+rm -rf "$FX"
+# Gemini CLI reads these on macOS's default disk, which ignores letter case: Skills/ is skills/, and a
+# Hooks symlink to a directory holding hooks.json is hooks/hooks.json. The lint compares every root entry
+# case-folded, whatever its type, because CI's disk does not fold and the check must not depend on it.
+FX="$(lint_fixture)"
+ln -s .claude/hooks "$FX/Hooks"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a root Hooks symlink to a directory holding hooks.json" 1 "$?"
+contains "lint: names the hooks file it would load" "Hooks/hooks.json: Gemini CLI loads hooks/hooks.json" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+mkdir "$FX/Skills"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a root Skills directory, which a disk that ignores case reads as skills/" 1 "$?"
+contains "lint: names Skills/" "Skills/: Gemini CLI loads skills/" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+mkdir "$FX/Hooks"; printf '{}\n' > "$FX/Hooks/hooks.json"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a root Hooks/hooks.json" 1 "$?"
+contains "lint: names it" "Hooks/hooks.json: Gemini CLI loads hooks/hooks.json" "$out"
+rm -rf "$FX"
+# Case-folded, not lowercased: a disk that ignores case folds more than ASCII (the long s is an s).
+FX="$(lint_fixture)"
+mkdir "$FX/$(printf '\305\277kills')"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a root directory whose name only case-folds to skills" 1 "$?"
+contains "lint: names it" "kills/: Gemini CLI loads skills/" "$out"
 rm -rf "$FX"
 # A manifest that is a directory, and a context file that is not UTF-8, are named, not a traceback.
 FX="$(lint_fixture)"

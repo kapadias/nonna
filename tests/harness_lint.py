@@ -685,9 +685,13 @@ for jf in (plugin_manifest, marketplace, plugin_hooks):
 EXT_MANIFEST = "gemini-extension.json"
 EXT_CONTEXT = "hosts/gemini-extension/GEMINI.md"  # hosts/build.py writes it
 EXT_KEYS = ("name", "version", "description", "contextFileName")
-# What Gemini CLI 0.62.0 loads from an extension root besides the manifest and its context file.
-# Only hooks/hooks.json, not hooks/: the Codex plugin keeps hooks/codex-hooks.json at the root.
-EXT_ROOT_PATHS = ("hooks/hooks.json", "commands/", "skills/", "agents/", "policies/")
+# What Gemini CLI 0.62.0 loads from an extension root besides the manifest and its context file: the
+# commands, skills, agents and policies directories, and hooks/hooks.json. macOS's default disk ignores
+# letter case, so Skills/ or Hooks/Hooks.json is read as those, and CI's disk does not: every root entry
+# is compared case-folded (casefold, not lower: a disk that ignores case folds more than ASCII), whatever
+# its type, a symlink such as Hooks -> .claude/hooks included. Only hooks/hooks.json is refused, not the
+# whole hooks/ directory: Copilot keeps hooks/copilot-hooks.json at the root.
+EXT_ROOT_DIRS = ("commands", "skills", "agents", "policies")
 try:
     with open(f"{ROOT}/{EXT_MANIFEST}", encoding="utf-8") as fh:
         ext = json.load(fh)
@@ -752,12 +756,22 @@ else:
                 bad(
                     f"{ctx}: must say that install.sh --host gemini adds the git hooks, which the extension does not install"
                 )
-for rel in EXT_ROOT_PATHS:
-    if os.path.lexists(os.path.join(ROOT, rel)):
+for name in sorted(os.listdir(ROOT)):
+    entry = os.path.join(ROOT, name)
+    if name.casefold() in EXT_ROOT_DIRS:
         bad(
-            f"{rel}: Gemini CLI loads this from an extension root, so the extension would carry it; "
-            f"it is rules only (ADR 0012)"
+            f"{name}{'/' if os.path.isdir(entry) else ''}: Gemini CLI loads {name.casefold()}/ from an "
+            f"extension root (a disk that ignores letter case, macOS's default, reads this as it), so the "
+            f"extension would carry it; it is rules only (ADR 0012)"
         )
+    elif name.casefold() == "hooks" and os.path.isdir(entry):
+        for child in sorted(os.listdir(entry)):
+            if child.casefold() == "hooks.json":
+                bad(
+                    f"{name}/{child}: Gemini CLI loads hooks/hooks.json from an extension root (a disk that "
+                    f"ignores letter case, macOS's default, reads this as it), so the extension would carry "
+                    f"it; it is rules only (ADR 0012)"
+                )
 
 
 # --- hook wiring equivalence: two files declare the same gates, with no shared source ---
