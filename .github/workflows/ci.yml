@@ -74,45 +74,37 @@ jobs:
         run: env PATH="$STOCK_PATH" /bin/bash tests/run.sh
 
   # The same suite under Git Bash on Windows, the shell Claude Code runs the hooks in there. Windows
-  # differs where the hooks lean on Linux: `ln -s` makes a copy, not a link; Git for Windows checks
-  # files out with CRLF, and a native jq.exe writes CRLF; a path can start with `C:` and arrive with
-  # backslashes; `timeout` can be Windows' own. This job reports and does not block
-  # (continue-on-error) until what it finds is fixed (#30); its log is what docs/INSTALL.md's Windows
-  # section is written from. Each leg changes one thing from the one before, so a failure names its
-  # cause.
+  # differs where the hooks lean on Linux: `ln -s` makes a copy, not a link; git checks files out with
+  # CRLF; a path can start with `C:` and arrive with backslashes; the PowerShell tool is not the Bash
+  # tool. This job reports and does not block (continue-on-error) until what it finds is fixed (#30);
+  # its log is what docs/INSTALL.md's Windows section is written from. Each leg changes one thing from
+  # the one before, so a failure names its cause.
   gates-windows:
     name: gate self-tests (Windows, Git Bash, ${{ matrix.leg }})
     runs-on: windows-latest
     continue-on-error: true
-    # MSYS2 forks slowly and this suite forks a great deal; this only stops a hang from running for
-    # GitHub's 6 hours.
-    timeout-minutes: 120
+    # MSYS2 forks slowly and this suite forks a great deal: it takes about 25 minutes here. This only
+    # stops a hang from running for GitHub's 6 hours.
+    timeout-minutes: 60
     strategy:
       fail-fast: false
       matrix:
         include:
           # As a Windows developer has it out of the box: Git for Windows' installer sets
-          # core.autocrlf=true, `ln -s` copies, and the runner has a native jq.exe.
-          - leg: CRLF checkout
+          # core.autocrlf=true, and `ln -s` copies. .gitattributes makes the checkout LF whatever it says,
+          # so this leg is the proof that it does.
+          - leg: core.autocrlf=true
             autocrlf: "true"
             msys: ""
-            jq: present
             powershell: true
-          # The same with the line endings out of the way: what still fails is not about CRLF.
-          - leg: LF checkout
+          # The control: with .gitattributes the leg above agrees with this one. Drop it once it does.
+          - leg: core.autocrlf=false
             autocrlf: "false"
             msys: ""
-            jq: present
-          # Without jq, as on a machine that has only Git for Windows: the gates read JSON in awk.
-          - leg: LF checkout, no jq
-            autocrlf: "false"
-            msys: ""
-            jq: absent
           # And with native symlinks, which Developer Mode and MSYS=winsymlinks:nativestrict give.
-          - leg: LF checkout, no jq, native symlinks
+          - leg: core.autocrlf=false, native symlinks
             autocrlf: "false"
             msys: winsymlinks:nativestrict
-            jq: absent
     defaults:
       run:
         shell: bash
@@ -127,19 +119,6 @@ jobs:
           echo "core.autocrlf=$(git config --get core.autocrlf)"
           if [ -n "$MSYS_MODE" ]; then echo "MSYS=$MSYS_MODE" >> "$GITHUB_ENV"; fi
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-      # The runner's jq is a native jq.exe from Chocolatey; Git for Windows brings none. If it cannot be
-      # taken away the leg still runs, with jq, and says so.
-      - name: Take jq away
-        if: ${{ matrix.jq == 'absent' }}
-        continue-on-error: true
-        run: |
-          for _ in 1 2 3 4 5; do
-            p="$(command -v jq)" || break
-            echo "taking $p away"
-            mv "$p" "$p.away" 2>/dev/null || rm -f "$p" "$p.exe" || true
-          done
-          if command -v jq; then echo "::error::jq is still on PATH"; exit 1; fi
-          echo "jq is gone"
       # A green run under some other bash proves nothing, so fail if this is not Git Bash. The versions it
       # prints are the evidence of what ran.
       - name: Check the toolchain is Git Bash's
@@ -164,10 +143,8 @@ jobs:
             chmod +x "$RUNNER_TEMP/shim/python3"
             echo "$RUNNER_TEMP/shim" >> "$GITHUB_PATH"
           fi
-      # Facts, not verdicts (tests/windows-probe.sh): what this shell does to the hooks. Not on the CRLF
-      # leg, where the probe is CRLF too and cannot run; the suite's first error shows the same thing.
+      # Facts, not verdicts (tests/windows-probe.sh): what this shell does to the hooks.
       - name: Probe what Windows does to the hooks
-        if: ${{ matrix.autocrlf == 'false' }}
         continue-on-error: true
         run: bash tests/windows-probe.sh
       # Where Git for Windows is absent, or Claude Code cannot find it, PowerShell runs a hook command.
@@ -193,6 +170,10 @@ jobs:
           foreach ($tool in 'bash', 'git') {
             "probe $tool on PATH without Git for Windows: " + ((Get-Command $tool -All -ErrorAction SilentlyContinue | ForEach-Object Source) -join '; ')
           }
+      # The suite lints copies of the tree and swallows the linter's words; here it speaks for itself.
+      - name: Lint the harness
+        continue-on-error: true
+        run: python3 tests/harness_lint.py
       - name: Run the gate golden tests
         run: |
           set +e

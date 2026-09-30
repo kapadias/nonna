@@ -126,10 +126,14 @@ want "guard: Edit of .git\\config (backslashes)" 2 guard-branch.sh "$(file_tool 
 want "guard: Write of .git\\hooks\\pre-commit (backslashes)" 2 guard-branch.sh "$(file_tool Write "$WB\\.git\\hooks\\pre-commit")"
 want "guard: a script run in her skill directory (cwd with backslashes)" 2 guard-branch.sh \
   "$(printf '{"tool_name":"Bash","cwd":"%s","tool_input":{"command":"bash setup.sh"}}' "$(json 'C:\x\.claude\skills\nonna\scripts')")"
+# The guard also resolves a path through its directory (for symlinks), which can make a backslash path work
+# when the directory exists (.env: the project) and not when it does not. So both cases are asked.
+mkdir -p "$repo/.ssh" "$repo/secrets"
 want "secret: Read of .env (path as given)" 2 secret-scan.sh "$(file_tool Read "$repo/.env")"
 want "secret: Read of .env (backslashes)" 2 secret-scan.sh "$(file_tool Read "$WB\\.env")"
-want "secret: Read of .ssh\\id_rsa (backslashes)" 2 secret-scan.sh "$(file_tool Read "$WB\\.ssh\\id_rsa")"
-want "secret: Read of secrets\\db.yml (backslashes)" 2 secret-scan.sh "$(file_tool Read "$WB\\secrets\\db.yml")"
+want "secret: Read of .ssh\\id_rsa (backslashes, the directory exists)" 2 secret-scan.sh "$(file_tool Read "$WB\\.ssh\\id_rsa")"
+want "secret: Read of secrets\\db.yml (backslashes, the directory exists)" 2 secret-scan.sh "$(file_tool Read "$WB\\secrets\\db.yml")"
+want "secret: Read of .aws\\credentials (backslashes, the directory is missing)" 2 secret-scan.sh "$(file_tool Read "$WB\\.aws\\credentials")"
 want "secret: Get-Content .env (PowerShell tool)" 2 secret-scan.sh "$(bash_cmd PowerShell 'Get-Content .env')"
 key="AKIA""1234567890ABCDEF" # split, so this file holds no key-shaped literal
 want "secret: Write of a key (backslashes)" 2 secret-scan.sh "$(file_tool Write "$WB\\src\\app.py" ",\"content\":\"k = '$key'\"")"
@@ -151,7 +155,7 @@ printf 'k = "%s"\n' "$key" >"$wired/leak.txt" && "${G[@]}" -C "$wired" add leak.
 "${G[@]}" -C "$wired" commit -q -m leak >"$tmp/out" 2>&1
 rc=$?
 if [ "$rc" = 1 ]; then r=ok; else r=DIFFERS; fi
-say "commit of a staged key" "exit $rc (designed 1) $r | $(head -n 1 "$tmp/out" | cut -c1-100)"
+say "commit of a staged key" "exit $rc (designed 1) $r | $(head -n 1 "$tmp/out" | sed -e 's|/[^ ]*/wired/|<repo>/|' | cut -c1-200)"
 
 # 7. A plugin install: CLAUDE_PLUGIN_ROOT and the data directory arrive as C:/Users/... (forward slashes).
 plug="$tmp/plugin"
