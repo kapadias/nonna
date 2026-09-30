@@ -428,9 +428,10 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   `chore/17-demo`; then the v2.0.0 release and the go/no-go checks. `/nonna` ran headless in
   default and auto mode during the smoke runs; an interactive check stays on the go/no-go list.
 - The branch guard should fail closed when a check cannot run. A `git` or `grep` that fails to
-  start reads as "nothing found" today, so the command is allowed; with four copies of the suite
-  running at once, two guard tests each allowed a blocked command once. Server-side branch
-  protection is the wall either way; the guard is the speed bump (ADR-0011).
+  start reads as "nothing found" today, so the command is allowed: the likely reason two guard
+  tests allowed a blocked command, three times in all and each passing on rerun, while three or
+  four copies of the suite ran at once. Server-side branch protection is the wall either way; the
+  guard is the speed bump (ADR-0011).
 
 - A behavioural eval on the failures the gates exist for (a secret in a fixture, a push to a
   protected branch, an error hidden by a "fix"), scored on "did it get caught".
