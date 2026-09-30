@@ -62,7 +62,9 @@ should have forgotten.
    push untested. The STATUS gate still reads each commit as before (`--cc`): what a merge itself
    authors is its resolution. Both listings pin `log.showSignature` off, whoever runs the push: a
    signer's verifier prints lines before each commit's names, which would move a package's file out
-   of its package, or hide a STATUS update. Each command gets the full 600 seconds, and the first red
+   of its package, or hide a STATUS update. They read every submodule (`--ignore-submodules=none`,
+   which beats a committed `.gitmodules` `ignore = all` where a config pin does not), so a submodule
+   bump inside a package runs its command. Each command gets the full 600 seconds, and the first red
    refuses the push, named. The hook already refuses a push whose files it cannot list. That is
    stricter than running every command, so this case needs no rule of its own.
 6. **`NONNA_TEST_CMD`** still overrides everything at the end of a turn with one command, and the

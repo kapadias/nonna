@@ -86,9 +86,10 @@ fi
 
 # Every commit's own diff, so a key added then removed inside the push is still seen; --cc shows
 # what a merge's resolution adds. Flags keep user config (colour, external diff, textconv, quoted
-# names, a signer's log.showSignature, whose verifier's lines would come before a commit's names)
-# from hiding a line. Output goes to files so a failing git log is a stop, never "clean".
-LOG=(git --literal-pathspecs -c core.quotePath=false -c log.showSignature=false log --format= --no-color --no-ext-diff --no-textconv --text --no-renames --cc --root)
+# names, a signer's log.showSignature, whose verifier's lines would come before a commit's names, a
+# submodule git is told to ignore) from hiding a line. --ignore-submodules=none beats a committed
+# .gitmodules, which a config pin does not. Output goes to files so a failing git log is a stop, never "clean".
+LOG=(git --literal-pathspecs -c core.quotePath=false -c log.showSignature=false log --format= --no-color --no-ext-diff --no-textconv --text --no-renames --ignore-submodules=none --cc --root)
 tmp="$(mktemp -d)" || exit 1
 trap 'rm -rf "$tmp"' EXIT
 unreadable() {
@@ -100,9 +101,9 @@ unreadable() {
 # diffs whatever log.diffMerges says), since --cc leaves out what a merge takes from one side, and a
 # clean merge shows nothing at all. It holds every name above, so nothing here is nothing to push.
 # log.showSignature pinned off, as above: a line before a commit's first name would move it out of
-# its package.
-git -c core.quotePath=false -c log.diffMerges=separate -c log.showSignature=false log --format= --no-renames -m --root \
-  --name-only -z "${revs[@]}" > "$tmp/tree" || unreadable
+# its package. No submodule ignored, as above: a bump inside a package would leave it untested.
+git -c core.quotePath=false -c log.diffMerges=separate -c log.showSignature=false log --format= --no-renames \
+  --ignore-submodules=none -m --root --name-only -z "${revs[@]}" > "$tmp/tree" || unreadable
 [ -s "$tmp/tree" ] || exit 0
 
 # CODE = everything EXCEPT docs/ and a few top-level meta files. NOTE: .claude/**

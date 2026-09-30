@@ -57,7 +57,8 @@ Your AI agent says "done"; Nonna makes it prove it.
   which it used to leave behind while saying it had removed them. `NONNA_TEST_CMD` still replaces
   them all. For every repository, a pushed merge is now tested for what it takes from each side (a
   clean merge used to push with no tests), and a signer's `log.showSignature` no longer puts the
-  verifier's lines into what the pre-push hook reads, where they could hide a STATUS update.
+  verifier's lines into what the pre-push hook reads, where they could hide a STATUS update. Nor
+  does a submodule bump go unread because `.gitmodules` or `diff.ignoreSubmodules` says to ignore it.
 - **Modes: `off`, `lite` and `full`, one switch per repository** (ADR-0011). Every hook reads, in
   order: `NONNA_MODE` (Claude Code's hooks only), your `nonna.mode` (repository, then global), the
   plugin's `mode` option, `nonna.defaultMode`, and last what the repository carries (the hooks and

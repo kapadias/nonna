@@ -2941,6 +2941,21 @@ git -C "$PP" config nonna.mode full
 "${GIT[@]}" -C "$PP" checkout -q -b record main; mkdir -p "$PP/docs"; printf 's\n' > "$PP/docs/STATUS.md"; printf 'x = 6\n' > "$PP/packages/api/app.py"
 "${GIT[@]}" -C "$PP" add -A; "${GIT[@]}" -C "$PP" commit -qm record
 sign "$PP"; signed_push record; check "pre-push: ...nor hides a STATUS update from the STATUS gate" 0 "$?"
+git -C "$PP" config --unset nonna.mode
+# A submodule bump inside a package runs that package's command, whatever git is told to ignore: a
+# committed .gitmodules can say ignore = all. The gitlinks point at commits of this repository.
+"${GIT[@]}" -C "$PP" checkout -q -b sub main
+printf '[submodule "lib"]\n\tpath = packages/api/lib\n\turl = ./lib\n\tignore = all\n' > "$PP/.gitmodules"; "${GIT[@]}" -C "$PP" add .gitmodules
+"${GIT[@]}" -C "$PP" update-index --add --cacheinfo "160000,$(git -C "$PP" rev-parse main),packages/api/lib"
+"${GIT[@]}" -C "$PP" commit -qm lib; "${GIT[@]}" -C "$PP" push -q origin sub; OLDTIP="$(git -C "$PP" rev-parse sub)"
+"${GIT[@]}" -C "$PP" update-index --cacheinfo "160000,$OLDTIP,packages/api/lib"; "${GIT[@]}" -C "$PP" commit -qm "bump lib"
+pp sub "$OLDTIP"; check "pre-push: a submodule bump inside a package runs its command, though .gitmodules says ignore = all" "api" "$(cat "$CNT")"
+git -C "$PP" config nonna.mode full
+"${GIT[@]}" -C "$PP" checkout -q -b sub2 sub; mkdir -p "$PP/docs"; printf 's\n' > "$PP/docs/STATUS.md"; "${GIT[@]}" -C "$PP" add docs/STATUS.md
+"${GIT[@]}" -C "$PP" commit -qm record; "${GIT[@]}" -C "$PP" push -q origin sub2; OLDTIP="$(git -C "$PP" rev-parse sub2)"
+"${GIT[@]}" -C "$PP" update-index --cacheinfo "160000,$OLDTIP,packages/api/lib"; "${GIT[@]}" -C "$PP" commit -qm "bump lib"
+pp sub2 "$OLDTIP"; check "pre-push: ...and the STATUS gate counts that bump as code, as it would with nothing ignored" 1 "$?"
+git -C "$PP" config --unset nonna.mode
 rm -rf "$PP" "$BARE" "$PS" "$CNT" "$VERIFY"
 
 echo "== subagent-start.sh (SubagentStart: the constitution reaches subagents) =="
