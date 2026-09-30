@@ -203,10 +203,10 @@ push it has 600 seconds, and a suite that runs out of time there is refused.
 
 The `pre-push` test gate tastes what you push. It runs in the working tree, so it refuses a push
 while the tree differs from `HEAD`, untracked files included, and a submodule checked out at another
-commit or edited inside, whatever `.gitmodules` says to ignore. A pushed branch that is not checked
-out gets a warning that its tests did not run; tags and deletes run nothing. A pushed merge counts
-for what it takes from each side, not only for what its resolution changed, so a clean merge runs
-the tests too.
+commit, edited inside, or holding untracked files, whatever `.gitmodules` says to ignore
+(`ignore = untracked` for build output included). A pushed branch that is not checked out gets a
+warning that its tests did not run; tags and deletes run nothing. A pushed merge counts for what it
+takes from each side, not only for what its resolution changed, so a clean merge runs the tests too.
 
 ### A test command per directory
 

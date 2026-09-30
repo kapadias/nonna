@@ -195,11 +195,12 @@ if [ "${#code_files[@]}" -gt 0 ] && [ -f "$here/lib/tests.sh" ]; then
     if [ -z "$at_head" ]; then
       : # tags, or branches that are not checked out: nothing here to taste
     # Every submodule counts, whatever .gitmodules says to ignore: one checked out at another commit,
-    # or edited inside, is not what is pushed.
+    # edited inside, or holding untracked files, is not what is pushed.
     elif [ -n "$(git status --porcelain --untracked-files=normal --ignore-submodules=none 2>/dev/null)" ]; then
       {
         echo "✗ Nonna: I taste what you serve, not what is still on the stove. (pre-push: the tests run in the working tree, and it differs from HEAD.)"
         echo "  commit or stash your changes (untracked files too: a forgotten git add passes here and breaks there)."
+        echo "  a submodule counts too: git submodule update, or clean or commit inside it."
       } >&2
       fail=1
     else

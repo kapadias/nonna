@@ -72,8 +72,11 @@ should have forgotten.
    and the first red refuses the push, named. The hook already refuses a push whose files it cannot
    list. That is stricter than running every command, so this case needs no rule of its own.
 6. **`NONNA_TEST_CMD`** still overrides everything at the end of a turn with one command, and the
-   pre-push hook still ignores it. With no directory keys, both hooks behave as before, but for the
-   merge fix in 5, which holds for every repository: a clean merge used to push with no tests.
+   pre-push hook still ignores it. With no directory keys, the selection is unchanged: the one
+   command runs, as before. The pre-push hardening in 5 holds for every repository, directory keys
+   or none: each merge read against each parent (a clean merge used to push with no tests),
+   `log.showSignature` pinned off, `--ignore-submodules=none` on the listings and on the
+   working-tree check, and `GIT_NO_REPLACE_OBJECTS`.
 7. **`/nonna`.** `/nonna test --dir <dir> '<command>'` sets a directory's command, and
    `/nonna test --dir <dir> off` removes it. The directory is resolved (`./`, a trailing `/`, `..` and
    links) and must be a directory inside the repository, other than its top. `/nonna` lists each

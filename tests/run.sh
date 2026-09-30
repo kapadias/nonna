@@ -2987,6 +2987,7 @@ git -C "$PP" config --unset nonna.mode
 "${GIT[@]}" -C "$PP" update-index --cacheinfo "160000,$L2,packages/api/lib"; "${GIT[@]}" -C "$PP" commit -qm "bump lib to L2"
 git -C "$PP/packages/api/lib" checkout -q "$L1"
 pp subco "$OLDTIP"; check "pre-push: a submodule checked out behind the pushed one is not a clean tree, though .gitmodules says ignore = all" 1 "$?"
+contains "pre-push: ...and the refusal says what to do about a submodule" "a submodule counts too" "$(cd "$PP" && "$RS" origin "$BARE" < "$PS" 2>&1)"
 rm -rf "$PP/packages/api/lib"
 # Replace refs change what git reads, not what a push sends. A look-alike that changes only web must not
 # stand in for the pushed commit, which changes only api, nor make its working tree read as the pushed one.

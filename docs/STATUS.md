@@ -88,9 +88,10 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   out of its package, every submodule read (the working-tree check's too), whatever `.gitmodules`
   says to ignore, and replace refs off, so a look-alike cannot stand in for what is pushed. `/nonna`
   lists the directories' commands, and `/nonna uninstall` removes every `nonna` subsection (it used
-  to leave them behind). Otherwise, with no such keys, both hooks behave as before. Golden tests for
-  each hook and for `/nonna`, a property test for ownership, and each fix pinned against a mutant of
-  it. Two gaps it found are follow-ups (Next / open).
+  to leave them behind). With no such keys, what runs is chosen as before, while that pre-push
+  hardening holds for every repository. Golden tests for each hook and for `/nonna`, a property test
+  for ownership, and each fix pinned against a mutant of it. Two gaps it found are follow-ups (Next
+  / open).
 
 - **2026-09-30** — A Codex plugin (#25, ADR-0013), because Codex could end a turn on a red suite and
   its edits passed both guards: an `apply_patch` adding a key or editing `.git/config` exited 0.
