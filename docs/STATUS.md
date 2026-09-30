@@ -77,7 +77,9 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   files count, and a listing that fails runs every command. A directory's green run is remembered by
   the whole tree but the other directories, so another package's change does not run it again and a
   shared file does. The pre-push hook chooses the same way from the pushed range, reading each merge
-  against each parent: for every repository, a clean merge used to push with no tests. `/nonna`
+  against each parent (for every repository, a clean merge used to push with no tests), with a
+  signer's `log.showSignature` pinned off so the verifier's lines cannot move a file out of its
+  package. `/nonna`
   lists the directories' commands, and `/nonna uninstall` removes every `nonna` subsection (it used
   to leave them behind). Otherwise, with no such keys, both hooks behave as before. Golden tests
   for each hook and for `/nonna`, a property test for ownership, and each fix pinned against a

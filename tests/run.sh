@@ -2906,7 +2906,30 @@ pp feat "$OLDTIP"; check "pre-push: a merge runs the package it takes from one s
 "${GIT[@]}" -C "$PP" checkout -q -b c2 main; printf 'x = 3\n' > "$PP/tool.py"; "${GIT[@]}" -C "$PP" commit -qam c2
 "${GIT[@]}" -C "$PP" push -q origin c1 c2; OLDTIP="$("${GIT[@]}" -C "$PP" rev-parse c2)"; "${GIT[@]}" -C "$PP" merge -q --no-edit c1
 pp c2 "$OLDTIP"; check "pre-push: a clean merge, whose resolution changes nothing, still runs the tests" "$(printf 'api\nroot')" "$(cat "$CNT")"
-rm -rf "$PP" "$BARE" "$PS" "$CNT"
+# A signer's git config for the push: with log.showSignature, git log prints the verifier's lines before
+# each commit's names. They must not turn a package's file into one in no package (with no repository
+# command, a misread runs nothing), nor hide a STATUS update from its gate. The signature and the
+# verifier are stand-ins; the verifier prints a line to stderr, as gpg does.
+VERIFY="$(mktemp)"; printf '#!/bin/sh\necho "gpg: Signature made by nobody" >&2\nexit 1\n' > "$VERIFY"; chmod +x "$VERIFY"
+sign() { # <repo>: HEAD's commit again, signed with a stand-in signature
+  local c
+  c="$(git -C "$1" cat-file commit HEAD | awk '{ print } /^committer / { print "gpgsig -----BEGIN PGP SIGNATURE-----"
+    print " "; print " iQEzBAABCAAdFiEEastandinsignature"; print " -----END PGP SIGNATURE-----" }' | git -C "$1" hash-object -t commit -w --stdin)"
+  "${GIT[@]}" -C "$1" reset -q --hard "$c"
+}
+signed_push() { # <branch>: push it from PP with a signer's log.showSignature and the stand-in verifier
+  : > "$CNT"; printf 'refs/heads/%s %s refs/heads/%s %s\n' "$1" "$(git -C "$PP" rev-parse "$1")" "$1" "$ZERO" > "$PS"
+  (cd "$PP" && GIT_CONFIG_COUNT=2 GIT_CONFIG_KEY_0=log.showSignature GIT_CONFIG_VALUE_0=true \
+    GIT_CONFIG_KEY_1=gpg.program GIT_CONFIG_VALUE_1="$VERIFY" "$RS" origin "$BARE" < "$PS") 2>/dev/null
+}
+git -C "$PP" config --unset nonna.testCmd
+"${GIT[@]}" -C "$PP" checkout -q -b signed main; printf 'x = 5\n' > "$PP/packages/api/app.py"; "${GIT[@]}" -C "$PP" commit -qam signed
+sign "$PP"; signed_push signed; check "pre-push: a signer's log.showSignature in the push's environment still runs the package's command" "api" "$(cat "$CNT")"
+git -C "$PP" config nonna.mode full
+"${GIT[@]}" -C "$PP" checkout -q -b record main; mkdir -p "$PP/docs"; printf 's\n' > "$PP/docs/STATUS.md"; printf 'x = 6\n' > "$PP/packages/api/app.py"
+"${GIT[@]}" -C "$PP" add -A; "${GIT[@]}" -C "$PP" commit -qm record
+sign "$PP"; signed_push record; check "pre-push: ...nor hides a STATUS update from the STATUS gate" 0 "$?"
+rm -rf "$PP" "$BARE" "$PS" "$CNT" "$VERIFY"
 
 echo "== subagent-start.sh (SubagentStart: the constitution reaches subagents) =="
 # SessionStart additionalContext is parent-only, so under a plugin install every

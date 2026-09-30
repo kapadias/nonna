@@ -55,8 +55,9 @@ Your AI agent says "done"; Nonna makes it prove it.
   it, or a shared file outside every package, changes. The pre-push hook chooses the same way over
   the pushed range. `/nonna` lists them, and `/nonna uninstall` removes every `nonna` subsection,
   which it used to leave behind while saying it had removed them. `NONNA_TEST_CMD` still replaces
-  them all. For every repository, a pushed merge is now tested for what it takes from each side: a
-  clean merge used to push with no tests.
+  them all. For every repository, a pushed merge is now tested for what it takes from each side (a
+  clean merge used to push with no tests), and a signer's `log.showSignature` no longer puts the
+  verifier's lines into what the pre-push hook reads, where they could hide a STATUS update.
 - **Modes: `off`, `lite` and `full`, one switch per repository** (ADR-0011). Every hook reads, in
   order: `NONNA_MODE` (Claude Code's hooks only), your `nonna.mode` (repository, then global), the
   plugin's `mode` option, `nonna.defaultMode`, and last what the repository carries (the hooks and
