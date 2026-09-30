@@ -74,12 +74,16 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   `.claude-plugin/marketplace.json` resolves there), so `.claude/.codex-plugin/plugin.json` points it
   at `hooks/codex-hooks.json` instead of Claude Code's `hooks.json`. That file runs her scripts
   with `NONNA_HOST=codex` on `SessionStart`, `PreToolUse` (`Bash`, `apply_patch`), `Stop` and
-  `SubagentStart`; the host comes from the file, never from the payload. `lib/host-codex.sh`
-  turns an `apply_patch` into Claude Code's Write and Edit, one per file with the lines it adds, and
-  the gate checks each; a patch it cannot read is refused. Codex's `Stop` and `SessionStart`
-  payloads and answers already match. 38 golden tests (Codex's documented payloads, the lint's
-  new checks) and the release's version check. Not yet run in a Codex session end to end, and no
-  Codex arm in `bench/`, so the README makes no parity claim.
+  `SubagentStart`; the host comes from the file, never from the payload. `lib/patch.sh`, which
+  knows no host, reads an `apply_patch` by its grammar into a record a file, as an allowlist: the
+  review found that following Codex's trim rules let a header slip past both ways, so a line the
+  grammar does not allow now refuses the patch, and so does a patch over 256 KB or 200 files, too
+  much to check before a hook times out. `lib/host-codex.sh` turns each record into Claude Code's
+  Write or Edit with the lines it adds, and the gate checks each. Codex's `Stop` and `SessionStart`
+  payloads and answers already match. 50 golden tests (Codex's documented payloads, the grammar,
+  the lint's new checks) and the release's version check. Not yet run in a Codex session end to
+  end, and no Codex arm in `bench/`, so the README makes no parity claim; INSTALL says what the
+  Codex hooks do not see (input to a shell already running, a patch written through the shell).
 
 - **2026-09-30** — No demo video in the repository's tree. The README's demo (a gif, an mp4 and the
   raw recording of one session, and the page on how it was recorded) is removed with its block in

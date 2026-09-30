@@ -90,7 +90,11 @@ has hooks with Nonna's contracts: exit code 2 blocks a `PreToolUse` call, a `Sto
   so a lower default in a later Codex cannot cut it short.
 - `/nonna` and the plugin's options are Claude Code's. Under Codex, her settings are git config, and
   the first-session notice, which names `/nonna`, says so less well than it could.
-- Only a payload whose `tool_name` is `apply_patch` is read as a patch: that is the shape Codex
-  documents, and the one tested. Codex's shell tool can also run `apply_patch` as a program. If a
-  hook ever sees such a call as `Bash`, the guards give it their shell reading, which does not read
-  the patch inside it, and the git hooks are the backstop. Confirm it in a Codex session.
+- **What the Codex hooks do not see.** Codex runs no `PreToolUse` for `write_stdin`, input sent to
+  an exec session that is already running, so a command typed into a shell that already passed the
+  guards is never read by them: a later `git push --no-verify` there, say. And an `apply_patch`, or
+  a heredoc, run through the shell arrives as `Bash`: the guards give it their shell reading, and
+  nothing it writes is scanned for secrets, since only a payload whose `tool_name` is `apply_patch`
+  is read as a patch. The git hooks are the backstop, the pre-commit and pre-push scans and the
+  branch refusal, except against `--no-verify`, which skips them. The wall is branch protection on
+  the server.

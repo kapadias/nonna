@@ -189,7 +189,9 @@ What each agent gets:
 ¹ The same scripts, run on Codex's events and tested against the hook payloads Codex documents. They
 have not yet run in a Codex session end to end, and the benchmark has no Codex arm, so nothing here
 says they do for Codex what they do for Claude Code. Codex reads files through the shell, where the
-secret guard checks what a command reads.
+secret guard checks what a command reads. They do not see input sent to a shell already running, or
+scan what the shell writes; the git hooks are the backstop there
+([`docs/INSTALL.md`](docs/INSTALL.md#codex-the-plugin)).
 
 Nothing you already have is overwritten. More: [`docs/INSTALL.md`](docs/INSTALL.md).
 

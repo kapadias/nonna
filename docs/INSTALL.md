@@ -269,6 +269,12 @@ What differs from Claude Code:
   and Codex 0.159.2 installs the plugin and lists exactly these hooks. They have not yet run in a
   Codex session end to end, and the benchmark has no Codex arm, so no number in the README is
   Codex's.
+- **What her Codex hooks do not see.** Codex runs no hook for input sent to a shell session that is
+  already running, so a command typed into a shell that already passed the guards is not read by
+  them, a later `git push --no-verify` there included. An `apply_patch` or a heredoc run through
+  the shell reaches her as a shell command, and nothing it writes is scanned for secrets. Her git
+  hooks are the backstop, except against `--no-verify`, which skips them; the wall is branch
+  protection on the server.
 
 Without the plugin, `install.sh --host agents` gives Codex the house rules in `AGENTS.md` and the git
 hooks, as every other agent gets them.
