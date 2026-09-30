@@ -1,6 +1,6 @@
-# Text is LF in every checkout, whatever core.autocrlf says. Git for Windows' installer sets it to true, and a
-# plugin is installed by git clone. Git Bash reads CRLF scripts, but WSL's bash takes the CR for part of the
-# interpreter's name and cannot start a hook, and checks that anchor a regex at a line end or compare bytes
-# fail on CRLF. text=auto leaves binary files alone, and a file already committed with CRLF (two data tables
-# and a licence) as it is.
+# Text is LF in every new checkout, whatever core.autocrlf says. Git for Windows' installer sets it to true, and
+# a plugin is installed by git clone. An existing checkout keeps the CRLF of files git does not rewrite. Git
+# Bash reads CRLF scripts, but WSL's bash takes the CR for part of the interpreter's name and cannot start a
+# hook, and checks that anchor a regex at a line end or compare bytes fail on CRLF. text=auto leaves binary
+# files alone, and a file already committed with CRLF (two data tables and a licence) as it is.
 * text=auto eol=lf
