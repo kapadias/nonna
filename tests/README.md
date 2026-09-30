@@ -103,7 +103,7 @@ Exercises each deterministic gate with fixed inputs and asserts the exit code:
   from the lite rules, says `install.sh --host gemini` adds the git hooks and that the extension
   installs none, carries lite's rules, and holds no `@` (Gemini CLI reads `@path` in a context file
   as an import). The cases that break the manifest are under the linter, below.
-- **Copilot CLI plugin** (`hooks/copilot-hooks.json`, `lib/host-copilot.sh`, ADR-0014): each gate
+- **Copilot CLI plugin** (`hooks/copilot-hooks.json`, `lib/host-copilot.sh`, ADR-0015): each gate
   runs as Copilot's hooks file wires it, on Copilot's documented payloads. `git commit` on `main`, a
   new file holding a key, an edit of `.git/config`, a view or grep of `.env`, an `apply_patch` that
   adds a key, and a command sent to a running shell are refused, the reason in Copilot's

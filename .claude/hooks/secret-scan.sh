@@ -23,7 +23,7 @@ if [ "${NONNA_HOST:-}" = codex ]; then
   payload="$(printf '%s' "$payload" | nonna_codex_payload "$here/secret-scan.sh")" || exit 2
 fi
 [ -n "$payload" ] || exit 0
-if [ "${NONNA_HOST:-}" = copilot ]; then # Copilot CLI: its payload and its reply (ADR-0014)
+if [ "${NONNA_HOST:-}" = copilot ]; then # Copilot CLI: its payload and its reply (ADR-0015)
   # shellcheck source=/dev/null
   . "$here/lib/host-copilot.sh"
   nonna_copilot_reply

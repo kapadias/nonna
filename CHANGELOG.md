@@ -46,6 +46,21 @@ Your AI agent says "done"; Nonna makes it prove it.
   `/nonna uninstall` takes back only what is hers, in every worktree, and names each value. It is
   the user's alone: the agent cannot invoke it, and the branch guard refuses the agent running its
   scripts. While she is off, the guard still keeps her settings, and nothing else.
+- **Monorepos: a test command per directory** (ADR-0014, #29).
+  `/nonna test --dir packages/api '<command>'` sets `git config nonna.packages/api.testCmd`. At the
+  end of a turn the Stop hook runs only the commands of the directories this session changed (new
+  files included), each once and inside the repository in its directory, then the repository's
+  command for a file in none, and every command when it cannot list the changes. They share the 240
+  seconds, the first red blocks with its directory named, and a directory is not run again until it,
+  or a shared file outside every package, changes. The pre-push hook chooses the same way over the
+  pushed range. `/nonna` lists them, and `/nonna uninstall` removes every `nonna` subsection, which
+  it used to leave behind while saying it had removed them. `NONNA_TEST_CMD` still replaces them
+  all. For every repository, a pushed merge is now tested for what it takes from each side (a clean
+  merge used to push with no tests), and a signer's `log.showSignature` no longer puts the
+  verifier's lines into what the pre-push hook reads, where they could hide a STATUS update. Nor
+  does a submodule bump go unread because `.gitmodules` or `diff.ignoreSubmodules` says to ignore
+  it, nor a submodule checked out behind the pushed one pass for a clean working tree, and a replace
+  ref no longer makes the hook read a look-alike instead of what is pushed.
 - **Modes: `off`, `lite` and `full`, one switch per repository** (ADR-0011). Every hook reads, in
   order: `NONNA_MODE` (Claude Code's hooks only), your `nonna.mode` (repository, then global), the
   plugin's `mode` option, `nonna.defaultMode`, and last what the repository carries (the hooks and
@@ -157,7 +172,7 @@ Your AI agent says "done"; Nonna makes it prove it.
   by Codex 0.159.2; not yet run in a Codex session end to end, and `docs/INSTALL.md` says what the
   Codex hooks do not see. The lint holds the file to its own form and core gates, and the release
   checks its version.
-- **A GitHub Copilot CLI plugin** (#26, ADR-0014): `copilot plugin marketplace add kapadias/nonna`,
+- **A GitHub Copilot CLI plugin** (#26, ADR-0015): `copilot plugin marketplace add kapadias/nonna`,
   then `copilot plugin install nonna@nonna`. `.github/plugin/` holds its marketplace and manifest;
   `hooks/copilot-hooks.json` runs her scripts from `.claude/hooks/` at `sessionStart`, `preToolUse`
   and `agentStop`, with `NONNA_HOST=copilot`. Copilot's agent can no longer end its turn on a red

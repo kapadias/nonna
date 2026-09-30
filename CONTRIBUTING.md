@@ -88,7 +88,7 @@ needs:
    (`tool_name`, `tool_input`) and block the way Claude Code expects: exit code 2, or
    `{"decision": "block"}`. Each command in the manifest names its host (`NONNA_HOST=codex`,
    `NONNA_HOST=copilot`), and where the host's input differs, `lib/host-<host>.sh` reads it as Claude
-   Code's, run by one small block in each script that needs it (ADR-0013, ADR-0014).
+   Code's, run by one small block in each script that needs it (ADR-0013, ADR-0015).
 4. **The docs.** In `README.md`, a row in the `--host` table under "Other agents"; if the host gets
    more than every other agent (its own hooks), a column in "What each agent gets" that says what. In
    `docs/INSTALL.md`, a row in the host table.

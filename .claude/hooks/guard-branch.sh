@@ -87,7 +87,7 @@ if [ "${NONNA_HOST:-}" = codex ]; then
   . "$here/lib/host-codex.sh"
   payload="$(printf '%s' "$payload" | nonna_codex_payload "$here/guard-branch.sh")" || exit 2
 fi
-if [ "${NONNA_HOST:-}" = copilot ]; then # Copilot CLI: its payload and its reply (ADR-0014)
+if [ "${NONNA_HOST:-}" = copilot ]; then # Copilot CLI: its payload and its reply (ADR-0015)
   # shellcheck source=/dev/null
   . "$here/lib/host-copilot.sh"
   nonna_copilot_reply

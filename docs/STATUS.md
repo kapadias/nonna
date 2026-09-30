@@ -67,7 +67,7 @@ never offered to the model, so it is not counted.
   reads Copilot's payloads as Claude Code's, an `apply_patch` a file at a time. The release workflow
   holds both manifests to the tag, and `review-lanes.sh` sends the hooks file to security review.
 - **Docs** — this `STATUS.md`, `INSTALL.md`, `OVERVIEW.md`, `docs/benchmarks/`, `CHANGELOG.md`, the
-  `docs/adr/` index, and ADRs 0001–0014.
+  `docs/adr/` index, and ADRs 0001–0015.
 - **Launch images** — `assets/build.py` builds the scorecard, the social preview and one card per
   trap task from round 3's files; `--check` (standard library only) is run by `tests/run.sh`.
 - **CI** — `.github/workflows/ci.yml`: shellcheck (all scripts) + harness-lint + gate self-tests
@@ -79,7 +79,7 @@ never offered to the model, so it is not counted.
 
 History lives in `CHANGELOG.md` and `git log`. Entries here describe the current unit of work.
 
-- **2026-09-30** — A GitHub Copilot CLI plugin (#26, ADR-0014), so Copilot's agent meets the stop
+- **2026-09-30** — A GitHub Copilot CLI plugin (#26, ADR-0015), so Copilot's agent meets the stop
   gate and both guards in its own hooks, not only at the next push. `.github/plugin/` holds the
   marketplace and the manifest (the repository is the plugin), and `hooks/copilot-hooks.json` wires
   `session-start.sh`, `guard-branch.sh`, `secret-scan.sh` and `stop-dod.sh` with
@@ -93,6 +93,25 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   them holding the adapter equal to Claude Code's goldens; no live Copilot session has run it.
   `release.yml` checks both new manifests against the tag, and `review-lanes.sh` sends a change to
   the hooks file to security review.
+
+- **2026-09-30** — A test command per directory, for monorepos (#29, ADR-0014). A monorepo's whole
+  suite runs past the Stop hook's 240 seconds, so it got no verdict until the push. Now
+  `git config nonna.<dir>.testCmd` (set with `/nonna test --dir`) gives a directory its own command.
+  A changed file belongs to the longest such directory it is in, else to the repository's command.
+  The Stop hook runs each owning command once, in its directory and only inside the repository,
+  within the shared budget, and blocks on the first red, naming the directory; new files count, and
+  a listing that fails runs every command. A directory's green run is remembered by the whole tree
+  but the directories beside it, so a change in one of those does not run it again, and a shared
+  file or a package inside it does. The pre-push hook chooses the same way from the pushed range,
+  reading each merge against each parent (for every repository, a clean merge used to push with no
+  tests), with a signer's `log.showSignature` pinned off so the verifier's lines cannot move a file
+  out of its package, every submodule read (the working-tree check's too), whatever `.gitmodules`
+  says to ignore, and replace refs off, so a look-alike cannot stand in for what is pushed. `/nonna`
+  lists the directories' commands, and `/nonna uninstall` removes every `nonna` subsection (it used
+  to leave them behind). With no such keys, what runs is chosen as before, while that pre-push
+  hardening holds for every repository. Golden tests for each hook and for `/nonna`, a property test
+  for ownership, and each fix pinned against a mutant of it. Two gaps it found are follow-ups (Next
+  / open).
 
 - **2026-09-30** — A Codex plugin (#25, ADR-0013), because Codex could end a turn on a red suite and
   its edits passed both guards: an `apply_patch` adding a key or editing `.git/config` exited 0.
@@ -550,7 +569,13 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
 - The Copilot CLI plugin has not run in a live Copilot session: a smoke run (a commit on `main`, a
   key in a new file, a turn ending on a red suite) belongs on the go/no-go list. Its git hooks point
   into Copilot's plugin data, which `nonna_hook_is_hers` does not know, so `/nonna`'s scripts leave
-  them and a Claude Code session in the same repository warns about them (ADR-0014).
+  them and a Claude Code session in the same repository warns about them (ADR-0015).
+- The branch guard keeps `.git/nonna/` and `.git/nonna-green` (her green runs) from the agent's
+  file tools, not from a shell redirection, so a green run can be written from the shell (#29's
+  security review, LOW). Its shell-write refusal names `.git/config` and `.git/hooks` in four
+  patterns, and misses a linked worktree's state, so closing it needs new parsing.
+- The pre-push hook only warns when a pushed branch is not checked out, and runs no tests for it.
+
 - The Codex plugin (#25) in a real Codex session: install it from `/plugins`, trust its hooks in
   `/hooks`, and see a red suite send the agent back and a patch with a key refused; then a Codex
   arm in `bench/` before the README says what it does for Codex.
