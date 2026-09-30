@@ -18,7 +18,8 @@
 #   Reads a payload on stdin and prints it in Claude Code's shape, one payload per line. First the
 #   shape Copilot sends is checked, and anything else is refused, never read untranslated: the payload
 #   must be a JSON object; its tool_input an object, or, for an Edit (apply_patch's raw text) alone, a
-#   string that does not hold JSON; path a string; paths one path or a flat, non-empty list of them.
+#   string that does not hold JSON; path a string; paths one path or a flat, non-empty list of them;
+#   file_text, content, old_str, new_str, input and patch strings.
 #   Then Copilot's argument names, which its tools act on, win over any Claude-named key beside them
 #   (a decoy): path is file_path, old_str old_string; a write's content keys (file_text, content,
 #   input, patch) are joined into content, and new_str and new_string into new_string, so each is
@@ -85,6 +86,8 @@ nonna_copilot_payload() {
     def joined($keys): [$keys[] as $k | .[$k] | strings] | if length > 0 then join("\n") else null end;
     def refuse($why): [{nonna_copilot_refuse: "unread", why: $why}];
     def paths_ok: type == "string" or (type == "array" and length > 0 and all(.[]; type == "string"));
+    def texts_ok: . as $t | all(("file_text", "content", "old_str", "new_str", "input", "patch");
+      . as $k | ($t | has($k) | not) or ($t[$k] | type) == "string");
     def holds_json: explode | map(select(. > 32)) | .[0] == 123;
     def patches: if (.tool_input | type) == "string" then [.tool_input] else [.tool_input.input, .tool_input.patch] | map(strings) end;
     def translate:
@@ -121,6 +124,8 @@ nonna_copilot_payload() {
       elif (.tool_input | has("path")) and (.tool_input.path | type) != "string" then refuse("its path is not a string")
       elif (.tool_input | has("paths")) and (.tool_input.paths | paths_ok | not) then
         refuse("its paths are neither one path nor a flat, non-empty list of them")
+      elif (.tool_input | texts_ok | not) then
+        refuse("its file_text, content, old_str, new_str, input or patch is not a string")
       else translate end
     | if . == [$in] then empty else .[] end' 2>/dev/null)" || {
     # Not JSON that jq reads, or a jq that cannot run this: refused, never read with Copilot's names unread.

@@ -3807,6 +3807,14 @@ cop PreToolUse 'write_bash|write_powershell' guard-branch.sh "$CPR" "$(pre write
 check "copilot: a write_bash whose arguments are a string exits 2" 2 "$?"
 cop PreToolUse 'Edit|Write' secret-scan.sh "$CPR" "$(pre Write '{"path":"a.py","file_text":"aws_id = \"'"$FAKE_AWS"'\""')" >/dev/null
 check "copilot: truncated JSON holding a key exits 2" 2 "$?"
+# A write's text, an edit's strings and a patch's text are strings, as a path is: one of another type is
+# refused, never skipped as if it were not there.
+cop PreToolUse 'Edit|Write' secret-scan.sh "$CPR" "$(pre Write '{"path":"a.py","file_text":["aws_id = \"'"$FAKE_AWS"'\""]}')" >/dev/null
+check "copilot: a Write whose file_text is a list exits 2" 2 "$?"
+cop PreToolUse 'Edit|Write' secret-scan.sh "$CPR" "$(pre Edit '{"path":"a.py","old_str":"x = 1","new_str":{"s":"aws_id = \"'"$FAKE_AWS"'\""}}')" >/dev/null
+check "copilot: an Edit whose new_str is an object exits 2" 2 "$?"
+cop PreToolUse 'Edit|Write' guard-branch.sh "$CPR" "$(pre Edit '{"path":"app.py","old_str":"x = 1","new_str":"x = 2","input":["*** Begin Patch\n*** Update File: .git/config\n@@\n+[core]\n*** End Patch\n"]}')" >/dev/null
+check "copilot: an Edit whose patch text (input) is a list exits 2" 2 "$?"
 # Input written to an async shell is a command too.
 cop PreToolUse 'write_bash|write_powershell' guard-branch.sh "$CPR" "$(pre write_bash '{"shellId":"7","input":"git commit --no-verify -m x"}')" >/dev/null
 check "copilot: a command written to an async shell (write_bash's input) is read: --no-verify exits 2" 2 "$?"

@@ -381,7 +381,8 @@ tools' argument names (`path`, `file_text`, `old_str`, `new_str`, grep's `paths`
 is judged path by path, and any refusal refuses; more than 32, too many to judge before the hook
 times out, are refused up front. A call not in the shape Copilot sends (arguments that are not an
 object, where only `apply_patch`'s raw text comes as a string; a path that is not a string; paths
-that are not one path or a flat, non-empty list) is refused, never read untranslated. A refusal
+that are not one path or a flat, non-empty list; a write's text, an edit's strings or a patch's
+text that is not a string) is refused, never read untranslated. A refusal
 also goes out as `permissionDecision: "deny"` with her message as the reason, the form Copilot
 shows the agent, and session start's context as `additionalContext`
 ([ADR 0015](adr/0015-copilot-cli-plugin.md)).
