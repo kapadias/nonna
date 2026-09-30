@@ -1,5 +1,7 @@
 <div align="center">
 
+**English** · [简体中文](README.zh-CN.md) · [한국어](README.ko.md) · [日本語](README.ja.md) · [Español](README.es.md)
+
 <img src="assets/nonna-banner.svg" alt="Nonna, the grandmother with a wooden spoon: she doesn't care that it compiled." width="100%">
 
 **Your AI agent says "done". Nonna makes it prove it.**

@@ -68,6 +68,12 @@ never offered to the model, so it is not counted.
 
 History lives in `CHANGELOG.md` and `git log`. Entries here describe the current unit of work.
 
+- **2026-09-30** — The README in Simplified Chinese, Korean, Japanese and Spanish
+  (`README.<lang>.md` at the root, linked from the top of `README.md`; #31), for developers who
+  read those more easily than English. The lint holds each translation to `README.md`: the same
+  marked numbers, checked against round 3's rows, the scorecard's own alt text, and the code blocks
+  word for word but for a `#` comment, so no number or command goes stale in one language. The
+  credit is allowed in each file by name; the golden-test count stays in `README.md` only.
 - **2026-09-30** — No demo video in the repository's tree. The README's demo (a gif, an mp4 and the
   raw recording of one session, and the page on how it was recorded) is removed with its block in
   the README, and the split-screen film on `chore/17-demo` is not merged: both are launch
