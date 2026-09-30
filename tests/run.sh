@@ -2705,27 +2705,6 @@ named() { # <runners> <name>...: what detection names for a fresh repository mad
   rm -rf "$d"
   printf '%s' "$out"
 }
-shuffled() { # <seed> <name>...: the names, one per line, in an order the seed fixes (a Fisher-Yates shuffle
-  # over a linear congruential generator, so every bash gives the same orders)
-  local seed="$1" i j t; shift
-  local -a a=("$@")
-  for ((i = ${#a[@]} - 1; i > 0; i--)); do
-    seed=$(((seed * 1103515245 + 12345) % 2147483648))
-    j=$((seed / 65536 % (i + 1)))
-    t="${a[i]}"; a[i]="${a[j]}"; a[j]="$t"
-  done
-  printf '%s\n' "${a[@]}"
-}
-answers() { # <runners> <name>...: the distinct answers detection gives as the files are created in 12 orders
-  local runners="$1" seed d n; shift
-  for ((seed = 1; seed <= 12; seed++)); do
-    d="$(mktemp -d)"
-    while IFS= read -r n; do fx "$d" "$n"; done < <(shuffled "$seed" "$@")
-    # shellcheck disable=SC2086  # a word list on purpose
-    det "$d" $runners; printf '\n'
-    rm -rf "$d"
-  done | sort -u
-}
 # The stand-ins and the fixtures' runners leave a mark when they run, or the last test here proves nothing.
 TMP="$(mktemp -d)"; fx "$TMP" gradlew vendor/bin/phpunit; "$TMP/gradlew"; "$TMP/vendor/bin/phpunit"; "$DET_STUBS/bundle"
 check "tests.sh: (control) a stand-in or fixture runner that runs leaves its mark" 3 "$(wc -l < "$DET_LOG" | tr -d ' ')"
@@ -2753,6 +2732,7 @@ check "tests.sh: PHP: vendor/bin/pest alone: vendor/bin/pest" "vendor/bin/pest" 
 check "tests.sh: PHP: no php on PATH: nothing" "" "$(named "${RUNNERS/php/}" phpunit.xml vendor/bin/phpunit)"
 check "tests.sh: PHP: ...no php falls through to the package.json: npm test" "npm test --silent" "$(named "${RUNNERS/php/}" phpunit.xml vendor/bin/phpunit package.json)"
 check "tests.sh: PHP: no php, a Pest project: nothing" "" "$(named "${RUNNERS/php/}" phpunit.xml vendor/bin/pest)"
+check "tests.sh: PHP: ...no php, a Pest project keeps its package.json: npm test" "npm test --silent" "$(named "${RUNNERS/php/}" phpunit.xml vendor/bin/pest package.json)"
 TMP="$(mktemp -d)"; fx "$TMP" phpunit.xml vendor/bin/pest vendor/bin/phpunit; chmod -x "$TMP/vendor/bin/pest"
 # shellcheck disable=SC2086  # a word list on purpose
 check "tests.sh: PHP: a vendor/bin/pest that cannot run falls back to vendor/bin/phpunit" "vendor/bin/phpunit" "$(det "$TMP" $RUNNERS)"
@@ -2775,6 +2755,8 @@ check "tests.sh: Gradle: ...no java falls through to the package.json: npm test"
 JH="$(mktemp -d)"; mkdir "$JH/bin"; printf '#!/bin/sh\nexit 0\n' > "$JH/bin/java"; chmod +x "$JH/bin/java"
 check "tests.sh: Gradle: no java on PATH, but JAVA_HOME/bin/java: ./gradlew test" "./gradlew test" "$(DET_JAVA_HOME="$JH" named "" gradlew)"
 check "tests.sh: Gradle: JAVA_HOME without a java in it, beside a java on PATH (the wrappers look in JAVA_HOME alone): nothing" "" "$(DET_JAVA_HOME="$JH/missing" named "java" gradlew)"
+chmod -x "$JH/bin/java"
+check "tests.sh: Gradle: a JAVA_HOME/bin/java that cannot run, beside a java on PATH: nothing" "" "$(DET_JAVA_HOME="$JH" named "java" gradlew)"
 rm -rf "$JH"
 check "tests.sh: Maven wrapper: an executable mvnw and java, no mvn: ./mvnw test" "./mvnw test" "$(named "java" pom.xml mvnw)"
 check "tests.sh: Maven wrapper: a JHipster app with java: the wrapper, not its package.json" "./mvnw test" "$(named "java" pom.xml mvnw package.json)"
@@ -2827,15 +2809,15 @@ check "tests.sh: order: Elixir before go.mod" "mix test" "$(named "$RUNNERS" go.
 check "tests.sh: order: Ruby before Cargo.toml" "bundle exec rspec" "$(named "$RUNNERS" Cargo.toml Gemfile .rspec)"
 check "tests.sh: order: package.json before go.mod" "npm test --silent" "$(named "$RUNNERS" go.mod package.json)"
 check "tests.sh: order: go.mod before Cargo.toml" "go test ./..." "$(named "$RUNNERS" Cargo.toml go.mod)"
-# Property: the answer belongs to the set of files, not to the order they were created in (a directory
-# listing can follow creation order). Each pile is built in 12 seeded orders; the distinct answers must
-# be the one expected.
-ALL=(Gemfile .rspec spec/ Rakefile test/ phpunit.xml vendor/bin/phpunit gradlew pom.xml App.sln mix.exs package.json go.mod Cargo.toml)
-check "tests.sh: property: every ecosystem at once, 12 creation orders: always Ruby" "bundle exec rspec" "$(answers "$RUNNERS" "${ALL[@]}")"
-check "tests.sh: property: ...with no runner anywhere (no wrapper scripts either), always its package.json" "npm test --silent" "$(answers "" Gemfile .rspec spec/ Rakefile test/ phpunit.xml pom.xml App.sln mix.exs package.json go.mod Cargo.toml)"
-check "tests.sh: property: Gradle, Maven, JavaScript, Go and Rust, 12 creation orders: always Gradle" "./gradlew test" "$(answers "$RUNNERS" gradlew pom.xml package.json go.mod Cargo.toml)"
-check "tests.sh: property: Elixir, JavaScript, Go and Rust, 12 creation orders: always Elixir" "mix test" "$(answers "$RUNNERS" mix.exs package.json go.mod Cargo.toml)"
-check "tests.sh: property: ...and the 12 creation orders are 12 different orders" 12 "$(for ((s = 1; s <= 12; s++)); do shuffled "$s" "${ALL[@]}" | tr '\n' ' '; echo; done | sort -u | wc -l | tr -d ' ')"
+# Property: for seeded random piles of marker files and installed runners, detection names what the first
+# matching row of a table says (the table, the generator and the oracle are in detect_property.py). Each of
+# the 13 rows is the target of 24 piles, at four noise densities, so later rows are reached too, and the
+# second line holds that to account: an answer no pile reaches is a row nothing tests. The third is the
+# review's rule as an invariant: a pile that develop's four rows gate is never left without a command.
+prop="$(python3 "$ROOT/tests/detect_property.py" "$HOOKS" "$DET_LOG" 2>&1)"
+check "tests.sh: property: 312 seeded piles of marker files and runners: detection names the first matching row of the table" "piles=312 mismatches=0" "$(printf '%s\n' "$prop" | sed -n 1p)"
+check "tests.sh: property: ...and the piles reach every answer, nothing included" "unreached=" "$(printf '%s\n' "$prop" | sed -n 2p)"
+check "tests.sh: property: ...and no pile is gated less than develop's four rows (pytest, npm, go, cargo) gate it" "gated_less=0" "$(printf '%s\n' "$prop" | sed -n 3p)"
 if [ -e "$DET_LOG" ]; then rc=1; else rc=0; fi; check "tests.sh: detection ran no runner, and nothing the repository ships" 0 "$rc"
 rm -rf "$DET_STUBS" "$DET_LOG"
 # /nonna setup names what it looked for when it found nothing.
