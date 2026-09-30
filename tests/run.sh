@@ -2238,6 +2238,8 @@ out="$(ns "$TMP" test --dir ./packages/api/ pytest -q)"
 check "/nonna test --dir: records the directory's command under its name from the top" "pytest -q" "$(git -C "$TMP" config --get nonna.packages/api.testCmd)"
 contains "/nonna test --dir: says what runs, and where" "in packages/api" "$out"
 contains "/nonna: lists each directory's command" "packages/api: pytest -q" "$(ns "$TMP")"
+contains "/nonna: with directories of their own, only the repository's own command is off" "the repository's own is off" "$(ns "$TMP")"
+contains "/nonna test off: says each directory's own command still runs" "still runs" "$(ns "$TMP" test off)"
 contains "/nonna test --dir: refuses what is not a directory of this repository" "not a directory" "$(ns "$TMP" test --dir packages/nope pytest)"
 ns "$TMP" test --dir .. pytest >/dev/null
 check "/nonna test --dir: ...nor records one outside it" 1 "$(git -C "$TMP" config --get-regexp '^nonna\..+\.testcmd$' | grep -c .)"

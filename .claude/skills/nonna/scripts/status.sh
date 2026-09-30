@@ -74,7 +74,11 @@ else
   elif [ "${NONNA_TEST_CMD+set}" = set ]; then
     row "test gate" off "NONNA_TEST_CMD is set empty where Claude Code runs"
   elif nonna_config nonna.testCmd >/dev/null; then
-    row "test gate" off "as you set it: /nonna test '<command>' turns it on"
+    if [ "${#NONNA_PKG_DIRS[@]}" -gt 0 ]; then
+      row "test gate" on "each directory's own, below; the repository's own is off, as you set it"
+    else
+      row "test gate" off "as you set it: /nonna test '<command>' turns it on"
+    fi
   elif [ "${#NONNA_PKG_DIRS[@]}" -gt 0 ]; then
     row "test gate" on "in the directories below; none for the rest: /nonna test '<command>'"
   else

@@ -60,7 +60,14 @@ case "${1:-}" in
       off | none | '""' | "''")
         if [ -z "$dir" ]; then
           git config nonna.testCmd ""
-          echo "The test gate is off in this repository (git config nonna.testCmd is empty)."
+          NONNA_PKG_DIRS=()
+          # shellcheck source=/dev/null
+          . "$here/../../../hooks/lib/tests.sh" 2>/dev/null && nonna_read_pkgs git-hook
+          if [ "${#NONNA_PKG_DIRS[@]}" -gt 0 ]; then
+            echo "The repository's own test command is off (git config nonna.testCmd is empty); each directory's own still runs (/nonna lists them)."
+          else
+            echo "The test gate is off in this repository (git config nonna.testCmd is empty)."
+          fi
         elif git config --unset "nonna.$dir.testCmd"; then
           echo "$dir has no test command of its own now: a change there counts for the directory around it that has one, or for the repository."
         else
