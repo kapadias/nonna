@@ -135,8 +135,10 @@ rows="$(printf '%s\n' "$hits" | awk -v pat="$PATTERN" '
 
 total=0; bad=0
 if [ -n "$rows" ]; then
+  # A count that is not a number would make every test below false, and so a pass.
   if ! total="$(printf '%s\n' "$rows" | wc -l | tr -d ' ')" \
-    || ! bad="$(printf '%s\n' "$rows" | awk -F'\t' '$3 == 0' | wc -l | tr -d ' ')"; then
+    || ! bad="$(printf '%s\n' "$rows" | awk -F'\t' '$3 == 0' | wc -l | tr -d ' ')" \
+    || ! [ "$total" -ge 1 ] 2>/dev/null || ! [ "$bad" -ge 0 ] 2>/dev/null; then
     printf 'check-debt: cannot count the markers — refusing to pass them\n' >&2; exit 2
   fi
 fi
