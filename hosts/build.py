@@ -149,7 +149,7 @@ def main() -> int:
             try:
                 with open(dest, encoding="utf-8") as fh:
                     have = fh.read()
-            except FileNotFoundError:
+            except (FileNotFoundError, UnicodeDecodeError):
                 have = None
             if have != want:
                 bad.append(

@@ -3172,12 +3172,34 @@ gx_set "$FX/gemini-extension.json" version '"9.9.9"'
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks an extension version that is not the plugin's" 1 "$?"
 contains "lint: says the version is not the plugin's" "is not the plugin's" "$out"
 rm -rf "$FX"
-# The CLI would load hosts/lite/GEMINI.md, but that is the file install.sh writes beside the git hooks
-# it links: its header says they refuse commits, and an extension installs none.
+# Gemini CLI loads whatever contextFileName names into every session. Any file with a relative path
+# passes the checks above, and the docs all mention install.sh --host gemini, so only the generated
+# file's own path is accepted: --check then vouches for the text that is loaded.
 FX="$(lint_fixture)"
-gx_set "$FX/gemini-extension.json" contextFileName '"hosts/lite/GEMINI.md"'
+gx_set "$FX/gemini-extension.json" contextFileName '"README.md"'
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a contextFileName that names some other file" 1 "$?"
+contains "lint: says it must be the generated file" "must be 'hosts/gemini-extension/GEMINI.md'" "$out"
+rm -rf "$FX"
+# A manifest that is a directory, and a context file that is not UTF-8, are named, not a traceback.
+FX="$(lint_fixture)"
+rm "$FX/gemini-extension.json"; mkdir "$FX/gemini-extension.json"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a gemini-extension.json it cannot read" 1 "$?"
+contains "lint: names the manifest it cannot read" "gemini-extension.json: cannot read" "$out"
+case "$out" in *Traceback*) rc=1 ;; *) rc=0 ;; esac; check "lint: ...and does not crash on it" 0 "$rc"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+printf '\377\376 not UTF-8\n' > "$FX/hosts/gemini-extension/GEMINI.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a context file that is not UTF-8" 1 "$?"
+contains "lint: names the context file it cannot read" "hosts/gemini-extension/GEMINI.md: cannot read" "$out"
+case "$out" in *Traceback*) rc=1 ;; *) rc=0 ;; esac; check "lint: ...and does not crash on it either" 0 "$rc"
+rm -rf "$FX"
+# The text is generated, so --check vouches for it; but a header edited to drop the sentence and then
+# regenerated passes --check, and the agent would be told nothing about where the git hooks come from.
+FX="$(lint_fixture)"
+sed_i 's/`install\.sh --host gemini`; the hooks then/the installer; the hooks then/' "$FX/hosts/build.py"
+python3 "$FX/hosts/build.py"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a context file that does not say install.sh --host gemini adds the git hooks" 1 "$?"
-contains "lint: says what the loaded text must say" "install.sh --host gemini" "$out"
+contains "lint: says what the loaded text must say" "must say that install.sh --host gemini" "$out"
 rm -rf "$FX"
 # The context file is generated like every host's rules file: a hand edit is drift, and writing it again fixes it.
 FX="$(lint_fixture)"

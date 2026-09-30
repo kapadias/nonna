@@ -673,14 +673,16 @@ for jf in (plugin_manifest, marketplace, plugin_hooks):
     except json.JSONDecodeError as exc:
         bad(f"plugin packaging: invalid JSON in {os.path.relpath(jf, ROOT)}: {exc}")
 
-# --- Gemini CLI extension: the manifest it reads, the file it loads, one version ---
+# --- Gemini CLI extension: the manifest it reads, the file it loads, one version, rules only ---
 # `gemini extensions install https://github.com/kapadias/nonna` installs the latest release's
 # archive and reads gemini-extension.json from its root. When the context file is unusable the
 # CLI says nothing: a contextFileName that is missing, absolute, climbs out with "..", or names
 # a directory installs cleanly and loads no rules (`gemini extensions validate` catches the first
-# three). So the manifest is held to the CLI's own rules, to a real file that says the extension
-# installs no git hooks, and to the plugin's version, which `gemini extensions list` shows.
+# three). So the manifest is held to the CLI's own rules, to the one file hosts/build.py
+# generates (whatever it names is loaded into every session, and --check vouches only for that
+# file), and to the plugin's version, which `gemini extensions list` shows.
 EXT_MANIFEST = "gemini-extension.json"
+EXT_CONTEXT = "hosts/gemini-extension/GEMINI.md"  # hosts/build.py writes it
 try:
     with open(f"{ROOT}/{EXT_MANIFEST}", encoding="utf-8") as fh:
         ext = json.load(fh)
@@ -688,6 +690,8 @@ try:
         raise ValueError("expected a JSON object")
 except FileNotFoundError:
     bad(f"{EXT_MANIFEST}: missing — the Gemini CLI reads it from the repository root")
+except OSError as exc:
+    bad(f"{EXT_MANIFEST}: cannot read it: {exc}")
 except ValueError as exc:  # JSONDecodeError is one
     bad(f"{EXT_MANIFEST}: invalid JSON: {exc}")
 else:
@@ -721,13 +725,22 @@ else:
         bad(
             f"{EXT_MANIFEST}: contextFileName {ctx!r} is not a file: the CLI loads no rules from it, without a word"
         )
+    elif ctx != EXT_CONTEXT:
+        bad(
+            f"{EXT_MANIFEST}: contextFileName {ctx!r} must be {EXT_CONTEXT!r}, the file hosts/build.py generates: "
+            f"Gemini CLI loads whatever it names into every session, and --check vouches for that file alone"
+        )
     else:
-        with open(os.path.join(ROOT, ctx), encoding="utf-8") as fh:
-            loaded = " ".join(fh.read().split())
-        if "install.sh --host gemini" not in loaded:
-            bad(
-                f"{ctx}: must say that install.sh --host gemini adds the git hooks, which the extension does not install"
-            )
+        try:
+            with open(os.path.join(ROOT, ctx), encoding="utf-8") as fh:
+                loaded = " ".join(fh.read().split())
+        except (OSError, UnicodeDecodeError) as exc:
+            bad(f"{ctx}: cannot read it: {exc}")
+        else:
+            if "install.sh --host gemini" not in loaded:
+                bad(
+                    f"{ctx}: must say that install.sh --host gemini adds the git hooks, which the extension does not install"
+                )
 
 
 # --- hook wiring equivalence: two files declare the same gates, with no shared source ---
