@@ -73,10 +73,13 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   marketplace and the manifest (the repository is the plugin), and `hooks/copilot-hooks.json` wires
   `session-start.sh`, `guard-branch.sh`, `secret-scan.sh` and `stop-dod.sh` with
   `NONNA_HOST=copilot`, under PascalCase event names, for which Copilot sends Claude Code's field
-  and tool names. `.claude/hooks/lib/host-copilot.sh` renames the file tools' arguments and gives
-  her replies in Copilot's form; one block in each of three scripts calls it, and Claude Code's path
-  is unchanged. 27 golden tests from Copilot's documented payloads; no live Copilot session has run
-  it. `release.yml` checks both new manifests against the tag.
+  and tool names. `.claude/hooks/lib/host-copilot.sh` renames the tools' arguments, Copilot's names
+  winning over any decoy, judges each path of a grep, and gives her replies in Copilot's form; one
+  block in each of three scripts calls it. Under either agent the branch guard now refuses writes to
+  Copilot's repository settings and hooks (`disableAllHooks` turns every hook off). 58 golden tests
+  from Copilot's documented payloads, one of them holding the adapter equal to Claude Code's
+  goldens; no live Copilot session has run it. `release.yml` checks both new manifests against the
+  tag.
 
 - **2026-09-30** — No demo video in the repository's tree. The README's demo (a gif, an mp4 and the
   raw recording of one session, and the page on how it was recorded) is removed with its block in
@@ -474,7 +477,9 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
 - The Copilot CLI plugin has not run in a live Copilot session: a smoke run (a commit on `main`, a
   key in a new file, a turn ending on a red suite) belongs on the go/no-go list. Its git hooks point
   into Copilot's plugin data, which `nonna_hook_is_hers` does not know, so `/nonna`'s scripts leave
-  them and a Claude Code session in the same repository warns about them (ADR-0012).
+  them and a Claude Code session in the same repository warns about them (ADR-0012). The branch
+  guard does not yet read the files a Copilot `apply_patch` names; that waits on the patch reader
+  Codex's adapter brings (#25).
 
 - A behavioural eval on the failures the gates exist for (a secret in a fixture, a push to a
   protected branch, an error hidden by a "fix"), scored on "did it get caught".

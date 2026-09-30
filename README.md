@@ -186,13 +186,17 @@ What each agent gets:
 | Nonna's house rules                                                      |     yes     |        yes¹        |        yes        |
 | Git hooks: no commit on `main`, no staged secret                         |     yes     |        yes         |        yes        |
 | Git hooks: no push with red tests or a secret                            |     yes     |        yes         |        yes        |
-| Can't end its turn on a red suite; "where's the test?"                   |     yes     |        yes¹        |        no         |
-| Secret guard on every file write and read, branch guard on every command |     yes     |        yes¹        |        no         |
+| Can't end its turn on a red suite; "where's the test?"                   |     yes     |        yes¹        |        no²        |
+| Secret guard on every file write and read, branch guard on every command |     yes     |        yes¹        |        no²        |
 
 ¹ Through Copilot's `sessionStart`, `preToolUse` and `agentStop` hooks, which Copilot CLI documents
 for plugins (1.0.72 or later). Golden-tested against Copilot's documented hook payloads; not yet run
-in a live Copilot session. [`docs/INSTALL.md`](docs/INSTALL.md#github-copilot-cli-the-plugin) says
-what differs.
+in a live Copilot session. The branch guard does not yet read the files an `apply_patch` names.
+[`docs/INSTALL.md`](docs/INSTALL.md#github-copilot-cli-the-plugin) says what differs.
+
+² Copilot CLI also runs the hooks `install.sh` writes into `.claude/settings.json`, untranslated: they
+read its commands but not its file tools, and beside the plugin each gate runs twice. With Copilot,
+use the plugin.
 
 Nothing you already have is overwritten. More: [`docs/INSTALL.md`](docs/INSTALL.md).
 

@@ -29,6 +29,14 @@ before `.claude-plugin/marketplace.json`; without the first it installs the Clau
 (`.claude/`), whose hooks cannot tell they run under Copilot, and its 28 skills, written for Claude
 Code (`/nonna` needs Claude Code's `!` lines, so it cannot run there).
 
+Copilot also runs the hooks in a repository's `.claude/settings.json`, and a copy-in install
+(`install.sh`) writes Nonna's there. Those run untranslated, with no `NONNA_HOST`: they read Copilot's
+commands but not its file tools, beside a plugin every gate runs twice, and their commands start
+from `$CLAUDE_PROJECT_DIR`, which Copilot documents setting for plugin hooks only. That predates this
+decision, and the plugin does not make it worse. And one line in Copilot's repository settings
+(`.github/copilot/settings*.json`, `disableAllHooks`) turns off every hook, a plugin's included,
+while a file in `.github/hooks/` adds hooks of its own.
+
 ## Options considered
 
 1. **Do nothing: Copilot installs the Claude Code plugin.** It already does. But file writes pass
@@ -47,29 +55,40 @@ Code (`/nonna` needs Claude Code's `!` lines, so it cannot run there).
    `"${CLAUDE_PLUGIN_ROOT}"/.claude/hooks/<script>.sh`. It carries no skills or agents. The hooks file
    is not `hooks/hooks.json`, the path Gemini CLI reads at a repository's root.
 2. **PascalCase events.** `SessionStart` runs `session-start.sh`; `PreToolUse` runs `guard-branch.sh`
-   and `secret-scan.sh` on `Bash` and on `Edit|Write`, and `secret-scan.sh` on `Read|Grep`; `Stop` runs
-   `stop-dod.sh`. Timeouts are no shorter than Claude Code's (60 seconds, 300 for the stop gate):
-   Copilot lets a tool call through when its hook times out.
+   and `secret-scan.sh` on `Bash`, on `write_bash|write_powershell` (input sent to a running shell)
+   and on `Edit|Write`, and `secret-scan.sh` on `Read|Grep`; `Stop` runs `stop-dod.sh`. Timeouts are
+   no shorter than Claude Code's (60 seconds, 300 for the stop gate): Copilot lets a tool call through
+   when its hook times out.
 3. **The hooks file names the host.** Each entry's `env` sets `NONNA_HOST=copilot`, and a script that
    needs it sources `.claude/hooks/lib/host-copilot.sh` in one block,
-   `if [ "${NONNA_HOST:-}" = copilot ]; then …; fi`. `nonna_copilot_payload` renames the arguments; a
-   payload with nothing to rename passes byte for byte. `nonna_copilot_reply` holds the script's
-   output and says it at exit in Copilot's form, with the same exit status. `guard-branch.sh` and
+   `if [ "${NONNA_HOST:-}" = copilot ]; then …; fi`. `nonna_copilot_payload` renames the arguments;
+   a payload with nothing to rename passes unchanged. `nonna_copilot_reply` holds the script's output
+   and says it at exit in Copilot's form, with the same exit status. `guard-branch.sh` and
    `secret-scan.sh` use both, `session-start.sh` the reply. `stop-dod.sh` needs neither: `Stop` sends
-   `session_id` and `stop_hook_active`, and takes `{decision, reason}` as it is. Without jq, the
-   adapter renames `"path"` keys in the text and the reply stays Claude Code's: exit 2 still denies.
-4. **Where a payload cannot be read as finely, read it wider.** An `apply_patch` is scanned whole, as
-   the no-jq path scans a raw payload, so a patch that only removes a key is refused too. A grep over
-   several paths is judged by its first.
+   `session_id` and `stop_hook_active`, and takes `{decision, reason}` as it is.
+4. **Copilot's names win, and every target is judged.** Copilot's tools act on their own argument
+   names, so those are what the gates read, whatever Claude-named key sits beside them (a decoy): a
+   write's content keys are joined and all scanned. A grep over several paths becomes one payload per
+   path, and `nonna_copilot_each` runs the gate on each, refusing on the first refusal. An
+   `apply_patch` is scanned whole, so a patch that only removes a key is refused too; the files it
+   names wait for a patch reader shared with Codex's adapter. Where the payload cannot be read safely
+   it is refused: without jq, a list of paths, a Claude-named key beside Copilot's, or input to a
+   shell; with jq, JSON it cannot translate.
+5. **Copilot's switches are the user's.** Under either agent, the branch guard refuses a write to
+   `.github/copilot/settings*.json` or under `.github/hooks/`, by file tool or by shell, as it does
+   `.git/config` and the git hooks.
 
 ## Consequences
 
 - Copilot CLI gets the stop gate and both guards where they fire, not only at the next push. Claude
-  Code's path is unchanged: without `NONNA_HOST`, none of it runs.
+  Code's path is unchanged but for decision 5: without `NONNA_HOST`, none of the adapter runs.
 - One more host to follow, and no live Copilot session in any test. Golden tests (`tests/run.sh`,
   "Copilot CLI plugin") pin the payloads from Copilot's documentation and the tool definitions in
-  Copilot CLI 1.0.89. Revisit when a Copilot release changes the hooks reference, or when a live
-  session joins the release checks.
+  Copilot CLI 1.0.89, and an equivalence test holds the adapter to Claude Code's own goldens,
+  rewritten in Copilot's names. Revisit when a Copilot release changes the hooks reference, or when a
+  live session joins the release checks.
+- A copy-in install under Copilot still runs untranslated beside the plugin (Context). Copilot users
+  are pointed to the plugin; a copy-in that reads Copilot's payloads is a separate change.
 - Under Copilot a guard that crashes denies the tool call, Copilot's rule, where Claude Code lets it
   through.
 - `nonna_hook_is_hers` knows Claude Code's plugin directories, not Copilot's: `/nonna`'s scripts
