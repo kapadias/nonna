@@ -89,6 +89,11 @@ lighter mode to select". A plugin user's first day is that use.
    - a script file, or git under another name;
    - another language's interpreter (`python3 -c`, `perl -e`), and code the test suite runs (a test
      or a `conftest.py` the agent wrote), which the gates themselves run;
+   - a marker file the agent writes in a copy-in install, which detects the test command at each turn
+     end and push: a `pytest.ini` on a machine without pytest leaves no command to run, and a
+     `gradlew`, `mvnw` or `vendor/bin/*` script of its own that exits 0 is a command that passes
+     without testing. A plugin install records its command at first sight, and the guard refuses the
+     agent's writes to it;
    - a value the shell computes when it runs (a variable, `$(…)`'s output, `xargs`);
    - a glob that a file the agent made completes;
    - git configuration already in place (the user's own `push.default`);
