@@ -176,15 +176,22 @@ Codex can also take her as a plugin, which adds her hooks: run
 `codex plugin marketplace add kapadias/nonna`, install Nonna from `/plugins`, and trust her hooks in
 `/hooks` ([`docs/INSTALL.md`](docs/INSTALL.md#codex-the-plugin)).
 
+GitHub Copilot CLI also takes her as a plugin, which runs her gates in the agent's own hooks:
+
+```bash
+copilot plugin marketplace add kapadias/nonna
+copilot plugin install nonna@nonna
+```
+
 What each agent gets:
 
-|                                                                          | Claude Code | Codex (plugin) | Every other agent |
-| ------------------------------------------------------------------------ | :---------: | :------------: | :---------------: |
-| Nonna's house rules                                                      |     yes     |      yes       |        yes        |
-| Git hooks: no commit on `main`, no staged secret                         |     yes     |      yes       |        yes        |
-| Git hooks: no push with red tests or a secret                            |     yes     |      yes       |        yes        |
-| Can't end its turn on a red suite; "where's the test?"                   |     yes     |     wired¹     |        no         |
-| Secret guard on every file write and read, branch guard on every command |     yes     |     wired¹     |        no         |
+|                                                                          | Claude Code | Codex (plugin) | Copilot CLI (plugin) | Every other agent |
+| ------------------------------------------------------------------------ | :---------: | :------------: | :------------------: | :---------------: |
+| Nonna's house rules                                                      |     yes     |      yes       |         yes          |        yes        |
+| Git hooks: no commit on `main`, no staged secret                         |     yes     |      yes       |         yes          |        yes        |
+| Git hooks: no push with red tests or a secret                            |     yes     |      yes       |         yes          |        yes        |
+| Can't end its turn on a red suite; "where's the test?"                   |     yes     |     wired¹     |        wired²        |        no³        |
+| Secret guard on every file write and read, branch guard on every command |     yes     |     wired¹     |        wired²        |        no³        |
 
 ¹ The same scripts, run on Codex's events and tested against the hook payloads Codex documents. They
 have not yet run in a Codex session end to end, and the benchmark has no Codex arm, so nothing here
@@ -192,6 +199,15 @@ says they do for Codex what they do for Claude Code. Codex reads files through t
 secret guard checks what a command reads. They do not see input sent to a shell already running, or
 scan what the shell writes; the git hooks are the backstop there
 ([`docs/INSTALL.md`](docs/INSTALL.md#codex-the-plugin)).
+
+² Through Copilot's `sessionStart`, `preToolUse` and `agentStop` hooks, which Copilot CLI documents
+for plugins (1.0.72 or later). Golden-tested against Copilot's documented hook payloads; not yet run
+in a live Copilot session. An `apply_patch` is judged a file at a time, as Codex's is.
+[`docs/INSTALL.md`](docs/INSTALL.md#github-copilot-cli-the-plugin) says what differs.
+
+³ Copilot CLI also runs the hooks `install.sh` writes into `.claude/settings.json`, untranslated: they
+read its commands but not its file tools, and beside the plugin each gate runs twice. With Copilot,
+use the plugin.
 
 From v2.0.0, Gemini CLI can also load the house rules as an extension:
 `gemini extensions install https://github.com/kapadias/nonna`. It carries the rules only, with no
@@ -254,7 +270,7 @@ the plugin.
 ## Development
 
 ```bash
-bash tests/run.sh              # every gate proven to block and to allow (1583 golden tests)
+bash tests/run.sh              # every gate proven to block and to allow (1703 golden tests)
 python3 tests/harness_lint.py  # word budgets, host files in sync, hook wiring, README numbers
 ```
 

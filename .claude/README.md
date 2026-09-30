@@ -42,8 +42,8 @@ discipline is **enforced by code, not prose**. Start with [`../CLAUDE.md`](../CL
   or `full`, ADR-0011) and `off` is silent, but for the branch guard, which still keeps her
   settings. `guard-branch.sh` (blocks commits/pushes to
   `main`/`master`/`develop`, `--all`/`--mirror`, force pushes in `+refspec` and flag form,
-  `--no-verify` and hook-path overrides, and the agent's own changes to her settings or git hooks
-  or runs of her `/nonna` scripts;
+  `--no-verify` and hook-path overrides, and the agent's own changes to her settings or git hooks,
+  to Copilot CLI's repository hooks and settings, or runs of her `/nonna` scripts;
   it reads a command the way the shell will run it), `secret-scan.sh` (blocks writes that introduce
   a secret, and reads of secret files by Read, Grep or Bash, by any name that leads to one — parity
   with the Read deny list, linted), `format.sh` (post-edit auto-format, copy-in installs only),
@@ -69,8 +69,11 @@ discipline is **enforced by code, not prose**. Start with [`../CLAUDE.md`](../CL
   `tests.sh` — the test command and each directory's own, runner and failure digest; `lite.md` — lite's house
   rules; `ladder.sh` — whether another plugin already states the ladder; `patch.sh` — the
   `apply_patch` format read by its grammar, a record a file, for any host's adapter; `host-codex.sh` —
-  Codex's payloads read as Claude Code's, an `apply_patch` a file at a time, ADR-0013); plugin
-  wiring in `hooks.json`, asserted equivalent to `settings.json` by the linter, and Codex's in
+  Codex's payloads read as Claude Code's, an `apply_patch` a file at a time, ADR-0013;
+  `host-copilot.sh` — Copilot CLI's payloads and replies, read and said as Claude Code's, an
+  `apply_patch` a file at a time as Codex's, for the scripts `../hooks/copilot-hooks.json` runs with
+  `NONNA_HOST=copilot`, ADR-0015); plugin wiring in
+  `hooks.json`, asserted equivalent to `settings.json` by the linter, and Codex's in
   `codex-hooks.json` (every command sets `NONNA_HOST=codex`; its core gates are linted on their own).
 - **`settings.json`** — denies reading secrets (`.env`/`*.pem`/`*.key`/`.ssh`/`.aws`/…) and
   `git push --force`, which the hooks also refuse, because a plugin cannot carry this file; wires the

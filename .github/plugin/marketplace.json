@@ -1,0 +1,26 @@
+{
+  "name": "nonna",
+  "owner": {
+    "name": "Shashank Kapadia"
+  },
+  "metadata": {
+    "description": "Nonna for GitHub Copilot CLI: your agent can't say done on a red test suite, commit to main, or write a secret into a file."
+  },
+  "plugins": [
+    {
+      "name": "nonna",
+      "source": ".",
+      "description": "Runs your test suite before the agent is allowed to stop, and blocks commits to main and secrets in files. Deterministic hooks: no model decides.",
+      "version": "2.0.0",
+      "category": "development",
+      "keywords": [
+        "tdd",
+        "testing",
+        "hooks",
+        "git-hooks",
+        "guardrails",
+        "secrets"
+      ]
+    }
+  ]
+}

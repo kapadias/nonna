@@ -23,6 +23,13 @@ if [ "${NONNA_HOST:-}" = codex ]; then
   payload="$(printf '%s' "$payload" | nonna_codex_payload "$here/secret-scan.sh")" || exit 2
 fi
 [ -n "$payload" ] || exit 0
+if [ "${NONNA_HOST:-}" = copilot ]; then # Copilot CLI: its payload and its reply (ADR-0015)
+  # shellcheck source=/dev/null
+  . "$here/lib/host-copilot.sh"
+  nonna_copilot_reply
+  payload="$(printf '%s' "$payload" | nonna_copilot_payload)" || exit 2
+  nonna_copilot_each "$here/${BASH_SOURCE[0]##*/}" "$payload" # several targets: each judged alone
+fi
 
 # Read and Grep branch: the same secret files settings.json's permissions.deny refuses (Claude Code
 # applies Read denies to Grep as well). A plugin cannot carry permissions, so without this a plugin
