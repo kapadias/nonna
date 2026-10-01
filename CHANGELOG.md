@@ -360,6 +360,15 @@ Your AI agent says "done"; Nonna makes it prove it.
 - **A sample word next to a real key no longer made it a sample.** The placeholder rule (`XXXX`,
   `EXAMPLE`, `your-` and the like) read the whole match, so a key given as `${SAMPLE-key}`, or with
   `EXAMPLE` glued after it, passed. It reads only the key's own start now.
+- **The `mode` option takes its values from its description, not from a list.** The plugin
+  directory's validator rejects any key in a `userConfig` field but `type`, `title`, `description`,
+  `required`, `default`, `sensitive`, `multiple`, `min` and `max`, and `options` is none of them, so
+  the manifest no longer has it. The description says the option takes `lite` or `full` and that
+  anything else, `off` included, counts as full, and the hooks read it that way: `nonna_mode` let an
+  `off` through, which the list had kept out, and session start now records `full` for the git
+  hooks rather than nothing, so they no longer stay lite while Claude Code's hooks are full.
+  Switching her off stays `/nonna off`'s. `claude plugin validate --strict` accepts `options`, so
+  `tests/harness_lint.py` now holds every `userConfig` field to those keys.
 
 ## [1.0.0] — 2026-08-01 — "The Model Cannot Ship Itself"
 

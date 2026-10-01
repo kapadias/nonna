@@ -688,6 +688,35 @@ for jf in (plugin_manifest, marketplace, plugin_hooks):
     except json.JSONDecodeError as exc:
         bad(f"plugin packaging: invalid JSON in {os.path.relpath(jf, ROOT)}: {exc}")
 
+# --- plugin packaging: a userConfig field uses only the keys the plugin directory accepts ---
+# The directory's validator rejects any other key in a field, `options` among them. Claude Code
+# takes `options` (it shows the field as a picker), so `claude plugin validate --strict` passes it
+# and this rule is all that keeps it out. A field that takes one of a few values says which in its
+# description, and whatever reads it fails closed on any other (nonna_mode).
+USER_CONFIG_KEYS = (
+    "type",
+    "title",
+    "description",
+    "required",
+    "default",
+    "sensitive",
+    "multiple",
+    "min",
+    "max",
+)
+try:
+    with open(plugin_manifest, encoding="utf-8") as fh:
+        user_config = json.load(fh).get("userConfig", {})
+except (OSError, ValueError, AttributeError):
+    user_config = {}  # the packaging check above says why
+for field, spec in sorted(user_config.items()):
+    for key in sorted(spec):
+        if key not in USER_CONFIG_KEYS:
+            bad(
+                f"plugin packaging: userConfig.{field}: key {key!r} is not allowed: the plugin "
+                f"directory rejects a field with any key but {', '.join(USER_CONFIG_KEYS)}"
+            )
+
 # --- Gemini CLI extension: the manifest it reads, the file it loads, one version, rules only ---
 # `gemini extensions install https://github.com/kapadias/nonna` installs the latest release's
 # archive and reads gemini-extension.json from its root. When the context file is unusable the

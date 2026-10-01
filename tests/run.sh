@@ -1938,6 +1938,10 @@ check "mode: a lite copy-in (the hooks, no rules) defaults to lite, for everyone
 check "mode: a full copy-in (the hooks and the rules) defaults to full" full "$(mode_of)"
 rm -rf "$TMP/.claude"
 check "mode: the plugin option beats the install default" full "$(mode_of CLAUDE_PLUGIN_OPTION_MODE=full)"
+# The option is free text, so it can hold a value nobody meant: that fails closed to full, not to lite.
+check "mode: a plugin option that is neither lite nor full (Lite) fails closed to full" full "$(mode_of CLAUDE_PLUGIN_OPTION_MODE=Lite)"
+# Off too: switching her off is /nonna off's, in git config, never the option's.
+check "mode: a plugin option of off fails closed to full" full "$(mode_of CLAUDE_PLUGIN_OPTION_MODE=off)"
 git -C "$TMP" config nonna.defaultMode full
 check "mode: the recorded default beats the install default" full "$(mode_of)"
 check "mode: the live plugin option beats the recorded default" lite "$(mode_of CLAUDE_PLUGIN_OPTION_MODE=lite)"
@@ -2246,6 +2250,16 @@ TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
 printf '{"scripts":{"test":"node t.js"}}\n' > "$TMP/package.json"
 CLAUDE_PLUGIN_OPTION_RUN_TESTS=false CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$ROOT/.claude" "$HOOKS/session-start.sh" >/dev/null
 git -C "$TMP" config --get nonna.testCmd >/dev/null; check "plugin: run_tests off records no test command" 1 "$?"
+rm -rf "$TMP"
+# The mode option is free text: session start records for the git hooks what Claude Code's hooks read it as, full
+# for a value nobody meant, so the two never disagree.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
+CLAUDE_PLUGIN_OPTION_MODE=Lite CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$ROOT/.claude" "$HOOKS/session-start.sh" >/dev/null
+check "plugin: a mode option that is neither lite nor full (Lite) is recorded as full" full "$(git -C "$TMP" config --get nonna.defaultMode)"
+check "plugin: ...so a git hook, without the option, reads full too" full "$(cd "$TMP" && env -u CLAUDE_PLUGIN_OPTION_MODE -u NONNA_MODE bash -c '. "$1/lib/core.sh"; nonna_mode git-hook' _ "$HOOKS")"
+git -C "$TMP" config nonna.defaultMode lite
+CLAUDE_PLUGIN_OPTION_MODE=off CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$ROOT/.claude" "$HOOKS/session-start.sh" >/dev/null
+check "plugin: a mode option of off is recorded as full" full "$(git -C "$TMP" config --get nonna.defaultMode)"
 rm -rf "$TMP"
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
 out="$(CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$ROOT/.claude" "$HOOKS/session-start.sh")"
@@ -4338,6 +4352,19 @@ json.dump(cfg, open(p, "w"), indent=2)
 PY
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks an event present in only one wiring" 1 "$?"
 contains "lint: names the one-sided event" "hook wiring: 'SessionEnd' is in hooks.json but not settings.json" "$out"
+rm -rf "$FX"
+
+# The plugin directory's validator rejects a userConfig key outside its list, `options` among them; Claude Code's
+# own `plugin validate --strict` takes `options`, so this rule is all that keeps it out.
+FX="$(lint_fixture)"
+python3 - "$FX/.claude/.claude-plugin/plugin.json" <<'PY'
+import json, sys
+p = sys.argv[1]; cfg = json.load(open(p))
+cfg["userConfig"]["mode"]["options"] = ["lite", "full"]
+json.dump(cfg, open(p, "w"), indent=2)
+PY
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a userConfig field with a key the plugin directory rejects" 1 "$?"
+contains "lint: names the field and the key" "userConfig.mode: key 'options'" "$out"
 rm -rf "$FX"
 
 # Descriptions load on every turn and had no budget until now; prove it bites.

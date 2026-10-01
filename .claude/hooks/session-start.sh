@@ -110,17 +110,16 @@ hook_warn=""
 
 # 2. Plugin install: record what the git hooks cannot read from the plugin's options, in the repo's
 #    own git config, which is never committed and never cloned, so a hostile repo cannot plant it.
-#    The mode option is mirrored every session into nonna.defaultMode, which ranks below the user's
-#    nonna.mode (repo or global): Nonna never writes nonna.mode. The first time Nonna meets the
-#    repo, and only when the run_tests option allows it (the default), the test command detection
-#    finds is recorded; a command already set is never overwritten, nor an empty one (gate off).
+#    The mode option is mirrored every session into nonna.defaultMode, as the hooks read it (lite,
+#    else full: nonna_option_mode), which ranks below the user's nonna.mode (repo or global): Nonna
+#    never writes nonna.mode. The first time Nonna meets the repo, and only when the run_tests
+#    option allows it (the default), the test command detection finds is recorded; a command
+#    already set is never overwritten, nor an empty one (gate off).
 if ! nonna_copy_in && [ -n "$nonna_root" ] && git rev-parse --git-dir >/dev/null 2>&1; then
-  case "${CLAUDE_PLUGIN_OPTION_MODE:-}" in
-    lite | full)
-      [ "$(git config --local --get nonna.defaultMode 2>/dev/null)" = "$CLAUDE_PLUGIN_OPTION_MODE" ] \
-        || git config nonna.defaultMode "$CLAUDE_PLUGIN_OPTION_MODE" 2>/dev/null || true
-      ;;
-  esac
+  option_mode="$(nonna_option_mode)"
+  if [ -n "$option_mode" ] && [ "$(git config --local --get nonna.defaultMode 2>/dev/null)" != "$option_mode" ]; then
+    git config nonna.defaultMode "$option_mode" 2>/dev/null || true
+  fi
   case "${CLAUDE_PLUGIN_OPTION_RUN_TESTS:-true}" in
     false | False | FALSE | 0 | no | off) : ;;
     *)

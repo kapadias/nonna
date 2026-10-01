@@ -83,7 +83,8 @@ nonna_hook_is_copy() {
 # nonna_mode [git-hook]
 #   Prints off, lite or full: what Nonna enforces in the repo in the current directory.
 #   Precedence: NONNA_MODE > git config nonna.mode (repo, then global) > the plugin's `mode`
-#   option > nonna.defaultMode > what the repo carries (the hooks and the rules: full; else lite).
+#   option, as nonna_option_mode reads it > nonna.defaultMode > what the repo carries (the hooks
+#   and the rules: full; else lite).
 #   git config is the per-repo switch because git hooks read it too, it is never committed, and a
 #   clone cannot carry it. nonna.mode is the user's alone; what Nonna records (the plugin option,
 #   for git hooks that cannot see it, or install.sh --mode) goes in nonna.defaultMode, below it, so
@@ -94,6 +95,19 @@ nonna_hook_is_copy() {
 nonna_mode() {
   _nonna_mode_read "${1:-}"
   case "$_nonna_mode" in off | lite | full) printf '%s' "$_nonna_mode" ;; *) printf 'full' ;; esac
+}
+
+# nonna_option_mode
+#   Prints the plugin's mode option as she reads it: lite, or full for any other value, off
+#   included. The option is free text, so a value nobody meant (Lite, off) fails closed to full;
+#   switching her off is /nonna off's, in git config, never the option's. Session start records the
+#   same value for the git hooks, which cannot read the option. Prints nothing when it is unset.
+nonna_option_mode() {
+  case "${CLAUDE_PLUGIN_OPTION_MODE:-}" in
+    "") ;;
+    lite) printf 'lite' ;;
+    *) printf 'full' ;;
+  esac
 }
 
 # nonna_mode_source [git-hook]
@@ -113,7 +127,7 @@ _nonna_mode_read() {
   elif _nonna_mode="$(nonna_config nonna.mode)" && [ -n "$_nonna_mode" ]; then
     _nonna_from="git config nonna.mode"
   elif [ "${1:-}" != git-hook ] && [ -n "${CLAUDE_PLUGIN_OPTION_MODE:-}" ]; then
-    _nonna_mode="$CLAUDE_PLUGIN_OPTION_MODE" _nonna_from="the plugin's mode option"
+    _nonna_mode="$(nonna_option_mode)" _nonna_from="the plugin's mode option"
   elif _nonna_mode="$(nonna_config nonna.defaultMode)" && [ -n "$_nonna_mode" ]; then
     _nonna_from="git config nonna.defaultMode"
   # A repo that carries the whole harness (its hooks and its rules) is a full copy-in; a lite
