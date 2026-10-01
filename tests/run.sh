@@ -5317,6 +5317,8 @@ echo "== assets/build.py (the launch images, built from the benchmark data) =="
 # and of the committed glyph outlines. --check is the gate: an image that no longer matches a fresh
 # build is a wrong number on a launch page. It must run on the standard library alone (CI's lint job
 # installs nothing), so it runs here under `python3 -I -S`, which cannot see site-packages.
+# The plugin's icon is assets/nonna.svg, drawn by hand and rendered into .claude/.claude-plugin/:
+# --check holds it to the logo as it holds the other images to a fresh build.
 AB="$ROOT/assets/build.py"
 out="$(python3 "$ROOT/tests/test_assets.py" 2>&1)"; rc=$?
 check "assets: unit tests pass (numbers from the data, lettering to the digit, the SVGs)" 0 "$rc"
@@ -5324,12 +5326,13 @@ check "assets: unit tests pass (numbers from the data, lettering to the digit, t
 out="$(python3 -I -S "$AB" --check 2>&1)"; rc=$?
 check "assets: --check passes on the real tree, on the standard library alone" 0 "$rc"
 [ "$rc" -eq 0 ] || printf '%s\n' "$out"
-contains "assets: --check reports what it verified" "10 images" "$out"
+contains "assets: --check reports what it verified" "11 images" "$out"
 
 assets_copy() { # -> echoes a copy of what build.py reads and writes
-  local d; d="$(mktemp -d)"; mkdir -p "$d/bench/tasks" "$d/bench/results"
+  local d; d="$(mktemp -d)"; mkdir -p "$d/bench/tasks" "$d/bench/results" "$d/.claude/.claude-plugin"
   cp -R "$ROOT/assets" "$d/"; cp -R "$ROOT/bench/tasks/traps" "$d/bench/tasks/"
   cp -R "$ROOT/bench/results/round3" "$d/bench/results/"
+  cp "$ROOT/.claude/.claude-plugin/icon.png" "$d/.claude/.claude-plugin/"
   printf '%s' "$d"
 }
 assets_check() { NONNA_ASSETS_ROOT="$1" python3 -I -S "$AB" --check 2>&1; } # <root>
@@ -5380,6 +5383,16 @@ out="$(assets_check "$AX")"; check "assets: --check fails on a PNG that is missi
 contains "assets: names the missing PNG" "assets/social-preview.png" "$out"
 rm -rf "$AX"
 
+AX="$(assets_copy)"; rm "$AX/.claude/.claude-plugin/icon.png"
+out="$(assets_check "$AX")"; check "assets: --check fails on an icon that is missing" 1 "$?"
+contains "assets: names it where the plugin keeps it" ".claude/.claude-plugin/icon.png: missing" "$out"
+rm -rf "$AX"
+
+AX="$(assets_copy)"; printf '<!-- hand edit -->\n' >> "$AX/assets/nonna.svg"
+out="$(assets_check "$AX")"; check "assets: --check fails on an icon rendered from a logo that has changed" 1 "$?"
+contains "assets: says the icon is stale" ".claude/.claude-plugin/icon.png: rendered from a different SVG" "$out"
+rm -rf "$AX"
+
 AX="$(assets_copy)"; printf 'not a png' > "$AX/assets/cards/push.png"
 out="$(assets_check "$AX")"; check "assets: --check fails on a file that is not a PNG" 1 "$?"
 contains "assets: names it" "assets/cards/push.png: not a PNG" "$out"
@@ -5409,7 +5422,7 @@ contains "assets: names the variable that points at one" "CHROMIUM" "$out"
 rm -rf "$AX"
 
 # --render, with a stand-in for Chromium that draws a blank PNG of the size it is asked for
-AX="$(assets_copy)"; rm "$AX"/assets/*.png "$AX"/assets/cards/*.png
+AX="$(assets_copy)"; rm "$AX"/assets/*.png "$AX"/assets/cards/*.png "$AX/.claude/.claude-plugin/icon.png"
 cat > "$AX/fake-chromium" <<'PY'
 #!/usr/bin/env python3
 import os, re, struct, sys, zlib

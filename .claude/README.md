@@ -78,7 +78,9 @@ discipline is **enforced by code, not prose**. Start with [`../CLAUDE.md`](../CL
 - **`settings.json`** — denies reading secrets (`.env`/`*.pem`/`*.key`/`.ssh`/`.aws`/…) and
   `git push --force`, which the hooks also refuse, because a plugin cannot carry this file; wires the
   hooks (PreToolUse, PostToolUse, SessionStart, SubagentStart, Stop, SubagentStop, PostCompact).
-- **`.claude-plugin/`** — `plugin.json`, so Nonna installs as a Claude Code plugin.
+- **`.claude-plugin/`** — `plugin.json`, so Nonna installs as a Claude Code plugin, and `icon.png`,
+  her logo for the plugin directory's listing (`../assets/build.py` renders it from
+  `../assets/nonna.svg`).
 - **`.codex-plugin/`** — `plugin.json`, so Codex installs the same plugin and loads
   `hooks/codex-hooks.json` in place of `hooks/hooks.json`.
 

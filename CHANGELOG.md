@@ -202,6 +202,11 @@ Your AI agent says "done"; Nonna makes it prove it.
   `disableAllHooks` line turns every hook off, or its repository hooks, and `review-lanes.sh` sends
   a change to the hooks file to a security review. Golden-tested against Copilot's documented
   payloads and held equal to Claude Code's goldens; not yet run in a live Copilot session.
+- **An icon for the plugin directory.** `.claude/.claude-plugin/icon.png` is the logo, 800 by 800
+  pixels with transparent corners, for the listing to show. `assets/build.py` renders it from
+  `assets/nonna.svg`, the one image drawn by hand, which it reads and never writes, and `--check`
+  fails on an icon that is missing, the wrong size, over the byte budget or rendered from a logo
+  that has since changed.
 
 ### Changed
 
