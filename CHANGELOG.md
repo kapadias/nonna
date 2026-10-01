@@ -384,6 +384,16 @@ Your AI agent says "done"; Nonna makes it prove it.
   worktree, is wired too: its gate was reported missing and never wired. The linter refuses a
   written-out `../` path to `.claude/` in a shipped script or JSON file, since the plugin
   directory's validator flags it.
+- **Nothing the plugin ships fetches a package or tells you to.** `format.sh` fell back to
+  `npx --no-install prettier` when no prettier was on `PATH`; it runs the project's own
+  `node_modules/.bin/prettier` now, or nothing. `dep-audit.sh` told you to run `npm i -g`,
+  `pipx install`, `go install` or `cargo install` for a scanner it could not find; it names the
+  scanner's documentation page, and the test templates name their dev dependencies and leave the
+  installing to your lockfile. A lint check holds every file under `.claude/` to it (`npx`, `pnpx`,
+  `uvx`, `bunx`, `pipx`, `pnpm dlx`, `yarn dlx`, `npm exec`, `npm x`, `@latest`, `go install`,
+  `go get`, `cargo install`, `npm install` of a named package, `pip install` without
+  `--require-hashes`): the plugin directory refuses a plugin that fetches a package, pinned or not,
+  because it runs code nobody reviewed.
 
 ## [1.0.0] — 2026-08-01 — "The Model Cannot Ship Itself"
 

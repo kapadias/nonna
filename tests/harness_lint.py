@@ -462,6 +462,46 @@ for md in glob.glob(f"{ROOT}/.claude/**/*.md", recursive=True):
             if DENY.search(line):
                 bad(f"{md}:{n}: domain-specific term in a domain-agnostic harness")
 
+# --- fetchers: the plugin fetches no package, pinned or not, and recommends none ---
+# The plugin directory refuses a plugin whose files run or recommend a package fetcher: a plugin
+# that fetches a package runs code nobody reviewed, in the user's repository, with the user's
+# tokens. A bare `npm install` or `npm ci` names no package, and `pip install --require-hashes`
+# fetches only what a lock names, so those stay. os.walk, not glob: .claude/ is a dot-directory.
+# A file with a NUL byte, or one that is not UTF-8 (an icon, say), is not text: skipped. So are the
+# two git-ignored places that never ship (local_only): a /review verdict, whose summary may name
+# npx, and a contributor's own approvals.
+FETCHERS = (
+    r"\b(?:npx|pnpx|uvx|bunx|pipx)\b",
+    r"@latest\b",
+    r"\b(?:pnpm|yarn)\s+dlx\b",
+    r"\bnpm\s+(?:exec|x)\b",
+    r"\bnpm\s+(?:i|install)(?=\s+(?:-\S+\s+)*[@\w.])",
+    r"\bgo\s+(?:install|get)\b",
+    r"\bcargo\s+install\b",
+    r"\bpip3?\s+install\b(?!.*--require-hashes)",
+)
+FETCH = re.compile("|".join(FETCHERS))
+for dirpath, dirnames, filenames in os.walk(f"{ROOT}/.claude"):
+    dirnames.sort()
+    for name in sorted(filenames):
+        path = os.path.join(dirpath, name)
+        if local_only(path):
+            continue
+        with open(path, "rb") as fh:
+            raw = fh.read()
+        try:
+            text = raw.decode("utf-8")
+        except UnicodeDecodeError:
+            continue
+        if "\0" in text:
+            continue
+        for n, line in enumerate(text.split("\n"), 1):
+            m = FETCH.search(line)
+            if m:
+                bad(
+                    f"{os.path.relpath(path, ROOT)}:{n}: '{m.group(0)}' fetches a package — the plugin directory refuses a plugin that runs one or tells you to; name the dependency or link its docs instead"
+                )
+
 # --- review inflation: the review loop must not un-size what the ladder sized ---
 # The first WS7 eval's outlier: a six-line check became 25 lines because every MEDIUM
 # was built. dev-process §4 and the rubric carry the rule; pin the load-bearing phrases.

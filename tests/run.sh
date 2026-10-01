@@ -1919,6 +1919,30 @@ if [ -e "$FMT/ran" ]; then rc=0; else rc=1; fi; check "format: the plugin never 
 copy_in "$TMP"; fmt "$TMP/.claude/hooks/format.sh"
 if [ -e "$FMT/ran" ]; then rc=0; else rc=1; fi; check "format: a copy-in formats the file just edited" 0 "$rc"
 rm -rf "$FMT" "$TMP"
+# A copy-in fetches nothing: with no prettier on PATH it runs the project's own, node_modules/.bin/prettier,
+# and never npx. The hook gets a PATH of its own, so no prettier or npx the machine has can be found.
+FSB="$(mktemp -d)"; FMT="$(mktemp -d)"; TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
+echo '# x' > "$TMP/notes.md"; echo 'let x = 1' > "$TMP/app.ts"
+for b in bash sh env cat dirname git jq awk; do
+  p="$(command -v "$b" 2>/dev/null || true)"; if [ -n "$p" ]; then ln -s "$p" "$FSB/$b" 2>/dev/null || true; fi
+done
+printf '#!/bin/sh\necho "$*" >> "%s/npx"\n' "$FMT" > "$FSB/npx"; chmod +x "$FSB/npx"
+copy_in "$TMP"
+fmt "$TMP/.claude/hooks/format.sh" PATH="$FSB"; check "format: a copy-in with no prettier anywhere exits 0" 0 "$?"
+if [ -e "$FMT/npx" ]; then rc=0; else rc=1; fi; check "format: a copy-in with no prettier anywhere never runs npx" 1 "$rc"
+mkdir -p "$TMP/node_modules/.bin"
+printf '#!/bin/sh\necho "$*" >> "%s/project"\n' "$FMT" > "$TMP/node_modules/.bin/prettier"; chmod +x "$TMP/node_modules/.bin/prettier"
+fmt "$TMP/.claude/hooks/format.sh" PATH="$FSB"; check "format: a copy-in with the project's own prettier exits 0" 0 "$?"
+contains "format: a copy-in formats a .md with the project's own node_modules/.bin/prettier" "--write $TMP/notes.md" "$(cat "$FMT/project" 2>/dev/null)"
+if [ -e "$FMT/npx" ]; then rc=0; else rc=1; fi; check "format: a copy-in with the project's own prettier never runs npx" 1 "$rc"
+fmt "$TMP/.claude/hooks/format.sh" PATH="$FSB" CLAUDE_FILE_PATH="$TMP/app.ts"
+contains "format: a copy-in formats a .ts with the project's own prettier too" "--write $TMP/app.ts" "$(cat "$FMT/project" 2>/dev/null)"
+rm -f "$FMT/project"
+printf '#!/bin/sh\necho "$*" >> "%s/path"\n' "$FMT" > "$FSB/prettier"; chmod +x "$FSB/prettier"
+fmt "$TMP/.claude/hooks/format.sh" PATH="$FSB"
+if [ -e "$FMT/path" ]; then rc=0; else rc=1; fi; check "format: a prettier on PATH still comes first" 0 "$rc"
+if [ -e "$FMT/project" ]; then rc=0; else rc=1; fi; check "format: a prettier on PATH leaves the project's own alone" 1 "$rc"
+rm -rf "$FSB" "$FMT" "$TMP"
 
 echo "== modes (nonna_mode: off | lite | full) =="
 # One switch per repo, read the same way by Claude Code hooks and by git hooks. Precedence:
@@ -2613,6 +2637,16 @@ echo "== dep-audit.sh (supply-chain gate) =="
 DA="$SKILLS/supply-chain/scripts/dep-audit.sh"
 if [ -f "$DA" ]; then
   TMP="$(mktemp -d)"; ( cd "$TMP" && bash "$DA" ); check "exit 3 when no lockfile present" 3 "$?"; rm -rf "$TMP"
+  # A scanner it cannot find is a stop, and it says where to get one: a documentation page, never a command that fetches it.
+  TMP="$(mktemp -d)"; NOSCAN="$(mktemp -d)"; ln -s "$(command -v bash)" "$NOSCAN/bash"
+  for f in pnpm-lock.yaml yarn.lock requirements.txt go.sum Cargo.lock; do : > "$TMP/$f"; done
+  out="$(cd "$TMP" && PATH="$NOSCAN" bash "$DA" 2>&1)"; check "exit 2 when a lockfile's scanner is missing" 2 "$?"
+  contains "a missing pnpm names its documentation page" "https://pnpm.io/installation" "$out"
+  contains "a missing yarn names its documentation page" "https://yarnpkg.com/getting-started/install" "$out"
+  contains "a missing pip-audit names its documentation page" "https://pypi.org/project/pip-audit/" "$out"
+  contains "a missing govulncheck names its documentation page" "https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck" "$out"
+  contains "a missing cargo-audit names its documentation page" "https://crates.io/crates/cargo-audit" "$out"
+  rm -rf "$TMP" "$NOSCAN"
 else
   echo "  (skip: dep-audit.sh not found)"
 fi
@@ -4945,6 +4979,77 @@ FX="$(lint_fixture)"
 printf '# pony%s\n' tail >> "$FX/.claude/hooks/lib/core.sh"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: the external name stays out of every other hook file" 1 "$?"
 contains "lint: names the hook file carrying the external name" "lib/core.sh" "$out"
+rm -rf "$FX"
+# The plugin fetches no package, pinned or not, and recommends none: the plugin directory refuses one that does.
+# Every file under .claude/ is read, dot-directories and all, so each form is tried in a file of its own kind.
+FX="$(lint_fixture)"
+printf 'npx foo\n' > "$FX/.claude/skills/supply-chain/fetch.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: a plugin file that runs npx fails" 1 "$?"
+contains "lint: names the file, the line and the token" "supply-chain/fetch.md:1: 'npx'" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+printf 'go install x@latest\n' > "$FX/.claude/.claude-plugin/fetch.txt"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: a go install in a dot-directory fails" 1 "$?"
+contains "lint: names the file that runs go install" ".claude-plugin/fetch.txt:1: 'go install'" "$out"
+rm -rf "$FX"
+# Each form on a line of its own: every one is named by its line, so none can stop firing unseen.
+FX="$(lint_fixture)"
+cat > "$FX/.claude/skills/supply-chain/fetch.md" <<'EOF'
+npx foo
+pnpx foo
+uvx foo
+bunx foo
+pipx install foo
+pnpm dlx foo
+yarn dlx foo
+npm exec foo
+npm x foo
+use foo@latest
+npm i -D vitest
+npm install --save-dev vitest
+go install x@v1
+go get x
+cargo install x
+pip3 install x
+python3 -m pip install x
+EOF
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: every package fetcher fails" 1 "$?"
+n=0
+while IFS= read -r line; do
+  n=$((n + 1)); contains "lint: flags '$line'" "supply-chain/fetch.md:$n: '" "$out"
+done < "$FX/.claude/skills/supply-chain/fetch.md"
+rm -rf "$FX"
+# What names no package, or only what a lock names, stays: npm ci, a bare npm install, pip install --require-hashes.
+FX="$(lint_fixture)"
+cat > "$FX/.claude/skills/supply-chain/fetch.md" <<'EOF'
+`npm ci` and a bare `npm install` name no package.
+Run npm install, then npm test.
+npm install --omit=dev
+pip install --require-hashes -r requirements.txt
+inpx snpx npxs
+EOF
+NONNA_LINT_ROOT="$FX" python3 "$LINT" >/dev/null 2>&1; check "lint: npm ci, a bare npm install, pip install --require-hashes and words that end in npx pass" 0 "$?"
+rm -rf "$FX"
+# A binary file (the plugin's icon) is not text: one with a NUL byte, and one that is not UTF-8, are skipped.
+FX="$(lint_fixture)"
+python3 -c 'import sys
+for name, data in (("icon.png", b"\x89PNG\r\n\x1a\n\x00npx foo"), ("nul.dat", b"npx foo\x00"), ("latin1.txt", b"npx foo \xe9")):
+    open(sys.argv[1] + "/" + name, "wb").write(data)' "$FX/.claude/.claude-plugin"
+NONNA_LINT_ROOT="$FX" python3 "$LINT" >/dev/null 2>&1; check "lint: a binary file under .claude/ is skipped, not read as text" 0 "$?"
+rm -rf "$FX"
+# Two places under .claude/ are git-ignored and never ship: a /review verdict, whose summary may well name npx, and
+# a contributor's own approvals. Neither is read.
+FX="$(lint_fixture)"
+mkdir -p "$FX/.claude/reviews"
+printf '{"verdict":"approve","summary":"format.sh no longer runs npx"}\n' > "$FX/.claude/reviews/abc1234-code.json"
+printf '{"permissions":{"allow":["Bash(npx tsc:*)"]}}\n' > "$FX/.claude/settings.local.json"
+NONNA_LINT_ROOT="$FX" python3 "$LINT" >/dev/null 2>&1; check "lint: a git-ignored review verdict and settings.local.json are not read" 0 "$?"
+rm -rf "$FX"
+# Only those two: a name that only starts like settings.local.json ships, so it is read.
+FX="$(lint_fixture)"
+printf '{"permissions":{"allow":["Bash(npx tsc:*)"]}}\n' > "$FX/.claude/settings.local.jsonc"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: a fetcher in a file that only starts like settings.local.json fails" 1 "$?"
+contains "lint: names the file the fetcher is in" ".claude/settings.local.jsonc:1: 'npx'" "$out"
 rm -rf "$FX"
 # Nothing may follow the script: `|| true` turns the gate's block (exit 2) into a pass, in one mode only.
 FX="$(lint_fixture)"

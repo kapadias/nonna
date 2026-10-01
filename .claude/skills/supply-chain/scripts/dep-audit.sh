@@ -64,7 +64,7 @@ if [ -f pnpm-lock.yaml ]; then
   if have pnpm; then
     run_scan "pnpm" pnpm audit --audit-level=low
   else
-    missing_scanner "pnpm" "pnpm" "npm i -g pnpm"
+    missing_scanner "pnpm" "pnpm" "https://pnpm.io/installation"
   fi
 fi
 if [ -f yarn.lock ]; then
@@ -72,7 +72,7 @@ if [ -f yarn.lock ]; then
   if have yarn; then
     run_scan "yarn" yarn npm audit
   else
-    missing_scanner "yarn" "yarn" "npm i -g yarn"
+    missing_scanner "yarn" "yarn" "https://yarnpkg.com/getting-started/install"
   fi
 fi
 
@@ -90,7 +90,7 @@ if [ -f poetry.lock ] || [ -f Pipfile.lock ] || [ -f requirements.txt ] \
       run_scan "python" pip-audit
     fi
   else
-    missing_scanner "python" "pip-audit" "pipx install pip-audit"
+    missing_scanner "python" "pip-audit" "https://pypi.org/project/pip-audit/"
   fi
 fi
 
@@ -101,7 +101,7 @@ if [ -f go.sum ] || [ -f go.mod ]; then
   if have govulncheck; then
     run_scan "go" govulncheck ./...
   else
-    missing_scanner "go" "govulncheck" "go install golang.org/x/vuln/cmd/govulncheck@latest"
+    missing_scanner "go" "govulncheck" "https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck"
   fi
 fi
 
@@ -112,7 +112,7 @@ if [ -f Cargo.lock ]; then
   if have cargo-audit || cargo audit --version >/dev/null 2>&1; then
     run_scan "rust" cargo audit
   else
-    missing_scanner "rust" "cargo-audit" "cargo install cargo-audit"
+    missing_scanner "rust" "cargo-audit" "https://crates.io/crates/cargo-audit"
   fi
 fi
 
