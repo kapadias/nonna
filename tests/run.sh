@@ -2069,6 +2069,13 @@ CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$V2" "$HOOKS/session-start.sh" "$P
 if [ -e "$TMP/.git/hooks/pre-push" ] && [ -e "$TMP/.git/hooks/pre-commit" ]; then rc=0; else rc=1; fi
 check "plugin: after an update the hooks still resolve" 0 "$rc"
 rm -rf "$TMP" "$PD" "$V2"
+# Claude Code exports the plugin data dir as CLAUDE_PLUGIN_DATA, and hooks.json passes no argument for it:
+# the environment alone is enough for the same links, through the data dir.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; PD="$(mktemp -d)"
+CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$ROOT/.claude" CLAUDE_PLUGIN_DATA="$PD/data" "$HOOKS/session-start.sh" >/dev/null
+check "plugin: with the data dir in the environment alone, pre-push goes through it" "$PD/data/current/hooks/require-status-sync.sh" "$(readlink "$TMP/.git/hooks/pre-push")"
+check "plugin: ...and pre-commit" "$PD/data/current/hooks/pre-commit.sh" "$(readlink "$TMP/.git/hooks/pre-commit")"
+rm -rf "$TMP" "$PD"
 # A dangling link of ours (the old absolute link into a removed cache version) is repaired; a
 # dangling link that is not ours is left alone and reported.
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; PD="$(mktemp -d)"
@@ -4886,9 +4893,15 @@ out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a tail 
 contains "lint: names the tailed settings.json command" "PreToolUse hook '\"\$CLAUDE_PROJECT_DIR\"/.claude/hooks/guard-branch.sh; exit 0'" "$out"
 rm -rf "$FX"
 FX="$(lint_fixture)"
-set_hook_cmd "$FX/.claude/hooks/hooks.json" Stop '"${CLAUDE_PLUGIN_ROOT}"/hooks/stop-dod.sh "${CLAUDE_PLUGIN_DATA}"'
-out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: only SessionStart may take the plugin data dir" 1 "$?"
-contains "lint: names the event given the data dir" "Stop hook" "$out"
+set_hook_cmd "$FX/.claude/hooks/hooks.json" SessionStart '"${CLAUDE_PLUGIN_ROOT}"/hooks/session-start.sh "${CLAUDE_PLUGIN_DATA}"'
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: hooks.json passes no argument, SessionStart reads the plugin data dir from its environment" 1 "$?"
+contains "lint: names the event given the data dir" "SessionStart hook" "$out"
+rm -rf "$FX"
+# Codex's file alone still passes it (${PLUGIN_DATA}), to SessionStart alone.
+FX="$(lint_fixture)"
+set_hook_cmd "$FX/.claude/hooks/codex-hooks.json" Stop 'NONNA_HOST=codex "${PLUGIN_ROOT}"/hooks/stop-dod.sh "${PLUGIN_DATA}"'
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: only a Codex SessionStart may take the plugin data dir" 1 "$?"
+contains "lint: names the Codex event given the data dir" "Stop hook" "$out"
 rm -rf "$FX"
 # Keys other than the command decide whether a hook can block at all: async cannot, a timeout lets
 # the action through, and a non-command type hands the decision to a model. Each is refused.
@@ -4950,7 +4963,7 @@ python3 -c 'import json,sys; p=sys.argv[1]; c=json.load(open(p)); c["version"]="
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a Codex manifest on another version than the plugin's" 1 "$?"
 contains "lint: names the Codex manifest's version" "version 0.0.1" "$out"
 rm -rf "$FX"
-# Arguments after the script (SessionStart gets the plugin data dir) are not part of the gate's identity.
+# The two install modes are compared by the script each command runs, not by how its path is spelled.
 FX="$(lint_fixture)"
 set_hook_cmd "$FX/.claude/settings.json" Stop '"$CLAUDE_PROJECT_DIR"/.claude/hooks/format.sh'
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a gate wired differently in the two install modes" 1 "$?"

@@ -369,6 +369,11 @@ Your AI agent says "done"; Nonna makes it prove it.
   hooks rather than nothing, so they no longer stay lite while Claude Code's hooks are full.
   Switching her off stays `/nonna off`'s. `claude plugin validate --strict` accepts `options`, so
   `tests/harness_lint.py` now holds every `userConfig` field to those keys.
+- **`hooks.json` no longer hands `SessionStart` the plugin data dir as an argument.** Claude Code
+  exports it to every hook as `CLAUDE_PLUGIN_DATA`, and `session-start.sh` already read that when it
+  got no argument, so the command is now the script and nothing after it, like every other, and the
+  linter holds it to that form. `/nonna setup` and Codex's hooks file still pass the argument,
+  which `session-start.sh` still takes.
 
 ## [1.0.0] — 2026-08-01 — "The Model Cannot Ship Itself"
 

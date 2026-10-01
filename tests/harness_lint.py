@@ -216,14 +216,14 @@ with open(f"{ROOT}/.claude/rules/dev-process.md", encoding="utf-8") as fh:
 # A hook command is its quoted root, the script, and nothing else. The root is quoted because Claude
 # Code puts the path into a shell command, and an unquoted path with a space ("Application Support")
 # splits: the script is never found and the gate silently never runs. Nothing may follow the script,
-# because a tail changes what the gate does: `|| true` turns a block (exit 2) into a pass. SessionStart
-# alone may pass the plugin data dir, and only in hooks.json. `claude plugin validate` checks the
-# quoting in hooks.json only; settings.json has no validator, so the lint holds both.
+# because a tail changes what the gate does: `|| true` turns a block (exit 2) into a pass. Claude Code
+# exports the plugin data dir to its hooks as CLAUDE_PLUGIN_DATA, so none of its commands passes it as
+# an argument; Codex's file alone does (${PLUGIN_DATA}), on SessionStart alone. `claude plugin
+# validate` checks the quoting in hooks.json only; settings.json has no validator, so the lint holds
+# both.
 HOOK_FORMS = {
     ".claude/hooks/hooks.json": (
-        re.compile(
-            r'^"\$\{CLAUDE_PLUGIN_ROOT\}"/(hooks/[A-Za-z0-9_.-]+\.sh)(?P<data> "\$\{CLAUDE_PLUGIN_DATA\}")?$'
-        ),
+        re.compile(r'^"\$\{CLAUDE_PLUGIN_ROOT\}"/(hooks/[A-Za-z0-9_.-]+\.sh)$'),
         '"${CLAUDE_PLUGIN_ROOT}"/hooks/<script>.sh',
     ),
     ".claude/settings.json": (
