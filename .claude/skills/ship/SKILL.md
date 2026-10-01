@@ -4,7 +4,7 @@ disable-model-invocation: true
 description: Run the full local gate, then commit on a feature branch, push, and open a PR to develop linked to its tracked issue — and update STATUS. The disciplined path to merge.
 argument-hint: "[optional: PR title / summary]"
 model: sonnet
-allowed-tools: Bash(git diff:*), Bash(git branch:*), Bash(git status:*), Bash(git add:*), Bash(git checkout:*), Bash(git switch:*), Bash(git push:*), Bash(git commit:*), Bash(git log:*), Bash(git rev-parse:*), Bash(gh pr:*), Bash(ls:*), Bash(bash .claude/skills/code-review/scripts/check-review.sh:*), Bash(bash tests/run.sh:*), Bash(python3 tests/harness_lint.py:*), Read, Grep, Glob
+allowed-tools: Bash(git diff:*), Bash(git branch:*), Bash(git status:*), Bash(git add:*), Bash(git checkout:*), Bash(git switch:*), Bash(git push -u origin:*), Bash(git commit:*), Bash(git log:*), Bash(git rev-parse:*), Bash(gh pr create:*), Bash(bash .claude/skills/code-review/scripts/check-review.sh:*), Bash(bash tests/run.sh:*), Bash(python3 tests/harness_lint.py:*), Read, Grep, Glob
 ---
 
 !git branch --show-current

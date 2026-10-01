@@ -3,7 +3,7 @@ name: review
 description: Proportional review before merge — review-lanes.sh sizes it: one cheap reviewer for a fast-lane diff, full review otherwise, plus a security review when a risky path or line is touched.
 argument-hint: "[scope — paths/files; defaults to the current branch diff vs develop]"
 model: sonnet
-allowed-tools: Task, Read, Grep, Glob, Write, Bash(git diff:*), Bash(git branch:*), Bash(git status:*), Bash(git rev-parse:*), Bash(bash .claude/skills/review/scripts/review-lanes.sh:*), Bash(bash .claude/skills/code-review/scripts/check-review.sh:*), Bash(bash .claude/skills/lean/scripts/check-debt.sh:*)
+allowed-tools: Task, Read, Grep, Glob, Edit(.claude/reviews/**), Bash(git diff:*), Bash(git branch:*), Bash(git status:*), Bash(git rev-parse:*), Bash(bash .claude/skills/review/scripts/review-lanes.sh:*), Bash(bash .claude/skills/code-review/scripts/check-review.sh:*), Bash(bash .claude/skills/lean/scripts/check-debt.sh:*)
 ---
 
 !git branch --show-current

@@ -394,6 +394,16 @@ Your AI agent says "done"; Nonna makes it prove it.
   `go get`, `cargo install`, `npm install` of a named package, `pip install` without
   `--require-hashes`): the plugin directory refuses a plugin that fetches a package, pinned or not,
   because it runs code nobody reviewed.
+- **No skill pre-approves an unscoped `Bash`, or a write it does not make.** `allowed-tools`
+  pre-approves what it names while the skill runs. `/test` and `/coverage` granted a bare `Bash`
+  and `/fix` a bare `Edit` and `Write`: every command, every file. They take the normal permission
+  prompt now (`/fix`, for source edits). `/adr`, `/review` and `/fix` are granted only the place
+  each writes, as `Edit(docs/adr/**)` and `Edit(.claude/reviews/**)`: Claude Code never consults a
+  `Write(path)` rule, and `Edit(path)` covers the Write tool too. `/ship`, `/rollback` and `/fix`
+  pre-approve `git push -u origin`, and `/ship` and `/rollback` `gh pr create`, where they had every
+  `git push` and `gh pr`. The lint rejects a bare `Bash`, `Edit` or `Write` (a scope of wildcards
+  alone too, such as `Bash(*)`, `Bash(*:*)` or `Edit(**)`, and an `Edit` path that leaves the
+  project by `//`, `~` or `..`) and any `Write(…)`.
 
 ## [1.0.0] — 2026-08-01 — "The Model Cannot Ship Itself"
 

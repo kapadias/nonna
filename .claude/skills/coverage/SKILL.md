@@ -3,7 +3,6 @@ name: coverage
 description: Report line and branch coverage; spotlight survival-critical surface gaps; fail if below the project floor. Extracted from /test for focused coverage work.
 argument-hint: "[optional: path or module to focus on; defaults to whole project]"
 model: sonnet
-allowed-tools: Bash, Read, Grep, Glob
 ---
 
 !ls package.json pyproject.toml go.mod Cargo.toml Makefile 2>/dev/null

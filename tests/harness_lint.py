@@ -436,6 +436,48 @@ for path in sorted(glob.glob(f"{ROOT}/.claude/skills/*/SKILL.md")):
                 f"by allowed-tools; grant Bash({prefix}:*) and nothing wider"
             )
 
+# --- a skill's allowed-tools grants no unscoped Bash and no write it does not make ---
+# allowed-tools pre-approves what it names while the skill runs, so a bare Bash
+# pre-approves every command and a bare Edit or Write every file. A skill that runs
+# whatever the project's gate is (/test, /coverage) takes the normal permission
+# prompt; one that writes a known path names it, as Edit(path). Claude Code never
+# consults a Write(path) rule (an Edit rule covers the Write tool too), so that grant
+# pre-approves nothing. It reads as no scope an empty one, one of wildcards and separators alone
+# (Bash(*) and Bash(*:*) are Bash, Edit(**) is Edit), and an Edit path that reaches outside the
+# project: the filesystem root (//), the home directory (~), or a .. anywhere in it.
+GRANT = re.compile(r"([^\s,()]+)(?:\(([^()]*(?:\([^()]*\)[^()]*)*)\))?")
+
+
+def unscoped(tool: str, scope: str | None) -> bool:
+    """True when a Bash or Edit grant's scope pre-approves as much as none at all."""
+    if not scope:
+        return True
+    if tool == "Bash":
+        return re.fullmatch(r"[\s*:./]*", scope) is not None
+    parts = scope.split("/")
+    return (
+        scope.startswith(("//", "~"))
+        or ".." in parts
+        or all(p in ("", ".", "*", "**") for p in parts)
+    )
+
+
+for path in sorted(glob.glob(f"{ROOT}/.claude/skills/*/SKILL.md")):
+    raw = open(path, encoding="utf-8").read()
+    m = FRONT.match(raw)
+    if not m:
+        continue
+    at = re.search(r"^allowed-tools:\s*(.+)$", m.group(1), re.M)
+    if not at:
+        continue
+    for g in GRANT.finditer(at.group(1)):
+        tool, scope = g.groups()
+        if tool == "Write" or (tool in ("Bash", "Edit") and unscoped(tool, scope)):
+            bad(
+                f"{os.path.relpath(path, ROOT)}: allowed-tools grants {g.group(0)}; "
+                "scope Bash and Edit, and spell a write to one path Edit(path)"
+            )
+
 # --- slash references: every `/name` the harness advertises must be invocable ---
 # Descriptions and rules route the agent by naming commands. A `/name` that no
 # longer exists is a routing dead end the agent cannot detect at runtime, so it
