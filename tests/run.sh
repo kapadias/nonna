@@ -2126,6 +2126,37 @@ check "plugin: her cache link is hers when HOME ends in a slash" 0 "$(hers "$H/.
 mkdir -p "$H/real/plugins"; ln -s "$H/real" "$H/cfg"
 check "plugin: her cache link is hers through a symlinked config directory" 0 "$(hers "$H/real/plugins/cache/nonna/nonna/1.0.0/hooks/pre-commit.sh" CLAUDE_CONFIG_DIR="$H/cfg")"
 rm -rf "$H"
+# Where a copy-in's git hooks find the repo's own scripts is computed from the hooks dir, not assumed: one ../
+# for each component from .git/ down to it, then the subdirectory the session runs in (git rev-parse
+# --show-prefix), then .claude/hooks. A dir that is not under .git/ has none, nor does a submodule's.
+copy_in_hooks() { # <hooks dir> [prefix]: what nonna_copy_in_hooks prints for it, then its exit status
+  bash -c '. "$1/lib/core.sh"; nonna_copy_in_hooks "$2" "$3"; echo " $?"' _ "$HOOKS" "$1" "${2:-}"
+}
+check "copy-in link: from .git/hooks" "../../.claude/hooks 0" "$(copy_in_hooks .git/hooks)"
+check "copy-in link: ...from an absolute path to it" "../../.claude/hooks 0" "$(copy_in_hooks /a/.git/hooks)"
+check "copy-in link: a linked worktree's own hooks dir is two levels deeper" "../../../../.claude/hooks 0" "$(copy_in_hooks /a/.git/worktrees/w/hooks)"
+check "copy-in link: the last /.git/ in a path is the one that counts" "../../.claude/hooks 0" "$(copy_in_hooks /a/.git/b/.git/hooks)"
+check "copy-in link: from a subdirectory (git prints ../.git/hooks), to that subdirectory's harness" "../../app/.claude/hooks 0" "$(copy_in_hooks ../.git/hooks app/)"
+check "copy-in link: ...and from a subdirectory of a linked worktree, where git prints the shared hooks dir" "../../app/.claude/hooks 0" "$(copy_in_hooks /a/.git/hooks app/)"
+check "copy-in link: a hook manager's directory has none" " 1" "$(copy_in_hooks .husky)"
+check "copy-in link: nor an empty one" " 1" "$(copy_in_hooks '')"
+check "copy-in link: nor .githooks, whose name only starts with .git" " 1" "$(copy_in_hooks .githooks)"
+check "copy-in link: nor a submodule's, under the superproject's .git/modules/" " 1" "$(copy_in_hooks /a/.git/modules/sub/hooks)"
+# Property: from every depth under .git/, with or without a subdirectory, the link it computes reaches the
+# repo's own scripts, and no other.
+TMP="$(mktemp -d)"; mkdir -p "$TMP/.claude/hooks" "$TMP/app/.claude/hooks"; : > "$TMP/.claude/hooks/x.sh"; : > "$TMP/app/.claude/hooks/y.sh"
+d="$TMP/.git"; lost=""
+for n in 0 1 2 3 4; do
+  mkdir -p "$d/hooks"
+  link="$(bash -c '. "$1/lib/core.sh"; nonna_copy_in_hooks "$2" ""' _ "$HOOKS" "$d/hooks")"
+  [ -e "$d/hooks/$link/x.sh" ] || lost="$lost $n"
+  link="$(bash -c '. "$1/lib/core.sh"; nonna_copy_in_hooks "$2" app/' _ "$HOOKS" "$d/hooks")"
+  [ -e "$d/hooks/$link/y.sh" ] || lost="$lost $n(app/)"
+  d="$d/lvl$n"
+done
+if [ -z "$lost" ]; then rc=0; else rc=1; fi
+check "copy-in link: property: from every depth under .git/ it reaches the repo's own scripts${lost:+ (not at depth$lost)}" 0 "$rc"
+rm -rf "$TMP"
 # A foreign hook is hers only if it runs her script; mentioning her name is not enough.
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
 printf '#!/bin/sh\n# thanks, Nonna\nexit 0\n' > "$TMP/.git/hooks/pre-push"; chmod +x "$TMP/.git/hooks/pre-push"
@@ -2184,6 +2215,40 @@ out="$(CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$ROOT/.claude" "$HOOKS/sess
 if [ -e "$TMP/.husky/pre-push" ] || [ -e "$TMP/.git/hooks/pre-push" ]; then rc=1; else rc=0; fi
 check "plugin: a hook manager's directory is not written" 0 "$rc"
 contains "plugin: says where the hook manager should point" "require-status-sync.sh" "$out"
+rm -rf "$TMP"
+# A hook manager under a copy-in is told where her scripts are, as under a plugin, by a path that exists: a path
+# relative to the hooks dir is right only when that dir is .git/hooks.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; copy_in "$TMP"; git -C "$TMP" config core.hooksPath .husky
+out="$(CLAUDE_PROJECT_DIR="$TMP" "$TMP/.claude/hooks/session-start.sh")"
+if [ -e "$TMP/.husky" ] || [ -e "$TMP/.git/hooks/pre-push" ]; then rc=1; else rc=0; fi
+check "copy-in: a hook manager's directory is not written" 0 "$rc"
+contains "copy-in: says where the hook manager should point, at her script by its absolute path" "point its pre-push at $(cd "$TMP" && pwd -P)/.claude/hooks/require-status-sync.sh" "$out"
+rm -rf "$TMP"
+# A copy-in in a subdirectory of its repository (git prints ../.git/hooks there): its hooks link to that
+# subdirectory's harness, relatively, and the gate is wired, not reported missing.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; mkdir -p "$TMP/app"; copy_in "$TMP/app"
+out="$(CLAUDE_PROJECT_DIR="$TMP/app" "$TMP/app/.claude/hooks/session-start.sh")"
+check "copy-in, subdirectory: pre-push links to its own harness, relatively" "../../app/.claude/hooks/require-status-sync.sh" "$(readlink "$TMP/.git/hooks/pre-push")"
+if [ -e "$TMP/.git/hooks/pre-push" ] && [ -e "$TMP/.git/hooks/pre-commit" ]; then rc=0; else rc=1; fi; check "copy-in, subdirectory: ...and both links resolve" 0 "$rc"
+case "$out" in *"missing from the harness"*) rc=1 ;; *) rc=0 ;; esac; check "copy-in, subdirectory: ...and does not call it missing" 0 "$rc"
+out="$(CLAUDE_PROJECT_DIR="$TMP/app" "$TMP/app/.claude/hooks/session-start.sh")"
+case "$out" in *"is not Nonna's"*) rc=1 ;; *) rc=0 ;; esac; check "copy-in, subdirectory: ...and the next session takes the link for hers" 0 "$rc"
+rm -rf "$TMP"
+# The same from a subdirectory of a linked worktree, where git prints the shared hooks dir, absolute: the link goes to
+# the main checkout's copy of that subdirectory's harness, as a worktree's root link goes to the main checkout's.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; mkdir -p "$TMP/app"; copy_in "$TMP/app"
+"${GIT[@]}" -C "$TMP" add -A; "${GIT[@]}" -C "$TMP" commit -qm init --no-verify
+"${GIT[@]}" -C "$TMP" worktree add -q "$TMP/wt" -b feature/wt 2>/dev/null
+out="$(CLAUDE_PROJECT_DIR="$TMP/wt/app" "$TMP/wt/app/.claude/hooks/session-start.sh")"
+check "copy-in, worktree subdirectory: pre-push links to that subdirectory's harness" "../../app/.claude/hooks/require-status-sync.sh" "$(readlink "$TMP/.git/hooks/pre-push")"
+case "$out" in *"missing from the harness"*) rc=1 ;; *) rc=0 ;; esac; check "copy-in, worktree subdirectory: ...and does not call it missing" 0 "$rc"
+rm -rf "$TMP"
+# A submodule's hooks live under the superproject's .git/modules/, which session start does not write: the
+# warning names the submodule's own scripts, not the superproject's.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; mkdir -p "$TMP/.git/modules"
+"${GIT[@]}" init -q --separate-git-dir="$TMP/.git/modules/sub" "$TMP/sub"; copy_in "$TMP/sub"
+out="$(CLAUDE_PROJECT_DIR="$TMP/sub" "$TMP/sub/.claude/hooks/session-start.sh")"
+contains "copy-in, submodule: says where its pre-push should point, at its own script by its absolute path" "point its pre-push at $(cd "$TMP/sub" && pwd -P)/.claude/hooks/require-status-sync.sh" "$out"
 rm -rf "$TMP"
 # A linked worktree shares the main checkout's hooks directory.
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; "${GIT[@]}" -C "$TMP" commit -q --allow-empty -m init --no-verify
@@ -4902,6 +4967,31 @@ FX="$(lint_fixture)"
 set_hook_cmd "$FX/.claude/hooks/codex-hooks.json" Stop 'NONNA_HOST=codex "${PLUGIN_ROOT}"/hooks/stop-dod.sh "${PLUGIN_DATA}"'
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: only a Codex SessionStart may take the plugin data dir" 1 "$?"
 contains "lint: names the Codex event given the data dir" "Stop hook" "$out"
+rm -rf "$FX"
+# A shipped file does not spell where the harness sits relative to a repository: lib/core.sh computes it, and the
+# plugin directory validator flags it written out. The three kinds the lint reads, one in a dot-directory.
+FX="$(lint_fixture)"
+printf '# ../../.claude/hooks\n' | tee -a "$FX/.claude/hooks/lib/tests.sh" >> "$FX/.claude/hooks/lib/shell-words.awk"
+printf '{"link": "../../.claude/hooks"}\n' > "$FX/.claude/.claude-plugin/link.json"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a relative path to .claude/ in a shipped file" 1 "$?"
+contains "lint: names the shell script" ".claude/hooks/lib/tests.sh:" "$out"
+contains "lint: ...the awk script" ".claude/hooks/lib/shell-words.awk:" "$out"
+contains "lint: ...and the JSON file in a dot-directory" ".claude/.claude-plugin/link.json:" "$out"
+rm -rf "$FX"
+# Two places under .claude/ are git-ignored and never ship: a /review verdict, which may quote the old path, and a
+# contributor's own approvals. Neither is read.
+FX="$(lint_fixture)"
+mkdir -p "$FX/.claude/reviews"
+printf '{"verdict":"approve","summary":"core.sh no longer spells ../../.claude/hooks"}\n' > "$FX/.claude/reviews/abc1234-code.json"
+printf '{"permissions":{"allow":["Bash(../../.claude/hooks/x.sh:*)"]}}\n' > "$FX/.claude/settings.local.json"
+NONNA_LINT_ROOT="$FX" python3 "$LINT" >/dev/null 2>&1; check "lint: a git-ignored review verdict and settings.local.json may name a relative path to .claude/" 0 "$?"
+rm -rf "$FX"
+# Only those two: a name that only starts like settings.local.json is not git-ignored, so it ships, and is read.
+FX="$(lint_fixture)"
+mkdir -p "$FX/.claude/settings.local.json.d"
+printf '{"link": "../../.claude/hooks"}\n' > "$FX/.claude/settings.local.json.d/x.json"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: a file that only starts like settings.local.json is read" 1 "$?"
+contains "lint: names that file" ".claude/settings.local.json.d/x.json:" "$out"
 rm -rf "$FX"
 # Keys other than the command decide whether a hook can block at all: async cannot, a timeout lets
 # the action through, and a non-command type hands the decision to a model. Each is refused.

@@ -374,6 +374,16 @@ Your AI agent says "done"; Nonna makes it prove it.
   got no argument, so the command is now the script and nothing after it, like every other, and the
   linter holds it to that form. `/nonna setup` and Codex's hooks file still pass the argument,
   which `session-start.sh` still takes.
+- **A copy-in's warning for a hook manager named a path that leads nowhere.** With `core.hooksPath`
+  set, session start says where the manager should point, and for a copy-in it said
+  `../../.claude/hooks/<script>`, which holds only from `.git/hooks`. It names the repository's own
+  scripts by their absolute path now, and a submodule's names its own, not the superproject's. The
+  link a copy-in makes in `.git/hooks` is computed rather than written out (`nonna_copy_in_hooks`:
+  one `../` for each level below `.git/`, then the subdirectory the session runs in), and the links
+  already there are still hers. So a copy-in in a subdirectory of its repository, or of a linked
+  worktree, is wired too: its gate was reported missing and never wired. The linter refuses a
+  written-out `../` path to `.claude/` in a shipped script or JSON file, since the plugin
+  directory's validator flags it.
 
 ## [1.0.0] — 2026-08-01 — "The Model Cannot Ship Itself"
 

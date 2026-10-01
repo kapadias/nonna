@@ -293,6 +293,38 @@ if settings.get("disableAllHooks"):
         ".claude/settings.json: disableAllHooks is set, which turns every Nonna gate off"
     )
 
+# --- no shipped file assumes where the harness sits in a repository ---
+# A path to .claude/ climbed to with ../ is right for one directory depth in one layout, and the
+# plugin directory validator flags it in a shipped file. The git hook links are computed from the
+# hooks dir instead (nonna_copy_in_hooks, lib/core.sh). os.walk, not glob: .claude-plugin is a
+# dot-directory. Two git-ignored places under .claude/ never ship, so they are not read: a /review
+# verdict, which may quote the old path, and a contributor's own approvals.
+
+
+def local_only(path: str) -> bool:
+    """True for a file in one of the two git-ignored places under .claude/: the /review verdicts
+    directory, and settings.local.json itself (a name that only starts like it ships)."""
+    rel = os.path.relpath(path, ROOT).replace(os.sep, "/")
+    return rel.startswith(".claude/reviews/") or rel == ".claude/settings.local.json"
+
+
+RELATIVE_HARNESS = re.compile(r"(\.\./)+\.claude/")
+for dirpath, _dirnames, filenames in os.walk(f"{ROOT}/.claude"):
+    for name in sorted(filenames):
+        if not name.endswith((".sh", ".awk", ".json")):
+            continue
+        path = os.path.join(dirpath, name)
+        if local_only(path):
+            continue
+        with open(path, encoding="utf-8", errors="replace") as fh:
+            for n, line in enumerate(fh, 1):
+                if RELATIVE_HARNESS.search(line):
+                    bad(
+                        f"{os.path.relpath(path, ROOT)}:{n}: a relative path to .claude/ — a shipped "
+                        "file must not assume where the harness sits in a repository "
+                        "(compute it, as nonna_copy_in_hooks does)"
+                    )
+
 # --- cross-links: intra-repo markdown links must resolve ---
 LINK = re.compile(r"\]\(([^)]+)\)")
 FILE_EXT = re.compile(r"\.(md|sh|json|py|ts|go|ya?ml|txt)$")

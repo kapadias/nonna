@@ -30,6 +30,27 @@ nonna_copy_in() {
   [ -n "$_nonna_self" ] && [ "$_nonna_self" = "$repo" ]
 }
 
+# nonna_copy_in_hooks <hooks dir> [<prefix>]
+#   Prints where a copy-in's git hooks find the repo's own scripts, as a link target (git reads it
+#   from the link's own directory): one ../ for each path component from .git/ down to <hooks dir>,
+#   then <prefix>, the subdirectory the session runs in (`git rev-parse --show-prefix`: empty at the
+#   top, else ending in /), then .claude/hooks. <hooks dir> is what `git rev-parse --git-path hooks`
+#   prints: .git/hooks, ../.git/hooks from a subdirectory, or an absolute path, where the last /.git/
+#   counts (a linked worktree's is the main checkout's, so its link reaches the main checkout's copy).
+#   Prints nothing and fails outside .git/ (a hook manager's directory, which Nonna never links into)
+#   and for a submodule's (under the superproject's .git/modules/), whose harness is not beside
+#   that .git. Parameter expansion and case only, so bash 3.2 and Git Bash read it alike.
+nonna_copy_in_hooks() {
+  local rest="${1:+/$1}" up="../"
+  case "$rest" in */.git/?*) rest="${rest##*/.git/}" ;; *) return 1 ;; esac
+  case "$rest" in modules/*) return 1 ;; esac
+  while [ -n "$rest" ]; do
+    up="$up../"
+    case "$rest" in */*) rest="${rest#*/}" ;; *) rest="" ;; esac
+  done
+  printf '%s%s.claude/hooks' "$up" "${2:-}"
+}
+
 # nonna_config <key>
 #   The key from the repo's own git config, else from the user's global one: never from a file
 #   those merely include, a `git -c` flag or GIT_CONFIG_* variables, which whoever runs git can
@@ -42,14 +63,14 @@ nonna_config() {
 # nonna_hook_is_hers <link target> <script> [<her link now>]
 #   True when a git hook's link leads to her own <script>: the link she would make now, one into her
 #   plugin's cache or data under the plugins directory Claude Code uses (a version since removed;
-#   Keel was her name), or a copy-in's ../../.claude/hooks/<script>. A user's own script that
-#   shares the name, a path merely shaped like hers, or one that climbs back out of hers with ..,
-#   is not hers. The plugins directory is read as written (a doubled slash squeezed, as a HOME
-#   ending in / gives) and as resolved.
+#   Keel was her name), or a copy-in's, as nonna_copy_in_hooks makes it for .git/hooks. A user's own
+#   script that shares the name, a path merely shaped like hers, or one that climbs back out of hers
+#   with .., is not hers. The plugins directory is read as written (a doubled slash squeezed, as a
+#   HOME ending in / gives) and as resolved.
 nonna_hook_is_hers() {
   local p plugins real
   [ -n "${3:-}" ] && [ "$1" = "$3" ] && return 0
-  [ "$1" = "../../.claude/hooks/$2" ] && return 0
+  [ "$1" = "$(nonna_copy_in_hooks .git/hooks)/$2" ] && return 0
   case "$1" in */../* | */..) return 1 ;; esac
   plugins="$(printf '%s' "${CLAUDE_CONFIG_DIR:-$HOME/.claude}/plugins" | tr -s /)"
   real="$(cd "$plugins" 2>/dev/null && pwd -P)"
