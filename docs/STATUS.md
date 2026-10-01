@@ -595,18 +595,28 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
 
 ## Next / open
 
-- Native Windows (#30): the Windows CI job reports and does not block, and the docs say to use
-  WSL 2, until these are fixed; one follow-up each. The first four touch scripts that #25, #26 and #29 are
-  changing, so they wait for those: backslash paths in the guards (`guard-branch.sh:92`, `:109`;
-  `secret-scan.sh:38`, `:161`; `lib/secret-patterns.sh:11`); the PowerShell tool, which no hook
-  matches; `git.exe` (`guard-branch.sh:41`, `lib/shell-words.awk:223`); the Stop gate's `timeout`
-  and perl fallback on Windows (`lib/tests.sh:62-68`). Then git hooks as copies (a wrapper where
-  `ln -s` cannot link), the test suite's own POSIX assumptions, a WSL leg in CI, and whether a
-  PowerShell-only install, where no hook runs, is supported at all. Then drop `continue-on-error`.
-- The rest of the launch plan (#17): deleting the finished branches (the film's first), the v2.0.0
-  release as an ordinary merge of `develop` into `main`, and the go/no-go checks. `/nonna` ran
-  headless in default and auto mode during the smoke runs; an interactive check stays on the
-  go/no-go list.
+- Follow-ups from the reviews of the seven launch issues (#25–#31), filed Sep 30:
+  - #38 (HIGH): the environment of whoever runs `git push`, or a remote-tracking ref made at the
+    pushed tip, can stop the pre-push hook before it scans or tests.
+  - #39 (HIGH): replace refs, submodule-ignore settings and grafts still reach what the Stop hook
+    and pre-commit read.
+  - #40: pre-push tests the working tree, which is not always what is pushed (below).
+  - #41: settings, state and paths the branch guard still lets an agent write (below).
+  - #42: copy-in installs under other hosts, and copy-in detection.
+  - #43: `subagent-verdict.sh` may judge the wrong text when a reviewer reports through a handback.
+  - #44: one record-to-payload mapping for every host's `apply_patch`.
+  - #45: native Windows's measured gaps (below).
+- Native Windows (#30; its gaps are #45): the Windows CI job reports and does not block, and the
+  docs say to use WSL 2, until these are fixed: backslash paths in the guards (`guard-branch.sh`,
+  `secret-scan.sh`, `lib/secret-patterns.sh`); the PowerShell tool, which no hook matches;
+  `git.exe` (`guard-branch.sh`, `lib/shell-words.awk`); the Stop gate's `timeout` and perl
+  fallback on Windows (`lib/tests.sh`). Then git hooks as copies (a wrapper where `ln -s` cannot
+  link), the test suite's own POSIX assumptions, a WSL leg in CI, and whether a PowerShell-only
+  install, where no hook runs, is supported at all. Then drop `continue-on-error`.
+- The rest of the launch plan (#17): deleting the film's branch, `chore/17-demo`, the only finished
+  branch left; the v2.0.0 release as an ordinary merge of `develop` into `main`; and the go/no-go
+  checks. `/nonna` ran headless in default and auto mode during the smoke runs; an interactive
+  check stays on the go/no-go list.
 - The branch guard should fail closed when a check cannot run. A `git` or `grep` that fails to
   start reads as "nothing found" today, so the command is allowed: the likely reason two guard
   tests allowed a blocked command, three times in all and each passing on rerun, while three or
@@ -623,8 +633,9 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
 - The branch guard keeps `.git/nonna/` and `.git/nonna-green` (her green runs) from the agent's
   file tools, not from a shell redirection, so a green run can be written from the shell (#29's
   security review, LOW). Its shell-write refusal names `.git/config` and `.git/hooks` in four
-  patterns, and misses a linked worktree's state, so closing it needs new parsing.
-- The pre-push hook only warns when a pushed branch is not checked out, and runs no tests for it.
+  patterns, and misses a linked worktree's state, so closing it needs new parsing (#41).
+- The pre-push hook only warns when a pushed branch is not checked out, and runs no tests for it
+  (#40).
 
 - The Codex plugin (#25) in a real Codex session: install it from `/plugins`, trust its hooks in
   `/hooks`, and see a red suite send the agent back and a patch with a key refused; then a Codex
