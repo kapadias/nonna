@@ -404,6 +404,16 @@ Your AI agent says "done"; Nonna makes it prove it.
   `git push` and `gh pr`. The lint rejects a bare `Bash`, `Edit` or `Write` (a scope of wildcards
   alone too, such as `Bash(*)`, `Bash(*:*)` or `Edit(**)`, and an `Edit` path that leaves the
   project by `//`, `~` or `..`) and any `Write(…)`.
+- **Script grants name the plugin's own scripts.** `/fix`, `/review`, `/ship` and `/audit` granted
+  `Bash(bash .claude/skills/<skill>/scripts/<script>:*)`, a path in the project: under a plugin
+  install it matched a script the project ships there, and left the plugin's own to ask. Claude Code
+  substitutes `${CLAUDE_SKILL_DIR}` in `allowed-tools` and in the skill body for both installs, so
+  each grant is now `Bash(bash "${CLAUDE_SKILL_DIR}/<path>":*)`, the path from the skill's own
+  directory (`../lean/scripts/check-debt.sh` for a sibling's script), and the body runs the same
+  text, with no harness root to resolve. `/ship` no longer pre-approves `tests/run.sh` and
+  `tests/harness_lint.py`: they sit outside the plugin, and its body never runs them. The lint holds
+  every `Bash(bash …)` grant to that form, to a script that exists inside `.claude/`, and to a skill
+  body that runs it as written.
 
 ## [1.0.0] — 2026-08-01 — "The Model Cannot Ship Itself"
 

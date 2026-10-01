@@ -478,6 +478,44 @@ for path in sorted(glob.glob(f"{ROOT}/.claude/skills/*/SKILL.md")):
                 "scope Bash and Edit, and spell a write to one path Edit(path)"
             )
 
+# --- a skill's script grant names the plugin's own script, and the skill runs it ---
+# A grant that names a script by its project path, Bash(bash .claude/skills/x/..),
+# matches only a copy-in install: under a plugin install it would pre-approve whatever
+# script the project ships at that path, and the plugin's own would still ask. Claude
+# Code substitutes ${CLAUDE_SKILL_DIR} in allowed-tools and in the skill body, for both
+# installs, so a grant is bash "${CLAUDE_SKILL_DIR}/<script>", a file inside the plugin
+# (.claude/). The body must run that same text, or the grant pre-approves a command the
+# skill never makes.
+SCRIPT = re.compile(r'bash "\$\{CLAUDE_SKILL_DIR\}/([A-Za-z0-9._/-]+)":\*')
+for path in sorted(glob.glob(f"{ROOT}/.claude/skills/*/SKILL.md")):
+    raw = open(path, encoding="utf-8").read()
+    m = FRONT.match(raw)
+    if not m:
+        continue
+    at = re.search(r"^allowed-tools:\s*(.+)$", m.group(1), re.M)
+    if not at:
+        continue
+    where = os.path.relpath(path, ROOT)
+    skill = os.path.basename(os.path.dirname(path))
+    for g in GRANT.finditer(at.group(1)):
+        if g.group(1) != "Bash" or not re.match(r"bash\b", g.group(2) or ""):
+            continue
+        script = SCRIPT.fullmatch(g.group(2))
+        if not script:
+            bad(
+                f'{where}: {g.group(0)} must be Bash(bash "${{CLAUDE_SKILL_DIR}}/<script>":*), '
+                "the one spelling that names the plugin's script in both installs"
+            )
+            continue
+        # From the plugin root, so out of it and back into a .claude/ is still out.
+        within = os.path.normpath(f"skills/{skill}/{script.group(1)}")
+        if within.split(os.sep)[0] == os.pardir:
+            bad(f"{where}: {g.group(0)} climbs out of the plugin (.claude/)")
+        elif not os.path.isfile(os.path.join(ROOT, ".claude", within)):
+            bad(f"{where}: {g.group(0)} names a script that does not exist")
+        if f'bash "${{CLAUDE_SKILL_DIR}}/{script.group(1)}"' not in raw[m.end() :]:
+            bad(f"{where}: {g.group(0)} is not run by the skill body, as written")
+
 # --- slash references: every `/name` the harness advertises must be invocable ---
 # Descriptions and rules route the agent by naming commands. A `/name` that no
 # longer exists is a routing dead end the agent cannot detect at runtime, so it
