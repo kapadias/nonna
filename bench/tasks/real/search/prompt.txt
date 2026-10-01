@@ -1,0 +1,1 @@
+Add an endpoint to search items by title: GET /api/v1/items/search?q=<text>. It returns the items whose title contains the text, ignoring case, in the same shape as GET /api/v1/items/ (data and count), newest first. Like the item list, it covers the current user's own items, or every item for a superuser.

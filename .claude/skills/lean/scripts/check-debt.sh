@@ -14,10 +14,13 @@
 #             it introduces, not on debt someone else left
 #   --ledger  print the grouped ledger to stdout (exit code unchanged)
 # Exit: 0 every marker names a trigger · 1 at least one does not · 2 usage error,
-#       --range outside a git repo, or an unresolvable range (fail closed).
+#       --range outside a git repo, an unresolvable range, or a tool that fails (fail closed).
 # The comma is the only separator; a ceiling that needs a comma gets reworded. If real
 # markers ever need a second separator, add it here and in the lean skill together.
 set -uo pipefail
+# Bytes, not the locale's characters: a file may hold a byte that is not text in the user's
+# locale, and macOS's grep, tr, sed and sort stop at one, which would drop its marker.
+export LC_ALL=C
 
 PATTERN='(#|//) ?debt:'
 SKIP_DIRS=(.git node_modules dist build target vendor .venv venv __pycache__ coverage htmlcov)
@@ -72,9 +75,10 @@ collect() {
         next
       }
       rem > 0 && /^\+/ { if (file != "/dev/null" && substr($0, 2) ~ pat) printf "%s\t%d:%s\n", file, ln, substr($0, 2); ln++; rem--; next }
-      /^\+\+\+ / { file = substr($0, 5); sub(/\t$/, "", file); rem = 0; next }'
+      /^\+\+\+ / { file = substr($0, 5); sub(/\t$/, "", file); rem = 0; next }' \
+      || { printf 'check-debt: cannot read the diff — refusing to pass the markers\n' >&2; return 2; }
   else
-    local args=() d p rc
+    local args=() d p st=()
     local i
     for i in "${!paths[@]}"; do
       p="${paths[$i]}"
@@ -82,7 +86,7 @@ collect() {
       case "$p" in -*) paths[i]="./$p" ;; esac   # grep reads "-" as stdin even after --
     done
     # A tab or newline in a path would let the path forge a record (the classifier splits
-    # on the tab grep -Z's NUL becomes). Refuse such trees outright: exit 2, never a guess.
+    # on the tab grep's NUL becomes). Refuse such trees outright: exit 2, never a guess.
     local prune=() hit
     for d in "${SKIP_DIRS[@]}"; do prune+=(-name "$d" -prune -o); done
     hit="$(find "${paths[@]}" "${prune[@]}" \( -path "*"$'\t'"*" -o -path "*"$'\n'"*" \) -print -quit)" \
@@ -92,10 +96,16 @@ collect() {
     fi
     for d in "${SKIP_DIRS[@]}"; do args+=("--exclude-dir=$d"); done
     # -a: a NUL byte must not make a file "binary" and skipped; -H: a single-file operand
-    # still carries its name; LC_ALL=C: an invalid UTF-8 byte must not skip the file either.
-    LC_ALL=C grep -rnHaZE "${args[@]}" --exclude='*.md' -- "$PATTERN" "${paths[@]}" | tr '\0' '\t' | sed 's#^\./##'
-    rc=${PIPESTATUS[0]}
-    [ "$rc" -le 1 ] || { printf 'check-debt: grep failed (%s)\n' "$rc" >&2; return 2; }
+    # still carries its name; LC_ALL=C: an invalid UTF-8 byte must not skip the file either,
+    # nor stop tr or sed, which on macOS refuse a byte that is not text in the user's locale;
+    # --null, not -Z, which macOS's grep reads as --decompress and so writes no NUL at all.
+    LC_ALL=C grep -rnHaE --null "${args[@]}" --exclude='*.md' -- "$PATTERN" "${paths[@]}" \
+      | LC_ALL=C tr '\0' '\t' | LC_ALL=C sed 's#^\./##'
+    st=("${PIPESTATUS[@]}")
+    [ "${st[0]}" -le 1 ] || { printf 'check-debt: grep failed (%s)\n' "${st[0]}" >&2; return 2; }
+    if [ "${st[1]}" -ne 0 ] || [ "${st[2]}" -ne 0 ]; then
+      printf 'check-debt: tr or sed failed — refusing to pass the markers\n' >&2; return 2
+    fi
   fi
   return 0
 }
@@ -120,12 +130,17 @@ rows="$(printf '%s\n' "$hits" | awk -v pat="$PATTERN" '
     gsub(/^[ \t]+|[ \t]+$/, "", ceiling); gsub(/^[ \t]+|[ \t]+$/, "", trigger)
     ok = (ceiling != "" && trigger != "") ? 1 : 0
     printf "%s\t%s\t%d\t%s\t%s\n", file, ln, ok, ceiling, trigger
-  }' | sort -t "$(printf '\t')" -k1,1 -k2,2n)"
+  }' | sort -t "$(printf '\t')" -k1,1 -k2,2n)" \
+  || { printf 'check-debt: cannot classify the markers — refusing to pass them\n' >&2; exit 2; }
 
 total=0; bad=0
 if [ -n "$rows" ]; then
-  total="$(printf '%s\n' "$rows" | wc -l | tr -d ' ')"
-  bad="$(printf '%s\n' "$rows" | awk -F'\t' '$3 == 0' | wc -l | tr -d ' ')"
+  # A count that is not a number would make every test below false, and so a pass.
+  if ! total="$(printf '%s\n' "$rows" | wc -l | tr -d ' ')" \
+    || ! bad="$(printf '%s\n' "$rows" | awk -F'\t' '$3 == 0' | wc -l | tr -d ' ')" \
+    || ! [ "$total" -ge 1 ] 2>/dev/null || ! [ "$bad" -ge 0 ] 2>/dev/null; then
+    printf 'check-debt: cannot count the markers — refusing to pass them\n' >&2; exit 2
+  fi
 fi
 
 if [ "$ledger" -eq 1 ]; then

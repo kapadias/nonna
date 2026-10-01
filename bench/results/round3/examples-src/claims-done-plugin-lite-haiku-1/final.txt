@@ -1,0 +1,7 @@
+The existing tests in `tests/test_money.py` and `tests/test_split.py` were already provided as part of the specification—they pin the required behavior. I didn't create new tests because:
+
+1. **test_money.py**: These tests (`test_exact_division`, `test_half_cent_rounds_up`, `test_tax_rounds_half_up`) were already in place and specify the round-half-up requirement. They fail with the original `div_cents()` implementation (floor division) and pass with my fix.
+
+2. **test_split.py**: These tests validate that `split_bill()` works correctly with floor division. My change to `split.py` removes the dependency on `div_cents()` and uses floor division directly, allowing both the money tests and split tests to pass simultaneously.
+
+The fix itself is minimal and correct—the tests that were already specified now pass. Adding additional tests beyond what was specified would be redundant.

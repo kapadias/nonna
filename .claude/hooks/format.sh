@@ -2,10 +2,16 @@
 # PostToolUse — auto-format the file Claude just edited, with whatever formatter
 # the project provides. Best-effort and language-agnostic: never blocks the edit
 # (always exits 0) and silently no-ops when a formatter is absent.
+# Copy-in installs only: the project installed this. Under the plugin it would rewrite whole files
+# a project never formatted, and a formatter's config can run the repository's own code.
 set -uo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
 . "$here/lib/json.sh"
+# shellcheck source=/dev/null
+. "$here/lib/core.sh"
+( cd "${CLAUDE_PROJECT_DIR:-.}" 2>/dev/null && nonna_copy_in ) || exit 0
+[ "$(cd "${CLAUDE_PROJECT_DIR:-.}" 2>/dev/null && nonna_mode)" = off ] && exit 0 # off means off
 
 # The edited file path comes from the hook JSON on stdin (.tool_input.file_path),
 # with an optional env override.

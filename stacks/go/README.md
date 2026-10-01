@@ -108,6 +108,12 @@ awk -v cov="$(go tool cover -func=coverage.out | grep '^total:' | awk '{print $3
 
 ---
 
+## Pre-approved commands
+
+`settings.local.json` lets exactly these run without a prompt: `go test ./...`, the coverage run above, `go vet ./...`, `golangci-lint run ./...`, `gofmt -l .`, `gofmt -w .`, `goimports -l .` and `goimports -w .`. Only those exact commands: a runner's flags can run any program or write any file, so any other form of them asks first. (`go test -exec` and `go vet -vettool` run any program, `golangci-lint --output.text.path` writes anywhere, and `gofmt -r` rewrites code.) The other `go` commands (`go run`, `go install`, `go get`, `go tool cover`) and `awk` are not on the list, because they run any code or install anything, so the coverage-floor check above (`go tool cover` and `awk`) asks first, and so do the install commands below.
+
+---
+
 ## Install all dev dependencies
 
 ```bash

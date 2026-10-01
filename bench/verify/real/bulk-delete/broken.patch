@@ -1,0 +1,71 @@
+diff --git a/backend/app/api/routes/items.py b/backend/app/api/routes/items.py
+index f0eb30e..2f62c04 100644
+--- a/backend/app/api/routes/items.py
++++ b/backend/app/api/routes/items.py
+@@ -5,7 +5,16 @@ from fastapi import APIRouter, HTTPException
+ from sqlmodel import col, func, select
+ 
+ from app.api.deps import CurrentUser, SessionDep
+-from app.models import Item, ItemCreate, ItemPublic, ItemsPublic, ItemUpdate, Message
++from app.models import (
++    Item,
++    ItemCreate,
++    ItemIds,
++    ItemPublic,
++    ItemsDeleted,
++    ItemsPublic,
++    ItemUpdate,
++    Message,
++)
+ 
+ router = APIRouter(prefix="/items", tags=["items"])
+ 
+@@ -45,6 +54,23 @@ def read_items(
+     return ItemsPublic(data=items_public, count=count)
+ 
+ 
++@router.post("/bulk-delete")
++def bulk_delete_items(
++    session: SessionDep, current_user: CurrentUser, body: ItemIds
++) -> ItemsDeleted:
++    """
++    Delete the listed items the current user may delete; skip the rest.
++    """
++    statement = select(Item).where(col(Item.id).in_(body.ids))
++    if not current_user.is_superuser:
++        statement = statement.where(Item.owner_id == current_user.id)
++    items = session.exec(statement).all()
++    for item in items:
++        session.delete(item)
++    session.commit()
++    return ItemsDeleted(deleted=len(items))
++
++
+ @router.get("/{id}", response_model=ItemPublic)
+ def read_item(session: SessionDep, current_user: CurrentUser, id: uuid.UUID) -> Any:
+     """
+@@ -110,4 +136,4 @@ def delete_item(
+         raise HTTPException(status_code=403, detail="Not enough permissions")
+     session.delete(item)
+     session.commit()
+-    return Message(message="Item deleted successfully")
++    return Message(message="Deleted")
+diff --git a/backend/app/models.py b/backend/app/models.py
+index 0ae3cf6..7561de5 100644
+--- a/backend/app/models.py
++++ b/backend/app/models.py
+@@ -103,6 +103,14 @@ class ItemPublic(ItemBase):
+     created_at: datetime | None = None
+ 
+ 
++class ItemIds(SQLModel):
++    ids: list[uuid.UUID]
++
++
++class ItemsDeleted(SQLModel):
++    deleted: int
++
++
+ class ItemsPublic(SQLModel):
+     data: list[ItemPublic]
+     count: int

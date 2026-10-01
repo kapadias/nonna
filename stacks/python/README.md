@@ -91,6 +91,12 @@ pytest --cov=src --cov-branch --cov-report=term-missing --cov-fail-under=80
 
 ---
 
+## Pre-approved commands
+
+`settings.local.json` lets exactly these run without a prompt: `pytest`, `python -m pytest` and `python3 -m pytest` (each also with `-q`), the coverage gate above, `ruff check .`, `ruff format .`, `ruff format --check .`, `mypy src/`, `mypy .` and `pyright`. Only those exact commands: a runner's flags can run any program or write any file, so any other form of them asks first. (`pytest --basetemp` even deletes the directory it is given.) `python`, `pip` and `uv` are not on the list, because they run any code or install anything: `python -c`, `pip install` and `uv add` ask first.
+
+---
+
 ## Install all dev dependencies
 
 ```bash

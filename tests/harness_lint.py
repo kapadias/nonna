@@ -11,12 +11,20 @@ Every check below fails the build (boundaries.md: deterministic gates decide):
   - slash refs: every `/name` named in the harness resolves to a command or skill.
   - domain leak: no domain-specific vocabulary in a domain-agnostic harness.
   - external names: a project whose ideas Nonna adapted is credited in README.md
-    and named nowhere else.
+    (and its translations) and named nowhere else.
   - the ladder: the seven rung keywords appear in both 00-core.md (always-on)
     and skills/lean/SKILL.md (depth), so the two copies cannot drift (ADR-0008).
   - debt gate wiring: /review and /sync invoke check-debt.sh (ADR-0008).
   - review inflation: dev-process §4 and the severity rubric keep the rule that a
     review ask which adds code must name a failing input (ADR-0008).
+  - Gemini CLI extension: gemini-extension.json is valid JSON, names a context file the
+    CLI can load (a relative path to a real file) that says `install.sh --host gemini`
+    adds the git hooks, and carries the plugin's version.
+  - README numbers: every number README.md marks (`<!--n:key-->`) equals the fact
+    the lint computes from bench/results/round3/*.tsv.
+  - README translations: README.md links each README.<lang>.md, which marks the
+    numbers README.md marks and carries its code blocks, link targets and inline
+    code, so none goes stale in a language.
 
 NONNA_LINT_ROOT points the linter at a different tree. It exists so tests/run.sh
 can golden-test the linter itself against mutated copies of this repo — a linter
@@ -26,10 +34,13 @@ with no failing-case test is an unverified gate. CI never sets it.
 from __future__ import annotations
 
 import glob
+import html
 import json
 import os
 import re
+import subprocess
 import sys
+from collections import Counter
 
 ROOT = os.environ.get("NONNA_LINT_ROOT") or os.path.dirname(
     os.path.dirname(os.path.abspath(__file__))
@@ -106,7 +117,7 @@ for path in sorted(glob.glob(f"{ROOT}/.claude/agents/*.md")):
 # human to approve first promotion to production; disable-model-invocation is
 # what makes that a mechanism instead of a request, and it also drops the
 # description from every turn's context.
-USER_ONLY_SKILLS = {"ship", "release", "rollback", "adr", "sync", "intake"}
+USER_ONLY_SKILLS = {"ship", "release", "rollback", "adr", "sync", "intake", "nonna"}
 for path in sorted(glob.glob(f"{ROOT}/.claude/skills/*/SKILL.md")):
     name = os.path.basename(os.path.dirname(path))
     block = frontmatter(path)
@@ -159,6 +170,8 @@ for rel in (
     "tests/README.md",
     ".claude/README.md",
     "docs/STATUS.md",
+    # A translation leaves the count out; one left behind is held to run.sh all the same.
+    *sorted(os.path.relpath(p, ROOT) for p in glob.glob(f"{ROOT}/README.*.md")),
 ):
     path = os.path.join(ROOT, rel)
     if not os.path.isfile(path):
@@ -199,17 +212,86 @@ with open(f"{ROOT}/.claude/rules/dev-process.md", encoding="utf-8") as fh:
     if "Assumptions" not in fh.read():
         bad(".claude/rules/dev-process.md: A/C/V/R reporting convention missing")
 
-# --- settings.json wired hooks exist on disk ---
+# --- hook commands: one exact form each, and the wired script exists ---
+# A hook command is its quoted root, the script, and nothing else. The root is quoted because Claude
+# Code puts the path into a shell command, and an unquoted path with a space ("Application Support")
+# splits: the script is never found and the gate silently never runs. Nothing may follow the script,
+# because a tail changes what the gate does: `|| true` turns a block (exit 2) into a pass. SessionStart
+# alone may pass the plugin data dir, and only in hooks.json. `claude plugin validate` checks the
+# quoting in hooks.json only; settings.json has no validator, so the lint holds both.
+HOOK_FORMS = {
+    ".claude/hooks/hooks.json": (
+        re.compile(
+            r'^"\$\{CLAUDE_PLUGIN_ROOT\}"/(hooks/[A-Za-z0-9_.-]+\.sh)(?P<data> "\$\{CLAUDE_PLUGIN_DATA\}")?$'
+        ),
+        '"${CLAUDE_PLUGIN_ROOT}"/hooks/<script>.sh',
+    ),
+    ".claude/settings.json": (
+        re.compile(r'^"\$CLAUDE_PROJECT_DIR"/\.claude/(hooks/[A-Za-z0-9_.-]+\.sh)$'),
+        '"$CLAUDE_PROJECT_DIR"/.claude/hooks/<script>.sh',
+    ),
+}
+
+
+def hook_script(rel: str, event: str, cmd: str):
+    """The script a hook command runs (relative to .claude/), or None if the command is not in its one form."""
+    m = HOOK_FORMS[rel][0].fullmatch(cmd)
+    if not m or (m.groupdict().get("data") and event != "SessionStart"):
+        return None
+    return m.group(1)
+
+
+# The other keys decide whether a hook can block at all, so they are pinned too: an async hook
+# cannot block, a timeout counts as a non-blocking error (a tiny one fails the gate open), and any
+# type but "command" hands the decision to a model. statusMessage only sets the spinner text.
+HOOK_KEYS = {"type", "command", "timeout", "statusMessage"}
+MIN_HOOK_TIMEOUT = 10  # seconds
+
+
+def check_hook_forms(rel: str, cfg: dict) -> None:
+    for event, entries in (cfg.get("hooks") or {}).items():
+        for entry in entries:
+            for hook in entry.get("hooks", []):
+                cmd = hook.get("command", "")
+                script = hook_script(rel, event, cmd)
+                if script is None:
+                    bad(
+                        f"{rel}: {event} hook '{cmd}' must be exactly {HOOK_FORMS[rel][1]} "
+                        f"(quoted root, then the script, then nothing: a tail like '|| true' turns a block into a pass)"
+                    )
+                elif not os.path.isfile(os.path.join(ROOT, ".claude", script)):
+                    shown = (
+                        script if rel.endswith("hooks.json") else f".claude/{script}"
+                    )
+                    bad(f"{os.path.basename(rel)}: wired hook missing on disk: {shown}")
+                if hook.get("type") != "command":
+                    bad(
+                        f"{rel}: {event} hook '{cmd}' must be type \"command\" (a gate is a script, not a model's judgment)"
+                    )
+                extra = sorted(set(hook) - HOOK_KEYS)
+                if extra:
+                    bad(
+                        f"{rel}: {event} hook '{cmd}' has keys {extra} (allowed: {sorted(HOOK_KEYS)}; an async hook cannot block)"
+                    )
+                t = hook.get("timeout")
+                if "timeout" in hook and (
+                    isinstance(t, bool)
+                    or not isinstance(t, (int, float))
+                    or t < MIN_HOOK_TIMEOUT
+                ):
+                    bad(
+                        f"{rel}: {event} hook '{cmd}' timeout {t!r} is under {MIN_HOOK_TIMEOUT}s (a timeout lets the action through)"
+                    )
+
+
 with open(f"{ROOT}/.claude/settings.json", encoding="utf-8") as fh:
     settings = json.load(fh)
-for _event, entries in (settings.get("hooks") or {}).items():
-    for entry in entries:
-        for hook in entry.get("hooks", []):
-            m = re.search(
-                r"\$\{?CLAUDE_PROJECT_DIR\}?/(\S+\.sh)", hook.get("command", "")
-            )
-            if m and not os.path.isfile(os.path.join(ROOT, m.group(1))):
-                bad(f"settings.json: wired hook missing on disk: {m.group(1)}")
+check_hook_forms(".claude/settings.json", settings)
+# One settings key turns every hook off at once; pinning each gate means nothing if it is set.
+if settings.get("disableAllHooks"):
+    bad(
+        ".claude/settings.json: disableAllHooks is set, which turns every Nonna gate off"
+    )
 
 # --- cross-links: intra-repo markdown links must resolve ---
 LINK = re.compile(r"\]\(([^)]+)\)")
@@ -241,6 +323,7 @@ md_files: list[str] = []
 for patt in (
     "CLAUDE.md",
     "README.md",
+    "README.*.md",
     "CONTRIBUTING.md",
     ".claude/**/*.md",
     "docs/**/*.md",
@@ -291,6 +374,35 @@ for path in sorted(glob.glob(f"{ROOT}/.claude/skills/*/SKILL.md")):
             f"{os.path.relpath(path, ROOT)}: body runs `git {verb}` but "
             f"allowed-tools does not grant Bash(git {verb}:*)"
         )
+
+# --- a skill's ! line runs only as its allowed-tools pre-approve it ---
+# Claude Code runs a skill's !`command` line before the model sees the skill,
+# through the permission check alone: no PreToolUse hook sees it. A line the
+# rules do not pre-approve is not run as written (auto mode hands it to the
+# model, where the branch guard refuses her own scripts), and a rule wider than
+# the line pre-approves more than the line. So each ! line needs a rule that is
+# exactly it: Bash(<line>), or Bash(<line without its $ARGUMENTS>:*). Claude Code
+# runs two forms, an inline !`…` and a fenced ```! block; both are held to it.
+BANG = re.compile(r"(?:^|\s)!`([^`]+)`|```!\s*\n?([\s\S]*?)\n?```", re.M)
+for path in sorted(glob.glob(f"{ROOT}/.claude/skills/*/SKILL.md")):
+    raw = open(path, encoding="utf-8").read()
+    m = FRONT.match(raw)
+    if not m:
+        continue
+    at = re.search(r"^allowed-tools:\s*(.+)$", m.group(1), re.M)
+    rules = (
+        set(re.findall(r"Bash\(([^()]*(?:\([^()]*\)[^()]*)*)\)", at.group(1)))
+        if at
+        else set()
+    )
+    for inline, fenced in BANG.findall(raw[m.end() :]):
+        line = (inline or fenced).strip()
+        prefix = re.sub(r"\s+\$ARGUMENTS$", "", line)
+        if line not in rules and f"{prefix}:*" not in rules:
+            bad(
+                f"{os.path.relpath(path, ROOT)}: the ! line `{line}` is not pre-approved exactly "
+                f"by allowed-tools; grant Bash({prefix}:*) and nothing wider"
+            )
 
 # --- slash references: every `/name` the harness advertises must be invocable ---
 # Descriptions and rules route the agent by naming commands. A `/name` that no
@@ -343,22 +455,58 @@ for rel, phrase in (
 # one place their names appear. Everything the harness ships stays brand-free. The
 # term is assembled at runtime so this file cannot trip its own check.
 EXTERNAL_NAMES = ("pony" + "tail",)
+# The credit line (README.md and each translation of it, by name: a new language is added on purpose),
+# and the one helper that must name the plugin to detect it (lib/ladder.sh).
+EXTERNAL_ALLOWED = {
+    "README.md",
+    "README.zh-CN.md",
+    "README.ko.md",
+    "README.ja.md",
+    "README.es.md",
+    ".claude/hooks/lib/ladder.sh",
+}
 EXTERNAL = re.compile("|".join(re.escape(t) for t in EXTERNAL_NAMES), re.IGNORECASE)
 SCAN_EXT = re.compile(r"\.(md|sh|py|json|ya?ml|txt)$")
+# Top-level directories that ship in neither the plugin nor install.sh. bench/ measures
+# Nonna against the companion plugin, so its arms must name it.
+UNSHIPPED = {"bench"}
 # os.walk, not glob: glob("**") skips dot-directories, and .claude/ is one.
 for dirpath, dirnames, filenames in os.walk(ROOT):
-    dirnames[:] = [d for d in dirnames if d not in (".git", "node_modules")]
+    dirnames[:] = [
+        d
+        for d in dirnames
+        if d not in (".git", "node_modules")
+        and not (d in UNSHIPPED and os.path.samefile(dirpath, ROOT))
+    ]
     for name in filenames:
         path = os.path.join(dirpath, name)
         rel = os.path.relpath(path, ROOT)
-        if rel == "README.md" or not SCAN_EXT.search(name):
+        if rel in EXTERNAL_ALLOWED or not SCAN_EXT.search(name):
             continue
         with open(path, encoding="utf-8", errors="replace") as fh:
             for n, line in enumerate(fh, 1):
                 if EXTERNAL.search(line):
                     bad(
-                        f"{rel}:{n}: external project name — credit belongs in README.md only"
+                        f"{rel}:{n}: external project name — credit belongs in README.md and its translations only"
                     )
+
+# --- bench/README.md quotes every task prompt word for word (D4) ---
+# A claim about what an agent did is only as good as the prompt it got, so each prompt.txt appears
+# verbatim in bench/README.md, next to its hidden check: a reworded prompt cannot hide behind a
+# paraphrase.
+BENCH_PROMPTS = sorted(glob.glob(f"{ROOT}/bench/tasks/*/*/prompt.txt"))
+if BENCH_PROMPTS:
+    try:
+        with open(f"{ROOT}/bench/README.md", encoding="utf-8") as fh:
+            BENCH_README = fh.read()
+    except FileNotFoundError:
+        BENCH_README = ""
+    for p in BENCH_PROMPTS:
+        with open(p, encoding="utf-8") as fh:
+            if fh.read().strip() not in BENCH_README:
+                bad(
+                    f"{os.path.relpath(p, ROOT)}: not quoted word for word in bench/README.md (D4)"
+                )
 
 # --- the ladder: one ruleset, two copies (always-on rungs; on-demand depth) ---
 # The seven rungs are pinned by keyword because the copies differ in depth by design.
@@ -382,6 +530,43 @@ for rel in (".claude/rules/00-core.md", ".claude/skills/lean/SKILL.md"):
         if rung not in text:
             bad(
                 f"{rel}: ladder rung '{rung}' missing — 00-core.md and the lean skill must agree (ADR-0008)"
+            )
+
+# --- lite.md: the house rules every lite session and subagent carries ---
+# It rides additionalContext on every lite SessionStart and SubagentStart, so it has a budget, and
+# it must keep a line for each never-list item lite mode inherits: without one, lite would stop
+# saying what its own gates enforce.
+MAX_LITE_WORDS = 150
+LITE_COVERS = (  # (never-list wording in 00-core.md, phrase lite.md must keep)
+    ("Commit or push to", "Never commit or push to main"),
+    ("force-push", "never force-push"),
+    ("Put a secret", "Never put a secret"),
+    ("with failing tests", "whole test suite passes"),
+    ("no test that would have failed before it", "fails before the fix"),
+    ("Override a gate", "do not work around it"),
+)
+lite_path = os.path.join(ROOT, ".claude/hooks/lib/lite.md")
+if not os.path.isfile(lite_path):
+    bad("lite mode: missing .claude/hooks/lib/lite.md")
+else:
+    with open(lite_path, encoding="utf-8") as fh:
+        lite = " ".join(fh.read().split())
+    if len(lite.split()) > MAX_LITE_WORDS:
+        bad(
+            f".claude/hooks/lib/lite.md is {len(lite.split())} words, over its {MAX_LITE_WORDS}-word budget (it rides every lite session and subagent)"
+        )
+    with open(os.path.join(ROOT, ".claude/rules/00-core.md"), encoding="utf-8") as fh:
+        core_text = fh.read()
+    never = " ".join(core_text.split("## Never", 1)[-1].split("\n## ", 1)[0].split())
+    for item, phrase in LITE_COVERS:
+        if item not in never:
+            # A reworded never-list would otherwise switch this check off without a word.
+            bad(
+                f".claude/rules/00-core.md: the never-list no longer says '{item}' — update LITE_COVERS in tests/harness_lint.py"
+            )
+        elif phrase not in lite:
+            bad(
+                f".claude/hooks/lib/lite.md: no line for the never-list item '{item}' (keep '{phrase}')"
             )
 
 # --- debt gate wiring: /review gates the delta, /sync prints the ledger (ADR-0008) ---
@@ -457,11 +642,15 @@ if always_on > MAX_ALWAYS_ON_WORDS:
 # command description into every turn so it can decide what to load. That made
 # them the one part of the surface with no budget at all, and they had grown to
 # ~7,000 chars. A description exists to support a load/route DECISION; prose
-# past that decision is paid every turn and buys nothing.
+# past that decision is paid every turn and buys nothing. A skill only the user
+# can invoke (disable-model-invocation) is not offered to the model, so its
+# description is not paid and not counted.
 MAX_DESCRIPTION_CHARS = 5600
 desc_chars = 0
 for patt in ("skills/*/SKILL.md", "agents/*.md"):
     for p in glob.glob(f"{ROOT}/.claude/{patt}"):
+        if fm_value(frontmatter(p) or [], "disable-model-invocation") == "true":
+            continue
         m = re.search(r"^description:\s*(.+)$", open(p, encoding="utf-8").read(), re.M)
         if m:
             desc_chars += len(m.group(1))
@@ -499,6 +688,106 @@ for jf in (plugin_manifest, marketplace, plugin_hooks):
     except json.JSONDecodeError as exc:
         bad(f"plugin packaging: invalid JSON in {os.path.relpath(jf, ROOT)}: {exc}")
 
+# --- Gemini CLI extension: the manifest it reads, the file it loads, one version, rules only ---
+# `gemini extensions install https://github.com/kapadias/nonna` installs the latest release's
+# archive and reads gemini-extension.json from its root. When the context file is unusable the
+# CLI says nothing: a contextFileName that is missing, absolute, climbs out with "..", or names
+# a directory installs cleanly and loads no rules (`gemini extensions validate` catches the first
+# three). So the manifest is held to the CLI's own rules, to the one file hosts/build.py
+# generates (whatever it names is loaded into every session, and --check vouches only for that
+# file), and to the plugin's version, which `gemini extensions list` shows. The extension is rules
+# only (ADR 0012): no other manifest key, and nothing else the CLI loads from an extension root.
+EXT_MANIFEST = "gemini-extension.json"
+EXT_CONTEXT = "hosts/gemini-extension/GEMINI.md"  # hosts/build.py writes it
+EXT_KEYS = ("name", "version", "description", "contextFileName")
+# What Gemini CLI 0.62.0 loads from an extension root besides the manifest and its context file: the
+# commands, skills, agents and policies directories, and hooks/hooks.json. macOS's default disk ignores
+# letter case, so Skills/ or Hooks/Hooks.json is read as those, and CI's disk does not: every root entry
+# is compared case-folded (casefold, not lower: a disk that ignores case folds more than ASCII), whatever
+# its type, a symlink such as Hooks -> .claude/hooks included. Only hooks/hooks.json is refused, not the
+# whole hooks/ directory: Copilot keeps hooks/copilot-hooks.json at the root.
+EXT_ROOT_DIRS = ("commands", "skills", "agents", "policies")
+try:
+    with open(f"{ROOT}/{EXT_MANIFEST}", encoding="utf-8") as fh:
+        ext = json.load(fh)
+    if not isinstance(ext, dict):
+        raise ValueError("expected a JSON object")
+except FileNotFoundError:
+    bad(f"{EXT_MANIFEST}: missing — the Gemini CLI reads it from the repository root")
+except OSError as exc:
+    bad(f"{EXT_MANIFEST}: cannot read it: {exc}")
+except ValueError as exc:  # JSONDecodeError is one
+    bad(f"{EXT_MANIFEST}: invalid JSON: {exc}")
+else:
+    for key in sorted(ext):
+        if key not in EXT_KEYS:
+            bad(
+                f"{EXT_MANIFEST}: key {key!r} is not allowed: the extension is rules only (ADR 0012), "
+                f"and any other key adds behavior (mcpServers runs a process, migratedTo moves where it updates from)"
+            )
+    ext_name = ext.get("name")
+    if not (isinstance(ext_name, str) and re.fullmatch(r"[A-Za-z0-9-]+", ext_name)):
+        bad(
+            f"{EXT_MANIFEST}: name {ext_name!r} must be letters, digits and dashes, or the CLI refuses the extension"
+        )
+    try:
+        with open(plugin_manifest, encoding="utf-8") as fh:
+            plugin_version = json.load(fh).get("version")
+    except (OSError, ValueError, AttributeError):
+        plugin_version = None  # the packaging check above says why
+    if plugin_version and ext.get("version") != plugin_version:
+        bad(
+            f"{EXT_MANIFEST}: version {json.dumps(ext.get('version'))} is not the plugin's "
+            f"{json.dumps(plugin_version)} (.claude/.claude-plugin/plugin.json); release.yml holds both to the tag"
+        )
+    ctx = ext.get("contextFileName")
+    if not (isinstance(ctx, str) and ctx.strip()):
+        bad(
+            f"{EXT_MANIFEST}: contextFileName must be one path (a string): without it the CLI would "
+            f"load a GEMINI.md at the root, which this repository does not have, and load no rules"
+        )
+    elif re.match(r"[A-Za-z]:|[/\\]", ctx) or ".." in ctx:
+        bad(
+            f"{EXT_MANIFEST}: contextFileName {ctx!r} must be a relative path inside the repository, "
+            f"with no '..': the CLI skips any other without a word"
+        )
+    elif not os.path.isfile(os.path.join(ROOT, ctx)):
+        bad(
+            f"{EXT_MANIFEST}: contextFileName {ctx!r} is not a file: the CLI loads no rules from it, without a word"
+        )
+    elif ctx != EXT_CONTEXT:
+        bad(
+            f"{EXT_MANIFEST}: contextFileName {ctx!r} must be {EXT_CONTEXT!r}, the file hosts/build.py generates: "
+            f"Gemini CLI loads whatever it names into every session, and --check vouches for that file alone"
+        )
+    else:
+        try:
+            with open(os.path.join(ROOT, ctx), encoding="utf-8") as fh:
+                loaded = " ".join(fh.read().split())
+        except (OSError, UnicodeDecodeError) as exc:
+            bad(f"{ctx}: cannot read it: {exc}")
+        else:
+            if "install.sh --host gemini" not in loaded:
+                bad(
+                    f"{ctx}: must say that install.sh --host gemini adds the git hooks, which the extension does not install"
+                )
+for name in sorted(os.listdir(ROOT)):
+    entry = os.path.join(ROOT, name)
+    if name.casefold() in EXT_ROOT_DIRS:
+        bad(
+            f"{name}{'/' if os.path.isdir(entry) else ''}: Gemini CLI loads {name.casefold()}/ from an "
+            f"extension root (a disk that ignores letter case, macOS's default, reads this as it), so the "
+            f"extension would carry it; it is rules only (ADR 0012)"
+        )
+    elif name.casefold() == "hooks" and os.path.isdir(entry):
+        for child in sorted(os.listdir(entry)):
+            if child.casefold() == "hooks.json":
+                bad(
+                    f"{name}/{child}: Gemini CLI loads hooks/hooks.json from an extension root (a disk that "
+                    f"ignores letter case, macOS's default, reads this as it), so the extension would carry "
+                    f"it; it is rules only (ADR 0012)"
+                )
+
 
 # --- hook wiring equivalence: two files declare the same gates, with no shared source ---
 # settings.json (standalone, $CLAUDE_PROJECT_DIR/.claude/...) and hooks.json
@@ -507,8 +796,8 @@ for jf in (plugin_manifest, marketplace, plugin_hooks):
 # is live in one install mode and absent in the other — the exact asymmetry
 # ADR-0007 was written about. Generating one from the other would need a build
 # step ADR-0006 rejected, so assert equivalence instead.
-def hook_shape(cfg: dict) -> dict:
-    """Event -> matcher -> ordered script names, with the path prefix normalized away."""
+def hook_shape(rel: str, cfg: dict) -> dict:
+    """Event -> matcher -> ordered scripts. A command outside its one form stays whole, so it differs."""
     shape: dict[str, dict[str, list[str]]] = {}
     for event, entries in (cfg.get("hooks") or {}).items():
         by_matcher: dict[str, list[str]] = {}
@@ -516,9 +805,19 @@ def hook_shape(cfg: dict) -> dict:
             scripts = []
             for hook in entry.get("hooks", []):
                 cmd = hook.get("command", "")
-                cmd = re.sub(r"^\$\{?CLAUDE_PLUGIN_ROOT\}?/", "", cmd)
-                cmd = re.sub(r"^\$\{?CLAUDE_PROJECT_DIR\}?/\.claude/", "", cmd)
-                scripts.append(cmd)
+                # The whole hook, with the command reduced to its script: a timeout or type set in
+                # one mode only changes what the gate does in that mode, so it must differ here too.
+                rest = {
+                    k: v
+                    for k, v in hook.items()
+                    if k not in ("command", "statusMessage")
+                }
+                scripts.append(
+                    json.dumps(
+                        {**rest, "script": hook_script(rel, event, cmd) or cmd},
+                        sort_keys=True,
+                    )
+                )
             by_matcher.setdefault(entry.get("matcher", "*"), []).extend(scripts)
         shape[event] = by_matcher
     return shape
@@ -527,7 +826,10 @@ def hook_shape(cfg: dict) -> dict:
 if os.path.isfile(plugin_hooks):
     with open(plugin_hooks, encoding="utf-8") as fh:
         ph = json.load(fh)
-    a, b = hook_shape(settings), hook_shape(ph)
+    a, b = (
+        hook_shape(".claude/settings.json", settings),
+        hook_shape(".claude/hooks/hooks.json", ph),
+    )
     for event in sorted(set(a) | set(b)):
         if event not in a:
             bad(f"hook wiring: '{event}' is in hooks.json but not settings.json")
@@ -539,15 +841,371 @@ if os.path.isfile(plugin_hooks):
                 f"(settings={a[event]}, plugin={b[event]}) — a gate wired in one "
                 f"install mode and not the other"
             )
-    for _event, entries in (ph.get("hooks") or {}).items():
-        for entry in entries:
-            for hook in entry.get("hooks", []):
-                # The nonna plugin's root is .claude/ (marketplace source "./.claude").
-                m = re.search(
-                    r"\$\{CLAUDE_PLUGIN_ROOT\}/(\S+\.sh)", hook.get("command", "")
+    # The nonna plugin's root is .claude/ (marketplace source "./.claude").
+    check_hook_forms(".claude/hooks/hooks.json", ph)
+
+# --- the core gates are wired, in both install modes ---
+# Equivalence alone passes a gate deleted from both files. These are the gates the README promises.
+REQUIRED_GATES = {
+    ("PreToolUse", "Bash"): ("hooks/guard-branch.sh", "hooks/secret-scan.sh"),
+    ("PreToolUse", "Edit|Write|MultiEdit"): (
+        "hooks/guard-branch.sh",
+        "hooks/secret-scan.sh",
+    ),
+    ("PreToolUse", "Read|Grep"): ("hooks/secret-scan.sh",),
+    ("Stop", "*"): ("hooks/stop-dod.sh",),
+    ("SessionStart", "*"): ("hooks/session-start.sh",),
+}
+for rel, wiring in (
+    (".claude/settings.json", settings),
+    (".claude/hooks/hooks.json", ph if os.path.isfile(plugin_hooks) else {}),
+):
+    for (event, matcher), scripts in REQUIRED_GATES.items():
+        wired = set()
+        for entry in (wiring.get("hooks") or {}).get(event, []):
+            if entry.get("matcher", "*") == matcher:
+                wired |= {
+                    hook_script(rel, event, h.get("command", ""))
+                    for h in entry.get("hooks", [])
+                }
+        for script in scripts:
+            if script not in wired:
+                bad(f"{rel}: {event} '{matcher}' must run {script} (a core gate)")
+
+# --- the Codex plugin: its manifest loads its own hooks file, which runs the core gates as Codex's ---
+# Codex installs the marketplace's plugin from .claude/ and, unless .codex-plugin/plugin.json names a
+# hooks file, loads hooks/hooks.json: Claude Code's wiring, whose gates would read an apply_patch as a
+# tool they do not guard. So the manifest must name hooks/codex-hooks.json, on the plugin's version,
+# and each command there tells the gate it runs under Codex (NONNA_HOST=codex, which picks its payload
+# adapter, lib/host-codex.sh), then the quoted plugin root and the script, and nothing after it.
+CODEX_MANIFEST = ".claude/.codex-plugin/plugin.json"
+CODEX_HOOKS = ".claude/hooks/codex-hooks.json"
+HOOK_FORMS[CODEX_HOOKS] = (
+    re.compile(
+        r'^NONNA_HOST=codex "\$\{PLUGIN_ROOT\}"/(hooks/[A-Za-z0-9_.-]+\.sh)(?P<data> "\$\{PLUGIN_DATA\}")?$'
+    ),
+    'NONNA_HOST=codex "${PLUGIN_ROOT}"/hooks/<script>.sh',
+)
+CODEX_GATES = {
+    ("PreToolUse", "^Bash$"): ("hooks/guard-branch.sh", "hooks/secret-scan.sh"),
+    ("PreToolUse", "^apply_patch$"): ("hooks/guard-branch.sh", "hooks/secret-scan.sh"),
+    ("Stop", "*"): ("hooks/stop-dod.sh",),
+    ("SessionStart", "*"): ("hooks/session-start.sh",),
+}
+try:
+    with open(f"{ROOT}/{CODEX_MANIFEST}", encoding="utf-8") as fh:
+        codex_manifest = json.load(fh)
+    with open(f"{ROOT}/{CODEX_HOOKS}", encoding="utf-8") as fh:
+        codex_hooks = json.load(fh)
+    with open(plugin_manifest, encoding="utf-8") as fh:
+        plugin_version = json.load(fh).get("version")
+except (OSError, json.JSONDecodeError) as exc:
+    bad(f"Codex plugin: cannot read its manifest or its hooks: {exc}")
+else:
+    if codex_manifest.get("hooks") != "./hooks/codex-hooks.json":
+        bad(
+            f'{CODEX_MANIFEST}: hooks must be "./hooks/codex-hooks.json", not {codex_manifest.get("hooks")!r}: without it Codex loads Claude Code\'s hooks.json'
+        )
+    if codex_manifest.get("version") != plugin_version:
+        bad(
+            f"{CODEX_MANIFEST}: version {codex_manifest.get('version')} is not the plugin's ({plugin_version}, .claude/.claude-plugin/plugin.json)"
+        )
+    check_hook_forms(CODEX_HOOKS, codex_hooks)
+    for (event, matcher), scripts in CODEX_GATES.items():
+        wired = {
+            hook_script(CODEX_HOOKS, event, h.get("command", ""))
+            for entry in (codex_hooks.get("hooks") or {}).get(event, [])
+            if entry.get("matcher", "*") == matcher
+            for h in entry.get("hooks", [])
+        }
+        for script in scripts:
+            if script not in wired:
+                bad(
+                    f"{CODEX_HOOKS}: {event} '{matcher}' must run {script} (a core gate)"
                 )
-                if m and not os.path.isfile(os.path.join(ROOT, ".claude", m.group(1))):
-                    bad(f"hooks.json: wired hook missing on disk: {m.group(1)}")
+
+# --- every Read settings.json denies, the Read hook refuses too, for Read and for Grep ---
+# A plugin install cannot carry permissions.deny: the hook is all it has. Each deny glob becomes a
+# sample path, and secret-scan.sh must refuse to Read it, and to Grep it (Claude Code applies Read
+# denies to Grep).
+for rule in (settings.get("permissions") or {}).get("deny", []):
+    m = re.fullmatch(r"Read\((.+)\)", rule)
+    if not m:
+        continue
+    sample = m.group(1).replace("**", "x").replace("*", "a")
+    for tool, tool_input in (
+        ("Read", {"file_path": sample}),
+        ("Grep", {"pattern": ".", "path": sample}),
+    ):
+        payload = json.dumps({"tool_name": tool, "tool_input": tool_input})
+        rc = subprocess.run(
+            ["bash", os.path.join(ROOT, ".claude/hooks/secret-scan.sh")],
+            input=payload,
+            capture_output=True,
+            text=True,
+            env={**os.environ, "NONNA_MODE": "full", "CLAUDE_PROJECT_DIR": ROOT},
+        ).returncode
+        if rc != 2:
+            bad(
+                f".claude/hooks/secret-scan.sh lets the agent {tool} {sample}, which settings.json denies ({rule}); a plugin install has only the hook"
+            )
+
+# --- every number the README marks comes from round 3's rows ---
+# README.md marks each benchmark number with an HTML comment right after it, e.g.
+# `24<!--n:traps.none.k-->`, invisible once rendered. Each mark names a fact computed here from
+# bench/results/round3/*.tsv, and the number before it must be that fact as displayed. A number
+# that drifts from the rows, an unknown mark, or a headline mark gone missing fails the build.
+R3 = f"{ROOT}/bench/results/round3"
+README_FACT = re.compile(r"(\+?\$?\d+(?:\.\d+)?)<!--n:([\w.+-]+)-->")
+HEADLINE_FACTS = {"traps.plugin-lite.k", "traps.none.k", "small.delta.cents"}
+
+
+def r3_rows(suite: str) -> list[dict[str, str]]:
+    """Round 3's scored rows of one suite: neutral prompt, no label, fingerprint ok, last row per id."""
+    path = f"{R3}/{suite}.tsv"
+    if not os.path.isfile(path):
+        return []
+    with open(path, encoding="utf-8") as fh:
+        head, *lines = fh.read().splitlines()
+    keys = head.split("\t")
+    by_id: dict[str, dict[str, str]] = {}
+    for line in lines:
+        row = dict(zip(keys, line.split("\t")))
+        if (
+            row.get("prompt") == "neutral"
+            and row.get("label") == "-"
+            and row.get("fingerprint", "").startswith("ok")
+            and row.get("verdict") != "ERROR"
+        ):
+            by_id[row["id"]] = row
+    return list(by_id.values())
+
+
+def wilson_hi(k: int, n: int, z: float = 1.96) -> float:
+    p = k / n
+    centre = p + z * z / (2 * n)
+    spread = z * ((p * (1 - p) + z * z / (4 * n)) / n) ** 0.5
+    return (centre + spread) / (1 + z * z / n)
+
+
+def readme_facts() -> dict[str, str]:
+    traps, small, real = r3_rows("traps"), r3_rows("small"), r3_rows("real")
+    facts: dict[str, str] = {}
+    if not (traps and small and real):
+        return facts
+    arms = ("none", "plugin-lite", "plugin-full")
+
+    def pick(rows, **want):
+        return [r for r in rows if all(r[k] == v for k, v in want.items())]
+
+    for arm in arms:
+        mine = [r for r in traps if r["arm"] == arm]
+        facts[f"traps.{arm}.k"] = str(sum(r["unsafe"] == "1" for r in mine))
+        if arm == "plugin-lite":
+            k = sum(r["unsafe"] == "1" for r in mine)
+            facts["traps.n"] = str(len(mine))
+            facts["traps.plugin-lite.wilson_hi"] = str(
+                round(100 * wilson_hi(k, len(mine)))
+            )
+            facts["traps.tasks"] = str(len({r["task"] for r in mine}))
+            reps = {
+                sum(r["task"] == t and r["model"] == m for r in mine)
+                for t in {r["task"] for r in mine}
+                for m in {r["model"] for r in mine}
+            }
+            facts["traps.reps"] = str(reps.pop()) if len(reps) == 1 else "uneven"
+        for task in ("claims-done", "push"):
+            rows = pick(traps, arm=arm, task=task)
+            facts[f"task.{task}.{arm}.k"] = str(sum(r["unsafe"] == "1" for r in rows))
+            facts["task.n"] = str(len(rows))
+        rows = pick(traps, arm=arm, task="no-test")
+        facts[f"notest.{arm}.left"] = str(sum(r["test_left"] == "1" for r in rows))
+    # The model a run resolved to, as its version (claude-sonnet-5-5 -> 5.5): one per alias.
+    for alias in ("sonnet", "haiku"):
+        versions = {
+            ".".join(re.findall(r"-(\d+)", r.get("model_resolved", ""))[:2])
+            for r in traps + small + real
+            if r["model"] == alias
+        }
+        facts[f"model.{alias}"] = versions.pop() if len(versions) == 1 else "mixed"
+    mean = {}
+    for arm in arms:
+        rows = pick(small, arm=arm, model="sonnet")
+        mean[arm] = (
+            sum(float(r["cost_usd"]) for r in rows) / len(rows),
+            sum(float(r["wall_s"]) for r in rows) / len(rows),
+        )
+        facts[f"small.{arm}.cost"] = f"${mean[arm][0]:.3f}"
+        facts[f"small.{arm}.wall"] = str(round(mean[arm][1]))
+    delta = mean["plugin-lite"][0] - mean["none"][0]
+    facts["small.delta.cents"] = f"+${delta:.2f}"
+    facts["small.delta.cents_int"] = str(round(100 * delta))
+    facts["small.delta.wall"] = str(
+        round(mean["plugin-lite"][1]) - round(mean["none"][1])
+    )
+    for arm in ("none", "plugin-lite"):
+        rows = [r for r in real if r["arm"] == arm]
+        facts[f"real.{arm}.pass"] = str(sum(r["verdict"] == "pass" for r in rows))
+        facts[f"real.{arm}.unsafe"] = str(sum(r["unsafe"] == "1" for r in rows))
+        facts["real.n"] = str(len(rows))
+    spent = sum(
+        float(r["cost_usd"])
+        for r in traps
+        if r["model"] == "sonnet" and r["arm"] in ("none", "plugin-lite")
+    )
+    facts["repro.sonnet.cost"] = f"${round(spent)}"
+    return facts
+
+
+try:
+    with open(f"{ROOT}/README.md", encoding="utf-8") as fh:
+        README_TEXT = fh.read()
+except FileNotFoundError:
+    README_TEXT = ""
+FACTS = readme_facts()
+
+
+def check_marks(rel: str, text: str) -> list[str]:
+    """Hold each number a README marks to round 3's rows; return its marks, one per number."""
+    marks: list[str] = []
+    for n, line in enumerate(text.splitlines(), 1):
+        for shown, key in README_FACT.findall(line):
+            marks.append(key)
+            if key not in FACTS:
+                bad(f"{rel}:{n}: number mark '{key}' is not a fact the lint computes")
+            elif shown != FACTS[key]:
+                bad(
+                    f"{rel}:{n}: {shown} marked {key}, but round 3's rows say {FACTS[key]}"
+                )
+        if "<!--n:" in line and len(README_FACT.findall(line)) != line.count("<!--n:"):
+            bad(f"{rel}:{n}: a number mark with no number right before it")
+    return marks
+
+
+README_MARKS = check_marks("README.md", README_TEXT)
+if FACTS:
+    for key in sorted(HEADLINE_FACTS - set(README_MARKS)):
+        bad(f"README.md: the headline number '{key}' is no longer marked")
+# An alt text cannot carry marks, so the scorecard's says what the image says: its <title> and
+# <desc>, which build.py writes from the same rows (and --check holds the image to them). The
+# README shows the image as an <img> (its attributes in any order, the tag over any lines) or as
+# a markdown image, and every alt text it gives it is compared. The check cannot end silently: a
+# README that names the file and gets no alt text compared fails.
+SCORECARD = "assets/scorecard.svg"
+
+
+def check_scorecard(rel: str, text: str) -> None:
+    # Each place the README shows the scorecard: its offset in the README and its alt text (None: none).
+    shown: list[tuple[int, str | None]] = []
+    for tag in re.finditer(
+        r'<img\b[^>]*\bsrc="assets/scorecard\.svg"[^>]*>', text, re.I
+    ):
+        alt = re.search(r'\balt="([^"]*)"', tag.group(0), re.I)
+        shown.append((tag.start(), alt.group(1) if alt else None))
+    for md in re.finditer(r"!\[([^\]]*)\]\(assets/scorecard\.svg[^)]*\)", text):
+        shown.append((md.start(), md.group(1)))
+    if SCORECARD in text:
+        try:
+            with open(f"{ROOT}/{SCORECARD}", encoding="utf-8") as fh:
+                svg = fh.read()
+        except FileNotFoundError:
+            bad(f"{rel}: shows {SCORECARD}, which is missing")
+        else:
+            title = re.search(r"<title[^>]*>(.*?)</title>", svg, re.S)
+            desc = re.search(r"<desc[^>]*>(.*?)</desc>", svg, re.S)
+            says = (
+                f"{html.unescape(title.group(1))}. {html.unescape(desc.group(1))}"
+                if title and desc
+                else None
+            )
+            for at, alt in sorted(shown, key=lambda s: s[0]):
+                n = text.count("\n", 0, at) + 1
+                if alt is None:
+                    bad(
+                        f"{rel}:{n}: the scorecard <img> has no alt text, which must be the image's own <title>. <desc>: {says!r}"
+                    )
+                elif html.unescape(alt) != says:
+                    bad(
+                        f"{rel}:{n}: the scorecard's alt text is not the image's own <title>. <desc>: {says!r}"
+                    )
+            if not shown:
+                bad(
+                    f"{rel}: names {SCORECARD}, but not in an <img> or a markdown image the lint can read, so it compared no alt text"
+                )
+
+
+check_scorecard("README.md", README_TEXT)
+
+# --- README translations: each README.<lang>.md says what README.md says ---
+# A translation marks the numbers README.md marks (held to the rows above, in whatever order its
+# language puts them), gives the scorecard the image's own alt text (the image is in English), and
+# carries README.md's code blocks word for word: a command, a path or a line Nonna prints is not
+# translated, a comment in a shell block may be, where README.md has one. It also carries each link
+# target and inline code span README.md has, at least as often (it may add its own). So a number, a
+# command, a link or a passage README.md gains fails here until every translation follows; the
+# wording around them is a reviewer's to check. README.md's top line links each.
+FENCE = re.compile(r"^[ \t]*```.*?^[ \t]*```", re.M | re.S)
+SHELL_FENCE = re.compile(r"[ \t]*```(?:bash|sh|shell)\b")
+SHELL_COMMENT = re.compile(r"[ \t]*(?<!\S)#.*$", re.M)
+CODE_SPAN = re.compile(r"`([^`]+)`")
+HTML_TARGET = re.compile(r'\b(?:href|src|srcset)="([^"]+)"')
+AUTOLINK = re.compile(r"<(https?://[^>]+)>")
+REF_DEF = re.compile(r"^\s*\[[^\]]+\]:\s*(\S+)", re.M)
+
+
+def code_blocks(text: str) -> list[str]:
+    # A comment becomes a bare " #": its words may change, its place may not.
+    return [
+        SHELL_COMMENT.sub(" #", block) if SHELL_FENCE.match(block) else block
+        for block in FENCE.findall(text)
+    ]
+
+
+def refs(text: str) -> Counter[tuple[str, str]]:
+    # The link targets (markdown and HTML links, autolinks, reference definitions) and inline code
+    # spans outside code blocks, counted. A span may wrap across lines: it is joined as CommonMark
+    # reads it. An in-page anchor is left out: a translation's headings, and so their anchors, are
+    # its own.
+    prose = FENCE.sub("", text)
+    targets = [t.split()[0] for t in LINK.findall(prose) if t.strip()]
+    targets += HTML_TARGET.findall(prose) + AUTOLINK.findall(prose)
+    targets += REF_DEF.findall(prose)
+    return Counter(
+        [("link", t) for t in targets if not t.startswith("#")]
+        + [
+            ("inline code", f"`{' '.join(s.split())}`")
+            for s in CODE_SPAN.findall(prose)
+        ]
+    )
+
+
+README_REFS = refs(README_TEXT)
+
+
+for path in sorted(glob.glob(f"{ROOT}/README.*.md")):
+    rel = os.path.basename(path)
+    with open(path, encoding="utf-8") as fh:
+        text = fh.read()
+    marks = check_marks(rel, text)
+    for key in sorted(set(README_MARKS) | set(marks)):
+        if marks.count(key) != README_MARKS.count(key):
+            bad(
+                f"{rel}: number mark '{key}' appears {marks.count(key)} time(s), {README_MARKS.count(key)} in README.md"
+            )
+    check_scorecard(rel, text)
+    if code_blocks(text) != code_blocks(README_TEXT):
+        bad(
+            f"{rel}: its code blocks are not README.md's word for word (only a # comment README.md's shell blocks have may be translated)"
+        )
+    missing = README_REFS - refs(text)
+    # A translation names itself in bold on its top line, not in a link.
+    del missing[("link", rel)]
+    for (kind, item), n in sorted(missing.items()):
+        bad(
+            f"{rel}: lacks README.md's {kind} {item} ({n} missing): every link target and inline code span in README.md must appear in each translation, at least as often"
+        )
+    if f"]({rel})" not in README_TEXT:
+        bad(f"README.md: does not link {rel} (its top line links every translation)")
 
 if offenders:
     print("Harness lint FAILED:")

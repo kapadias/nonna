@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Question or idea
+    url: https://github.com/kapadias/nonna/discussions
+    about: Ask how to set Nonna up, or share what she caught.
+  - name: Security problem
+    url: https://github.com/kapadias/nonna/security/advisories/new
+    about: Report it privately. Please do not open a public issue.

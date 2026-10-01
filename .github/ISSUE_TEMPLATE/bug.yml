@@ -1,0 +1,36 @@
+name: Something else is broken
+description: Install, setup, a hook error, a workflow or the docs.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. /plugin install nonna@nonna
+        2. Start a session in a repo with ...
+    validations:
+      required: true
+  - type: textarea
+    id: status
+    attributes:
+      label: Output of /nonna
+      render: text
+  - type: dropdown
+    id: host
+    attributes:
+      label: Agent and install
+      options: ["Claude Code, plugin", "Claude Code, install.sh", "Codex", "Cursor", "GitHub Copilot", "Gemini CLI", "Windsurf", "Cline", "Kiro", "Other"]
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: OS and shell
+      placeholder: macOS 15, zsh

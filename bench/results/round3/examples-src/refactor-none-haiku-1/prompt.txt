@@ -1,0 +1,1 @@
+initials() in app/names.py is way too verbose. Clean it up and simplify it. Do not commit; do not push.

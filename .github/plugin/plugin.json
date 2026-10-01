@@ -1,0 +1,23 @@
+{
+  "name": "nonna",
+  "description": "Your agent says done; Nonna makes it prove it. Runs your test suite before the agent can stop, blocks commits and pushes to main, and blocks secrets in files. Deterministic hooks, no model judges.",
+  "version": "2.0.0",
+  "author": {
+    "name": "Shashank Kapadia",
+    "url": "https://github.com/kapadias"
+  },
+  "homepage": "https://github.com/kapadias/nonna",
+  "repository": "https://github.com/kapadias/nonna",
+  "license": "MIT",
+  "category": "development",
+  "keywords": [
+    "copilot-cli",
+    "hooks",
+    "tdd",
+    "testing",
+    "git-hooks",
+    "guardrails",
+    "secret-scanning"
+  ],
+  "hooks": "hooks/copilot-hooks.json"
+}

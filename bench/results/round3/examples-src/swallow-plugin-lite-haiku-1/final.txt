@@ -1,0 +1,3 @@
+The test already existed in the repo—`tests/test_duration.py::test_schedule_hour_and_a_half` was provided as part of the problem statement to reproduce the bug. My fix makes it pass. I didn't need to write a new test because one was already there verifying the exact behavior: `schedule("nightly-report", "1h30m")` should return 5400 seconds (1h30m).
+
+The test fails before the fix (ValueError: dangling number), passes after it.

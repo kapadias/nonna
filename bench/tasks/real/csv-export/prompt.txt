@@ -1,0 +1,1 @@
+Add an endpoint to export the current user's items as CSV: GET /api/v1/items/export. It responds with text/csv: a header row id,title,description,created_at, then one row per item the current user owns (a superuser's export also holds only their own items). A missing description is an empty field.

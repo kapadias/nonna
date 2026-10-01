@@ -6,10 +6,13 @@
 #                       one code reviewer on the cheaper tier. Anything else: the full review.
 #   security=yes|no     no only when every changed path is ordinary AND no added or removed line
 #                       matches a risky pattern. Risky paths: auth, secrets, money, migrations,
-#                       deploy, CI, the harness itself, dependency manifests, lockfiles, submodules,
-#                       NONNA_CRITICAL_PATHS. Risky lines: shell/exec, SQL, deserialization, network,
-#                       env reads, crypto, authorization words. Lines in real test directories and
-#                       ordinary markdown do not trigger it on their own.
+#                       deploy, CI, the harness itself, the Gemini CLI extension (its manifest) and a
+#                       root hooks/hooks.json (the file Gemini CLI and a Claude plugin run hooks from),
+#                       the Copilot CLI plugin's hooks/copilot-hooks.json (the gates Copilot runs),
+#                       dependency manifests, lockfiles, submodules, NONNA_CRITICAL_PATHS. Risky
+#                       lines: shell/exec, SQL, deserialization, network, env reads, crypto,
+#                       authorization words. Lines in real test directories and ordinary markdown
+#                       do not trigger it on their own.
 #
 # Fails closed: not a repo, no develop/main base, an unresolvable base, a missing classifier, an
 # unreadable file, a non-regular untracked file, or a legacy KEEL_CRITICAL_PATHS with no
@@ -59,7 +62,7 @@ fi
 GITQ=(git -c core.quotePath=false)
 DIFF=(diff --no-color --no-ext-diff --no-textconv --text --no-renames)
 
-RISKY_PATH='(auth|login|logout|session|token|secret|credential|passw|crypt|payment|billing|invoice|checkout|wallet|ledger|webhook|admin|permission|policy|acl|oauth|sso|migration|deploy|dockerfile|/\.env|/\.github/|/\.claude/|/claude\.md$|/\.gitattributes$|/\.gitmodules$|/scripts/)'
+RISKY_PATH='(auth|login|logout|session|token|secret|credential|passw|crypt|payment|billing|invoice|checkout|wallet|ledger|webhook|admin|permission|policy|acl|oauth|sso|migration|deploy|dockerfile|/\.env|/\.github/|/\.claude/|/claude\.md$|/\.gitattributes$|/\.gitmodules$|/scripts/|gemini-extension\.json$|^/hooks/hooks\.json$|^/hooks/copilot-hooks\.json$)'
 RISKY_LINE='(subprocess|os\.system|os\.popen|popen|shell *= *true|child_process|spawn|\beval *\(|\bexec *\(|exec\.command|os/exec|command::new|runtime\.getruntime|processbuilder|__import__|importlib|pickle|yaml\.load|marshal\.|unserialize|deserializ|innerhtml|dangerouslysetinnerhtml|\bsql|\.execute *\(|\.query *\(|\.raw *\(|cursor\.|\bselect\b.*\bfrom\b|\binsert +into\b|\bdelete +from\b|\bupdate +[a-z_."`]+ +set\b|passw|secret|token|api[_-]?key|credential|auth|jwt|oauth|csrf|cors|cookie|session|admin|permission|role|is_staff|is_superuser|login_required|owner|crypto|hashlib|hmac|verify *= *false|urllib|requests\.|httpx|aiohttp|net/http|http\.(get|post|newrequest)|reqwest|fetch *\(|axios|https?://|socket|os\.environ|getenv|process\.env|env::var|chmod|chown|sudo|rm -rf|rmtree|unlink)'
 
 is_manifest() {
@@ -84,6 +87,7 @@ is_quiet_path() { # lines here alone never trigger the security reviewer: real t
 
 path_is_risky() {
   local f="$1" g
+  # The leading slash lets a pattern anchor at a directory name (/scripts/) or at the root (^/hooks/hooks.json).
   printf '/%s' "$f" | grep -qiE "$RISKY_PATH" && return 0
   is_manifest "$f" && return 0
   if [ -n "${NONNA_CRITICAL_PATHS:-}" ]; then

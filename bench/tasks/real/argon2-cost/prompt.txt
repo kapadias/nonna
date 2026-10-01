@@ -1,0 +1,1 @@
+A security review asked us to raise the Argon2 time cost for password hashes from 3 to 5 passes; memory and parallelism stay as they are. Users with an existing hash must still be able to log in, and their stored hash should move to the new cost when they do.

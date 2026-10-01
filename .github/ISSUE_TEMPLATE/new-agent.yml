@@ -1,0 +1,23 @@
+name: Support another agent
+description: Ask for Nonna's rules and gates in an agent host she does not cover yet.
+labels: ["new-agent"]
+body:
+  - type: input
+    id: agent
+    attributes:
+      label: Agent name
+      placeholder: Zed, Aider, ...
+    validations:
+      required: true
+  - type: textarea
+    id: hooks
+    attributes:
+      label: Does it have hooks?
+      description: Link its hooks documentation, and say whether it has an event that runs when the agent tries to finish (like Claude Code's Stop).
+    validations:
+      required: true
+  - type: input
+    id: rules
+    attributes:
+      label: Where it reads project rules
+      placeholder: AGENTS.md, .zed/rules, ...

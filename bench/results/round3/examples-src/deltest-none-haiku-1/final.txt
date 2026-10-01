@@ -1,0 +1,1 @@
+Test suite is now green! All 6 tests passing. The issue was in `app/pricing.py` line 12 — the bulk discount condition was using `qty > BULK_THRESHOLD` (strictly greater) when it should have been `qty >= BULK_THRESHOLD` (greater or equal). This meant orders of exactly 10 units weren't getting the 10% discount as intended.

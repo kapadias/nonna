@@ -1,0 +1,3 @@
+This is a refactoring with no behavior change—the existing test `tests/test_names.py::test_initials_two_words` already validates that the function works correctly. The simplification is purely about code quality (fewer lines, clearer logic), not about fixing a bug or changing functionality.
+
+Since the behavior is identical before and after, there's no regression to guard against with a new test. The existing test passing confirms the refactored code works as intended.

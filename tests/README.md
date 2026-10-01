@@ -8,17 +8,20 @@ itself: if a gate is silently wrong, CI goes red.
 
 ## What runs
 
-| File                                 | What it proves                                                         | How                                            |
-| ------------------------------------ | ---------------------------------------------------------------------- | ---------------------------------------------- |
-| [`run.sh`](run.sh)                   | **Every gate blocks vs. allows correctly** — gate golden tests.        | golden tests over real hook/script invocations |
-| [`harness_lint.py`](harness_lint.py) | **The harness is internally consistent** — structural self-validation. | static checks over `.claude/` + docs           |
+| File                                   | What it proves                                                         | How                                            |
+| -------------------------------------- | ---------------------------------------------------------------------- | ---------------------------------------------- |
+| [`run.sh`](run.sh)                     | **Every gate blocks vs. allows correctly** — gate golden tests.        | golden tests over real hook/script invocations |
+| [`harness_lint.py`](harness_lint.py)   | **The harness is internally consistent** — structural self-validation. | static checks over `.claude/` + docs           |
+| [`test_assets.py`](test_assets.py)     | **The launch images match the data** — numbers, lettering, SVGs.       | unit tests, standard library only              |
+| [`windows-probe.sh`](windows-probe.sh) | **What native Windows does to the hooks** — facts, never a verdict.    | run in Git Bash; CI's Windows job prints it    |
 
 ### `run.sh` — gate golden tests
 
 Exercises each deterministic gate with fixed inputs and asserts the exit code:
 
-- **secret detection** (`lib/secret-patterns.sh`): catches AWS/GitHub/Slack/Google/Stripe/OpenAI
-  keys and hardcoded assignments; ignores placeholders and env-var refs.
+- **secret detection** (`lib/secret-patterns.sh`): catches AWS/GitHub/Slack/Google/Stripe/OpenAI/
+  Anthropic keys and hardcoded assignments; ignores placeholders, env-var refs, key prefixes in
+  prose and short samples. A property test holds the tail bound for every prefixed key.
 - **secret-scan** (PreToolUse): blocks a write that introduces a secret and Bash
   reads/copies of secret files (segment-anchored, jq-independent); allows clean
   writes and sample secrets under `test/fixture/example` paths.
@@ -29,7 +32,16 @@ Exercises each deterministic gate with fixed inputs and asserts the exit code:
   update or that introduces a secret (no fixture exemption at push time); allows a
   synced push.
 - **session-start**: emits context, auto-installs the pre-push hook, and warns
-  instead of overwriting a foreign one.
+  instead of overwriting a foreign one. When `ln -s` only copies the script (Git Bash), it
+  removes the copy and says the gate is not enforced; `install.sh` does the same and exits 1. A
+  byte copy of her script already in `.git/hooks` is named as a copy (session start warns,
+  `install.sh` exits 1, `/nonna status` gives it no check mark, `/nonna uninstall` says to delete
+  it) and never deleted, and is not taken for a hook that chains hers: only a line of code that
+  runs her script is a chain, not a comment that names it (her pre-push script does, in its
+  install comment).
+- **.gitattributes**: a clone with `core.autocrlf=true` holds no CR in a script, an awk file or a
+  markdown file; a file committed with CRLF keeps it and the clone stays clean; every tracked
+  `*.sh` and `*.awk` resolves to `eol: lf`.
 - **check-review** (review verdict gate): blocks on `request_changes`, any
   CRITICAL/HIGH, or an out-of-schema verdict/severity; extracts one fenced json
   block; fails closed on invalid JSON — same on the jq and no-jq paths.
@@ -42,14 +54,22 @@ Exercises each deterministic gate with fixed inputs and asserts the exit code:
 - **review-lanes** (review proportionality, ADR-0009): a fast-lane-sized, ordinary diff takes the
   light lane with no security review. Risky added **or removed** code (Python, Go, Node shell calls,
   a deleted auth check), a deleted risky file, a dependency manifest, harness markdown, a
-  `NONNA_CRITICAL_PATHS` match, a non-ASCII file name, a subdirectory cwd and an untracked symlink
-  all end in security review. No `develop`/`main` base, a bad base, no repo, a missing classifier
-  or a legacy `KEEL_CRITICAL_PATHS` alone fail closed.
+  `NONNA_CRITICAL_PATHS` match, the Gemini extension's manifest and a root `hooks/hooks.json` (in
+  any letter case), a non-ASCII file name, a subdirectory cwd and an untracked symlink all end in
+  security review; an ordinary root `agents/` file does not. No `develop`/`main` base, a bad base,
+  no repo, a missing classifier or a legacy `KEEL_CRITICAL_PATHS` alone fail closed.
 - **dep-audit** (supply-chain): exits non-zero when a required scanner is missing
   (a skipped scan is not a pass).
 - **tests say no** (Stop and pre-push): when code changed, both run the project's own test
   command (detected, or `NONNA_TEST_CMD`) and refuse on red; the Stop hook blocks once, then lets
   an agent that cannot fix it stop and say so.
+- **test-command detection** (`lib/tests.sh`): per language (Ruby, PHP, Java and Kotlin, .NET,
+  Elixir) the exact command, nothing when the runner, or the JVM or php a wrapper script needs, is off
+  `PATH` (the test owns `PATH` with stand-in runners, so nothing real runs), the fall-through to
+  `package.json`, `go.mod` and `Cargo.toml`, and the order where two ecosystems meet: pytest, the back
+  ends, `package.json`, `go.mod`, `Cargo.toml`. A property test (`detect_property.py`) builds seeded
+  random piles of marker files and runners and wants what the first matching row of a table says, with
+  every row reached; a check proves detection started no runner.
 - **stop-dod** (Stop): blocks a turn ending with tracked code changed and
   `docs/STATUS.md` untouched; lets doc-only edits, untracked scratch, and a clean
   tree end freely; fails **open** outside a git repo, because a Stop hook that
@@ -85,6 +105,45 @@ Exercises each deterministic gate with fixed inputs and asserts the exit code:
   bleed; fails closed on an absent version, an empty version, a missing
   changelog, a whitespace-only section, and a version matched literally
   rather than as a regex.
+- **release.yml** (the tag must agree with every manifest): the job's own script runs on a copy of
+  the plugin, marketplace and Gemini extension manifests. A tag all three agree with passes; a tag
+  one of them disagrees with fails, and the message names the first that does; a tree with no
+  extension manifest fails closed.
+- **gemini-extension.json** (what Gemini CLI loads): the file `contextFileName` names is generated
+  from the lite rules, says `install.sh --host gemini` adds the git hooks and that the extension
+  installs none, carries lite's rules, and holds no `@` (Gemini CLI reads `@path` in a context file
+  as an import). The cases that break the manifest are under the linter, below.
+- **Copilot CLI plugin** (`hooks/copilot-hooks.json`, `lib/host-copilot.sh`, ADR-0015): each gate
+  runs as Copilot's hooks file wires it, on Copilot's documented payloads. `git commit` on `main`, a
+  new file holding a key, an edit of `.git/config`, a view or grep of `.env`, an `apply_patch` that
+  adds a key, and a command sent to a running shell are refused, the reason in Copilot's
+  `permissionDecisionReason`; a clean edit and a clean patch pass; `agentStop` on a red suite
+  blocks, once; session start records the test command and the session's start, wires the git hooks,
+  and answers in `additionalContext`. A Claude-named decoy beside Copilot's own key never stands in
+  for it, and a grep over several paths is judged path by path, up to 32; more are refused. An
+  `apply_patch`, raw or as `input` or `patch`, is judged a file at a time by both guards: an update
+  of `.git/config`, a second file under `.git/hooks/`, and a key in a second file after a fixture
+  are refused, with jq and without; a clean patch over three files passes; and what the patch reader
+  refuses (outside its grammar, over 256 KB, over 200 files) is refused. An equivalence test runs
+  Claude Code's own Write, Edit, Read and Grep goldens rewritten in Copilot's names, and every order
+  of a several-path grep, and wants the same exit codes. Writes to Copilot's repository settings and
+  hooks are refused under either agent. A call not in Copilot's shape (arguments that are a string
+  or a list, JSON in a string, a path that is a list, paths that nest or are empty, a file_text,
+  new_str or patch text that is not a string, an Edit with no path and no patch, truncated JSON) is
+  refused. A Claude Code payload passes the adapter byte for byte, nothing is translated without
+  `NONNA_HOST=copilot`. Without jq, what the text cannot show safely is refused, a decoy object
+  before a Write's, an Edit's or a view's real path included, while Copilot's own calls still pass;
+  so is JSON jq cannot translate. A copy-in install's hooks under Copilot are pinned as they are
+  (untranslated). The hooks file, the manifests, and every command run from a path with a space are
+  checked too.
+- **assets/build.py** (the launch images): `run.sh` runs `test_assets.py`, then drives `--check` on
+  the standard library alone (`python3 -I -S`, as CI's lint job would). It passes on the real
+  tree, and on a copy that has had exactly one thing broken it fails, naming the file: an SVG
+  edited by hand, data that moved without a rebuild, a `traps.tsv` that disagrees with
+  `summary.json`, and a PNG that is missing, not a PNG, the wrong size, over the 1 MB budget or
+  rendered from a different SVG. A plain run rewrites the SVGs byte for byte; `--render` fails
+  without a browser, on a browser that fails or draws the wrong size, and with a stand-in browser
+  it renders and then passes `--check`.
 - **harness_lint itself** — see below.
 
 ### `harness_lint.py` — structural self-validation
@@ -97,12 +156,24 @@ skills missing a trigger, a side-effecting workflow that does not set
 wired hooks absent on disk, `settings.json` and `hooks.json` disagreeing about
 which gates are wired, dead intra-repo markdown links, backticked `docs/`
 references that do not exist, domain-specific vocabulary in a domain-agnostic
-harness, malformed plugin manifests, five token budgets (CLAUDE.md, per-rule,
-total always-on, `00-core.md`'s SessionStart-channel size, and the combined
-skill/agent description metadata), a ladder rung missing from either of its two
-copies, `/review` or `/sync` no longer wiring `check-debt.sh`, the review-inflation
-rule dropping out of `dev-process.md` or the severity rubric, and an adapted
-project's name anywhere but `README.md`.
+harness, malformed plugin manifests, a Gemini extension manifest whose context file the CLI cannot
+load or is not the generated one, whose version is not the plugin's, or that carries more than rules
+(another key, or a root `hooks/hooks.json`, `commands/`, `skills/`, `agents/` or `policies/`, in any
+letter case and of any type, a symlink included), five token budgets (CLAUDE.md, per-rule, total
+always-on, `00-core.md`'s SessionStart-channel size, and the combined skill/agent description
+metadata), a ladder rung missing from either of its two copies, `/review` or `/sync` no longer
+wiring `check-debt.sh`, the review-inflation rule dropping out of `dev-process.md` or the severity
+rubric, and an adapted project's name anywhere but `README.md`.
+
+### `test_assets.py` — the launch images
+
+`assets/build.py` builds the scorecard, the social preview and one card per trap task from
+`bench/results/round3`. Its tests hold the numbers to the verified round-3 values (bare agent 24 of
+64, Nonna lite 1 of 64; per task; Sonnet's mean cost) and to a tiny fixture, refuse data that
+disagrees with itself, find the `✗ Nonna` line in a hook response or a tool result, and lay text
+out from the committed glyph outlines. The banner's own lettering is the oracle: "nonna", the
+tagline, a pill and the footer come out of the same JSON **to the digit**, so the font and its
+weights are pinned rather than eyeballed.
 
 ### The linter is itself a gate
 
@@ -126,8 +197,14 @@ ADR-0005, a desynced `hooks.json` is blocked, and stripping
 ```bash
 bash tests/run.sh        # gate golden tests  (exit non-zero on any failure)
 python3 tests/harness_lint.py   # structural self-validation
+python3 tests/test_assets.py    # the launch images (run.sh runs it too)
 ```
 
 Both run in CI on every push and pull request (`.github/workflows/ci.yml`),
-alongside `shellcheck` over every script. Adopters wire their own
+alongside `shellcheck` over every script and `claude plugin validate --strict` on both
+manifests. `run.sh` also runs on a macOS runner under `/bin/bash` 3.2 with only Apple's tools on
+the PATH (no Homebrew), because the guards parse shell in bash and awk and those differ from
+Linux's. It runs a third time under Git Bash on Windows, in three legs, and there it only
+reports: 112 of 1279 checks fail there without native symlinks and 50 with them (run 36771120623), and
+[`docs/INSTALL.md`](../docs/INSTALL.md#windows) says which gates that costs. Adopters wire their own
 lint/type/test/coverage gate as additional jobs — see [`stacks/`](../stacks/).

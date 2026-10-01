@@ -1,14 +1,26 @@
 {
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
   "name": "nonna",
+  "description": "Nonna for Claude Code: your agent can't say done on a red test suite, commit to main, or write a secret into a file.",
   "owner": {
-    "name": "Shashank Kapadia"
+    "name": "Shashank Kapadia",
+    "url": "https://github.com/kapadias"
   },
   "plugins": [
     {
       "name": "nonna",
       "source": "./.claude",
-      "description": "Nonna: she doesn't care that it compiled. A Claude Code harness whose hooks and scripts make the agent test first, pass a machine-checked review, keep secrets and main safe, and keep the docs honest. Any language, any repository.",
-      "version": "1.0.0"
+      "description": "Runs your test suite before the agent is allowed to stop, and blocks commits to main and secrets in files. Deterministic hooks: no model decides.",
+      "version": "2.0.0",
+      "category": "development",
+      "keywords": [
+        "tdd",
+        "testing",
+        "hooks",
+        "git-hooks",
+        "guardrails",
+        "secrets"
+      ]
     }
   ]
 }

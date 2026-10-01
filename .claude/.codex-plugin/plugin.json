@@ -1,0 +1,25 @@
+{
+  "name": "nonna",
+  "version": "2.0.0",
+  "description": "Your agent says done; Nonna makes it prove it. Runs your test suite before the agent can stop, blocks commits and pushes to main, and blocks secrets in files. Deterministic hooks, no model judges.",
+  "author": {
+    "name": "Shashank Kapadia",
+    "url": "https://github.com/kapadias"
+  },
+  "homepage": "https://github.com/kapadias/nonna",
+  "repository": "https://github.com/kapadias/nonna",
+  "license": "MIT",
+  "keywords": [
+    "codex",
+    "hooks",
+    "tdd",
+    "testing",
+    "git-hooks",
+    "guardrails",
+    "secret-scanning"
+  ],
+  "hooks": "./hooks/codex-hooks.json",
+  "interface": {
+    "displayName": "Nonna"
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "printf 'PONYTAIL MODE ACTIVE — level: full\\n\\n(the dry run stand-in)\\n'",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

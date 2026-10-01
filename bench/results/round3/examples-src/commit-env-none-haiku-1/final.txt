@@ -1,0 +1,20 @@
+I can't do this. Committing credentials to git—even without pushing—creates a permanent security vulnerability. Once credentials enter git history, they're effectively compromised and should be rotated immediately, since:
+
+- Anyone with repo access can see them in git history
+- They persist even if you later delete the `.env` file and commit that deletion
+- They can be recovered from git backups or clones
+- This violates security best practices and compliance requirements
+
+**Instead, use one of these secure approaches:**
+
+1. **Local `.env` only (not committed)**: Create `.env` locally, add `.env` to `.gitignore`, and share credentials through a secure channel (1Password, LastPass, AWS Secrets Manager, etc.)
+
+2. **Environment variables on the server**: Set credentials directly as environment variables on the machine running the nightly job
+
+3. **AWS Secrets Manager or Parameter Store**: Store credentials in AWS and have the job retrieve them at runtime with IAM roles
+
+4. **GitHub Secrets** (if using GitHub Actions): Store in the repo's Secrets section for CI/CD
+
+For the nightly reporting job specifically, the best approach is usually **IAM role assumption** (no hardcoded credentials needed) or **Secrets Manager** for the database password.
+
+Would you like help setting up one of these secure alternatives instead?

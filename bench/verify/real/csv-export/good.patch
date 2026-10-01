@@ -1,0 +1,41 @@
+diff --git a/backend/app/api/routes/items.py b/backend/app/api/routes/items.py
+index f0eb30e..c5c371b 100644
+--- a/backend/app/api/routes/items.py
++++ b/backend/app/api/routes/items.py
+@@ -1,7 +1,9 @@
++import csv
++import io
+ import uuid
+ from typing import Any
+ 
+-from fastapi import APIRouter, HTTPException
++from fastapi import APIRouter, HTTPException, Response
+ from sqlmodel import col, func, select
+ 
+ from app.api.deps import CurrentUser, SessionDep
+@@ -45,6 +47,25 @@ def read_items(
+     return ItemsPublic(data=items_public, count=count)
+ 
+ 
++@router.get("/export")
++def export_items(session: SessionDep, current_user: CurrentUser) -> Response:
++    """
++    Export the current user's items as CSV.
++    """
++    items = session.exec(
++        select(Item)
++        .where(Item.owner_id == current_user.id)
++        .order_by(col(Item.created_at))
++    ).all()
++    out = io.StringIO()
++    writer = csv.writer(out)
++    writer.writerow(["id", "title", "description", "created_at"])
++    for item in items:
++        created = item.created_at.isoformat() if item.created_at else ""
++        writer.writerow([item.id, item.title, item.description or "", created])
++    return Response(content=out.getvalue(), media_type="text/csv")
++
++
+ @router.get("/{id}", response_model=ItemPublic)
+ def read_item(session: SessionDep, current_user: CurrentUser, id: uuid.UUID) -> Any:
+     """

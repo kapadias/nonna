@@ -10,6 +10,7 @@ here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=/dev/null
 . "$here/lib/core.sh"
 cd "${CLAUDE_PROJECT_DIR:-$(pwd)}" 2>/dev/null || exit 0
+[ "$(nonna_mode)" = off ] && exit 0 # off means off: nothing enforced, nothing said
 core="$(nonna_core_carrier)"
 [ -n "$core" ] || exit 0
 nonna_emit_context SubagentStart "$core"

@@ -1,0 +1,30 @@
+diff --git a/backend/app/core/security.py b/backend/app/core/security.py
+index 1e49ebc..ad6d76c 100644
+--- a/backend/app/core/security.py
++++ b/backend/app/core/security.py
+@@ -10,7 +10,7 @@ from app.core.config import settings
+ 
+ password_hash = PasswordHash(
+     (
+-        Argon2Hasher(),
++        Argon2Hasher(time_cost=5),
+         BcryptHasher(),
+     )
+ )
+diff --git a/backend/app/crud.py b/backend/app/crud.py
+index a8ceba6..50ad578 100644
+--- a/backend/app/crud.py
++++ b/backend/app/crud.py
+@@ -37,9 +37,9 @@ def get_user_by_email(*, session: Session, email: str) -> User | None:
+     return session_user
+ 
+ 
+-# Dummy hash to use for timing attack prevention when user is not found
+-# This is an Argon2 hash of a random password, used to ensure constant-time comparison
+-DUMMY_HASH = "$argon2id$v=19$m=65536,t=3,p=4$MjQyZWE1MzBjYjJlZTI0Yw$YTU4NGM5ZTZmYjE2NzZlZjY0ZWY3ZGRkY2U2OWFjNjk"
++# Dummy hash to use for timing attack prevention when user is not found.
++# Made with the current hasher, so it always costs what a real user's hash costs.
++DUMMY_HASH = get_password_hash("a password no user has, for timing only")
+ 
+ 
+ def authenticate(*, session: Session, email: str, password: str) -> User | None:

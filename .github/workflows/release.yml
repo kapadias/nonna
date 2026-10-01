@@ -16,13 +16,16 @@ on:
       - "v*"
 
 permissions:
-  contents: write # required to create a release
+  contents: read
 
 jobs:
   release:
     runs-on: ubuntu-latest
+    # Creating the release is the one thing here that writes, so only this job gets it.
+    permissions:
+      contents: write # required to create a release
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       - name: Extract the release notes for this tag
         run: |
@@ -37,11 +40,15 @@ jobs:
           fi
           echo "Extracted $(wc -l < notes.md) lines for $version"
 
+      # gemini-extension.json is checked too: `gemini extensions install` takes the latest release's
+      # archive and shows users the version in that file, so a release carrying another one is
+      # mislabelled.
       - name: Verify the manifests agree with the tag
         run: |
           set -euo pipefail
           version="${GITHUB_REF_NAME#v}"
-          for f in .claude/.claude-plugin/plugin.json .claude-plugin/marketplace.json; do
+          for f in .claude/.claude-plugin/plugin.json .claude/.codex-plugin/plugin.json .claude-plugin/marketplace.json gemini-extension.json \
+            .github/plugin/plugin.json .github/plugin/marketplace.json; do
             got="$(python3 -c "
           import json,sys
           d = json.load(open(sys.argv[1]))

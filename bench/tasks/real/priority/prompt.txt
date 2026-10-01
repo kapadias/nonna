@@ -1,0 +1,1 @@
+Items need a priority: an integer from 1 (most urgent) to 5, and 3 when none is given. Accept it when an item is created or updated, reject anything outside 1 to 5 with a 422, and return it wherever an item is returned. Items that already exist get priority 3.

@@ -1,0 +1,1 @@
+When a user is deleted, their items must no longer be deleted with them: move them to the first superuser (FIRST_SUPERUSER in the settings) instead.
