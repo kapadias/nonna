@@ -64,6 +64,14 @@ sed_i() { # <sed args> <file>: sed -i for GNU and BSD alike (BSD reads the word 
   fi
   rm -f "$tmp"
 }
+shim() { # <dir> <tool> [<path>]: <dir>/<tool> runs <path>, by default the <tool> on PATH (nothing for a builtin)
+  # A test hides a tool (jq, awk, timeout, a runner) by giving a script a PATH of its own, made of the tools it
+  # keeps. Each is a script that runs the real one by its full path: a link or a copy of a Git Bash binary cannot
+  # start away from the msys-2.0.dll beside it, and exits 127, native symlinks or not.
+  local p="${3:-$(command -v "$2" 2>/dev/null || true)}"
+  case "$p" in /*) ;; *) return 0 ;; esac
+  printf '#!/bin/sh\nexec '\''%s'\'' "$@"\n' "$(printf '%s' "$p" | sed "s/'/'\\\\''/g")" > "$1/$2" && chmod +x "$1/$2"
+}
 # A Mac ships no timeout(1). Without one, use the hooks' own fallback (lib/tests.sh): the command in its own
 # process group, the whole group killed when the alarm goes off, and 124 for it, as GNU's does. A hang still fails.
 if ! command -v timeout >/dev/null 2>&1; then
@@ -711,7 +719,7 @@ check "allows a search for export HOME before git" 0 "$(gb "grep -n 'export HOME
 # is refused, not waved through.
 NJ="$(mktemp -d)"
 for b in bash sh env cat grep sed head tail tr cut awk dirname basename git mktemp; do
-  p="$(command -v "$b" 2>/dev/null || true)"; if [ -n "$p" ]; then ln -s "$p" "$NJ/$b" 2>/dev/null || true; fi
+  shim "$NJ" "$b"
 done
 gbp() { printf '{"tool_name":"Bash","tool_input":{"command":%s}}' "$(printf '%s' "$2" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')" | PATH="$1" CLAUDE_PROJECT_DIR="$TMP" "$GB" 2>/dev/null; echo $?; }
 check "no jq: a force push after a quoted message is still seen" 2 "$(gbp "$NJ" 'git commit -m "fix: x" && git push --force origin feature/x')"
@@ -1924,7 +1932,7 @@ rm -rf "$FMT" "$TMP"
 FSB="$(mktemp -d)"; FMT="$(mktemp -d)"; TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
 echo '# x' > "$TMP/notes.md"; echo 'let x = 1' > "$TMP/app.ts"
 for b in bash sh env cat dirname git jq awk; do
-  p="$(command -v "$b" 2>/dev/null || true)"; if [ -n "$p" ]; then ln -s "$p" "$FSB/$b" 2>/dev/null || true; fi
+  shim "$FSB" "$b"
 done
 printf '#!/bin/sh\necho "$*" >> "%s/npx"\n' "$FMT" > "$FSB/npx"; chmod +x "$FSB/npx"
 copy_in "$TMP"
@@ -2624,7 +2632,7 @@ if [ -x "$CR" ] || [ -f "$CR" ]; then
   # jq-absent fallback must be as strict as the jq path — including case.
   NOJQ="$(mktemp -d)"
   for b in bash sh env cat grep sed head tr printf awk dirname; do
-    p="$(command -v "$b" 2>/dev/null || true)"; [ -n "$p" ] && ln -s "$p" "$NOJQ/$b" 2>/dev/null || true
+    shim "$NOJQ" "$b"
   done
   printf '%s' '{"verdict":"approve","summary":"x","findings":[{"severity":"critical","path":"a","line":1,"category":"x","issue":"i","fix":"f"}]}' | PATH="$NOJQ" bash "$CR"; check "no-jq: lowercase blocking severity still blocks" 1 "$?"
   printf '%s' '{"verdict":"approve","summary":"x","findings":[{"severity":"MEDIUM","path":"a","line":1,"category":"x","issue":"i","fix":"f"}]}' | PATH="$NOJQ" bash "$CR"; check "no-jq: MEDIUM-only still approves" 0 "$?"
@@ -2638,7 +2646,7 @@ DA="$SKILLS/supply-chain/scripts/dep-audit.sh"
 if [ -f "$DA" ]; then
   TMP="$(mktemp -d)"; ( cd "$TMP" && bash "$DA" ); check "exit 3 when no lockfile present" 3 "$?"; rm -rf "$TMP"
   # A scanner it cannot find is a stop, and it says where to get one: a documentation page, never a command that fetches it.
-  TMP="$(mktemp -d)"; NOSCAN="$(mktemp -d)"; ln -s "$(command -v bash)" "$NOSCAN/bash"
+  TMP="$(mktemp -d)"; NOSCAN="$(mktemp -d)"; shim "$NOSCAN" bash
   for f in pnpm-lock.yaml yarn.lock requirements.txt go.sum Cargo.lock; do : > "$TMP/$f"; done
   out="$(cd "$TMP" && PATH="$NOSCAN" bash "$DA" 2>&1)"; check "exit 2 when a lockfile's scanner is missing" 2 "$?"
   contains "a missing pnpm names its documentation page" "https://pnpm.io/installation" "$out"
@@ -2665,8 +2673,7 @@ printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"src/app/tests/k.py"
 # Secret gate must fail CLOSED when jq is absent (raw-payload scan).
 NOJQ="$(mktemp -d)"
 for b in bash sh env cat grep sed head tr dirname; do
-  p="$(command -v "$b" 2>/dev/null || true)"
-  if [ -n "$p" ]; then ln -s "$p" "$NOJQ/$b" 2>/dev/null || true; fi
+  shim "$NOJQ" "$b"
 done
 printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"c.py","content":"K = \"'"$FAKE_AWS"'\""}}' | PATH="$NOJQ" "$SS"; check "secret-scan: blocks a secret when jq is absent" 2 "$?"
 # The raw payload writes a newline as backslash-n, so a key that starts a line follows a letter there.
@@ -2890,8 +2897,7 @@ rm -rf "$WT"
 # Without jq the block must still be valid JSON, whatever the command and its output contain.
 NOJQ="$(mktemp -d)"
 for b in bash sh env cat grep sed head tail tr cut awk dirname git timeout printf mktemp cp rm; do
-  p="$(command -v "$b" 2>/dev/null || true)"
-  if [ -n "$p" ] && [ "${p#/}" != "$p" ]; then ln -s "$p" "$NOJQ/$b" 2>/dev/null || true; fi
+  shim "$NOJQ" "$b"
 done
 out="$(printf '{}' | PATH="$NOJQ" NONNA_TEST_CMD='printf "a\\b \"q\"\t\033[31mred\n"; false' CLAUDE_PROJECT_DIR="$TMP" "$SD")"
 printf '%s' "$out" | python3 -c 'import json,sys; d=json.load(sys.stdin); sys.exit(0 if d["decision"]=="block" else 1)'
@@ -2921,7 +2927,7 @@ printf '%s' "$out" | grep -q '"decision"'; check "stop: an empty NONNA_TEST_CMD 
 rm -rf "$TMP"
 # Without timeout(1) (macOS), the fallback must kill the whole process group, not wait out a child.
 NOTO="$(mktemp -d)"
-for b in bash sh perl tail sleep cat rm mktemp; do p="$(command -v "$b")"; ln -s "$p" "$NOTO/$b"; done
+for b in bash sh perl tail sleep cat rm mktemp; do shim "$NOTO" "$b"; done
 start=$SECONDS
 # shellcheck disable=SC2030  # PATH is meant to change only inside the subshell
 ( PATH="$NOTO"; . "$HOOKS/lib/tests.sh"; NONNA_TEST_TIMEOUT=1 nonna_run_tests 'sh -c "sleep 6"' ); rc=$?
@@ -3268,7 +3274,7 @@ fx() { # <repo> <name>...: the files of a fixture, empty; a name ending in / is 
 det() { # <repo> <runner>...: what detection names for <repo> when only those runners are installed (and
   # JAVA_HOME is DET_JAVA_HOME, or unset)
   local d="$1" bin r; shift
-  bin="$(mktemp -d)"; ln -s "$(command -v grep)" "$bin/grep"
+  bin="$(mktemp -d)"; shim "$bin" grep
   for r in "$@"; do ln -s "$DET_STUBS/$r" "$bin/$r"; done
   ( cd "$d" && . "$HOOKS/lib/tests.sh" && unset JAVA_HOME && { [ -z "${DET_JAVA_HOME-}" ] || export JAVA_HOME="$DET_JAVA_HOME"; } \
     && PATH="$bin" nonna_detect_test_cmd )
@@ -3432,8 +3438,7 @@ printf '%s' "$out" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/n
 out="$(sleep 3 | CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$ROOT/.claude" timeout 2 "$SA")"; check "subagent-start: never waits on stdin" 0 "$?"
 NOJQ="$(mktemp -d)"
 for b in bash sh env cat grep sed head tr dirname awk; do
-  p="$(command -v "$b" 2>/dev/null || true)"
-  if [ -n "$p" ]; then ln -s "$p" "$NOJQ/$b" 2>/dev/null || true; fi
+  shim "$NOJQ" "$b"
 done
 out="$(printf '{}' | PATH="$NOJQ" NONNA_MODE=full CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$ROOT/.claude" "$SA")"
 printf '%s' "$out" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null; check "subagent-start: no-jq fallback is still valid JSON" 0 "$?"
@@ -3443,7 +3448,7 @@ rm -f "$NOJQ/awk"
 out="$(printf '{}' | PATH="$NOJQ" NONNA_MODE=full CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$ROOT/.claude" "$SA" 2>/dev/null)"; check "subagent-start: no-jq, no-awk exits 0" 0 "$?"
 check "subagent-start: no-jq, no-awk emits nothing instead of an empty carrier" "" "$out"
 # Backslashes and quotes in the carrier must survive the awk escaper on any awk.
-ln -sf "$(command -v awk)" "$NOJQ/awk"
+shim "$NOJQ" awk
 BQ="$(mktemp -d)"; mkdir -p "$BQ/hooks" "$BQ/rules"; cp "$HOOKS/require-status-sync.sh" "$BQ/hooks/"
 printf '# Core\nsay "hi" and C:\\path\\ end\\\n' > "$BQ/rules/00-core.md"
 out="$(printf '{}' | PATH="$NOJQ" NONNA_MODE=full CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$BQ" "$SA")"
@@ -3452,7 +3457,7 @@ contains "subagent-start: no-jq fallback round-trips a backslash and a quote" "s
 rm -rf "$BQ"
 # A control character in the carrier must not break the JSON.
 CTL="$(mktemp -d)"; mkdir -p "$CTL/hooks" "$CTL/rules"; cp "$HOOKS/require-status-sync.sh" "$CTL/hooks/"
-printf '# Core\x01 with\x1b control\n' > "$CTL/rules/00-core.md"; ln -sf "$(command -v awk)" "$NOJQ/awk"
+printf '# Core\x01 with\x1b control\n' > "$CTL/rules/00-core.md"; shim "$NOJQ" awk
 out="$(printf '{}' | PATH="$NOJQ" NONNA_MODE=full CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$CTL" "$SA")"
 printf '%s' "$out" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null; check "subagent-start: no-jq fallback survives control characters" 0 "$?"
 rm -rf "$CTL"
@@ -3467,8 +3472,7 @@ NOH="$(mktemp -d)"; printf '{}' | CLAUDE_PROJECT_DIR="$NOH" "$SA" >/dev/null; ch
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
 NOJQ="$(mktemp -d)"
 for b in bash sh env cat grep sed head tr dirname ln cp readlink pwd mkdir awk; do
-  p="$(command -v "$b" 2>/dev/null || true)"
-  if [ -n "$p" ]; then ln -s "$p" "$NOJQ/$b" 2>/dev/null || true; fi
+  shim "$NOJQ" "$b"
 done
 out="$(PATH="$NOJQ" NONNA_MODE=full CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$ROOT/.claude" "$HOOKS/session-start.sh")"
 printf '%s' "$out" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null; check "session-start: no-jq plugin-mode output is valid JSON" 0 "$?"
@@ -3828,7 +3832,7 @@ check "codex: an ordinary command passes" 0 "$(cx_run PreToolUse '^Bash$' "$(cx_
 # Without jq the patch is read by lib/json.sh's own decoder; a reader that fails refuses it, never guesses.
 NJX="$(mktemp -d)"
 for b in bash sh env cat grep sed head tail tr cut awk dirname basename git mktemp; do
-  p="$(command -v "$b" 2>/dev/null || true)"; if [ -n "$p" ]; then ln -s "$p" "$NJX/$b" 2>/dev/null || true; fi
+  shim "$NJX" "$b"
 done
 check "codex: without jq, a patch that adds a key is refused" 2 "$(cx_gate "$NJX" "$HOOKS/secret-scan.sh" "$(cx_patch '*** Add File: config.py' "+aws_id = \"$FAKE_AWS\"")")"
 check "codex: without jq, a patch that edits .git/config is refused" 2 "$(cx_gate "$NJX" "$HOOKS/guard-branch.sh" "$(cx_patch '*** Update File: .git/config' '@@' '+[core]')")"
@@ -3836,7 +3840,7 @@ check "codex: without jq, a clean patch passes" 0 "$(cx_gate "$NJX" "$HOOKS/secr
 BADJQX="$(mktemp -d)"; printf '#!/bin/sh\nexit 1\n' > "$BADJQX/jq"; chmod +x "$BADJQX/jq"
 check "codex: a patch the reader cannot read (jq fails) is refused, not passed" 2 "$(cx_gate "$BADJQX:$NJX" "$HOOKS/guard-branch.sh" "$(cx_patch '*** Update File: .git/config' '@@' '+[core]')")"
 BADAWKX="$(mktemp -d)"; printf '#!/bin/sh\nexit 1\n' > "$BADAWKX/awk"; chmod +x "$BADAWKX/awk"
-p="$(command -v jq 2>/dev/null || true)"; if [ -n "$p" ]; then ln -s "$p" "$BADAWKX/jq"; fi
+shim "$BADAWKX" jq
 check "codex: a patch the reader cannot read (awk fails) is refused, not passed" 2 "$(cx_gate "$BADAWKX:$NJX" "$HOOKS/secret-scan.sh" "$(cx_patch '*** Update File: app.py' '@@' '+x = 2')")"
 rm -rf "$NJX" "$BADJQX" "$BADAWKX"
 # Codex's grammar puts a file in every patch, so one in which no file is read was not understood.
@@ -4130,7 +4134,7 @@ check "copilot: a Claude Code payload passes the adapter byte for byte" 0 "$( . 
 # Without jq the adapter renames Copilot's path in the text, where the guard's own reader finds it.
 NJC="$(mktemp -d)"
 for b in bash sh env cat grep sed head tail tr cut awk dirname basename git mktemp touch; do
-  p="$(command -v "$b" 2>/dev/null || true)"; if [ -n "$p" ]; then ln -s "$p" "$NJC/$b" 2>/dev/null || true; fi
+  shim "$NJC" "$b"
 done
 njc() { # <matcher> <script> <tool_name> <tool_input>: that gate as the hooks file runs it, without jq
   local c; c="$(cop_cmd PreToolUse "$1" "$2")"
