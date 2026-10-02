@@ -38,6 +38,7 @@ import html
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 from collections import Counter
@@ -50,6 +51,13 @@ offenders: list[str] = []
 
 def bad(msg: str) -> None:
     offenders.append(msg)
+
+
+def rel_path(path: str) -> str:
+    """A path from ROOT as the lint names and compares it: with / on every platform, as the allow-lists,
+    the messages and the tests that read them write it. os.path writes \\ on Windows, where no entry
+    would match and no message would read as it does elsewhere."""
+    return os.path.relpath(path, ROOT).replace(os.sep, "/")
 
 
 ALLOWED_MODELS = {"opus", "sonnet", "haiku", "fable", "inherit"}
@@ -153,7 +161,7 @@ for cmd in ("review", "ship"):
             if "check-review.sh" not in fh.read():
                 bad(f"{cmd_path}: does not wire check-review.sh (ADR-0005)")
     except FileNotFoundError:
-        bad(f"review gate wiring: missing {os.path.relpath(cmd_path, ROOT)}")
+        bad(f"review gate wiring: missing {rel_path(cmd_path)}")
 
 # --- test-count drift: no doc may hardcode a stale gate-test count ---
 # The suite size is derived from run.sh (its `check`/`contains` helper calls);
@@ -171,7 +179,7 @@ for rel in (
     ".claude/README.md",
     "docs/STATUS.md",
     # A translation leaves the count out; one left behind is held to run.sh all the same.
-    *sorted(os.path.relpath(p, ROOT) for p in glob.glob(f"{ROOT}/README.*.md")),
+    *sorted(rel_path(p) for p in glob.glob(f"{ROOT}/README.*.md")),
 ):
     path = os.path.join(ROOT, rel)
     if not os.path.isfile(path):
@@ -304,7 +312,7 @@ if settings.get("disableAllHooks"):
 def local_only(path: str) -> bool:
     """True for a file in one of the two git-ignored places under .claude/: the /review verdicts
     directory, and settings.local.json itself (a name that only starts like it ships)."""
-    rel = os.path.relpath(path, ROOT).replace(os.sep, "/")
+    rel = rel_path(path)
     return rel.startswith(".claude/reviews/") or rel == ".claude/settings.local.json"
 
 
@@ -320,7 +328,7 @@ for dirpath, _dirnames, filenames in os.walk(f"{ROOT}/.claude"):
             for n, line in enumerate(fh, 1):
                 if RELATIVE_HARNESS.search(line):
                     bad(
-                        f"{os.path.relpath(path, ROOT)}:{n}: a relative path to .claude/ — a shipped "
+                        f"{rel_path(path)}:{n}: a relative path to .claude/ — a shipped "
                         "file must not assume where the harness sits in a repository "
                         "(compute it, as nonna_copy_in_hooks does)"
                     )
@@ -348,7 +356,7 @@ def check_links(md: str) -> None:
                 if not t or not FILE_EXT.search(t):
                     continue
                 if not os.path.exists(os.path.normpath(os.path.join(base, t))):
-                    bad(f"{md}: dead link -> {target}")
+                    bad(f"{rel_path(md)}: dead link -> {target}")
 
 
 md_files: list[str] = []
@@ -403,7 +411,7 @@ for path in sorted(glob.glob(f"{ROOT}/.claude/skills/*/SKILL.md")):
             used |= set(GIT_IN_SPAN.findall(line))
     for verb in sorted(used - granted):
         bad(
-            f"{os.path.relpath(path, ROOT)}: body runs `git {verb}` but "
+            f"{rel_path(path)}: body runs `git {verb}` but "
             f"allowed-tools does not grant Bash(git {verb}:*)"
         )
 
@@ -432,7 +440,7 @@ for path in sorted(glob.glob(f"{ROOT}/.claude/skills/*/SKILL.md")):
         prefix = re.sub(r"\s+\$ARGUMENTS$", "", line)
         if line not in rules and f"{prefix}:*" not in rules:
             bad(
-                f"{os.path.relpath(path, ROOT)}: the ! line `{line}` is not pre-approved exactly "
+                f"{rel_path(path)}: the ! line `{line}` is not pre-approved exactly "
                 f"by allowed-tools; grant Bash({prefix}:*) and nothing wider"
             )
 
@@ -474,7 +482,7 @@ for path in sorted(glob.glob(f"{ROOT}/.claude/skills/*/SKILL.md")):
         tool, scope = g.groups()
         if tool == "Write" or (tool in ("Bash", "Edit") and unscoped(tool, scope)):
             bad(
-                f"{os.path.relpath(path, ROOT)}: allowed-tools grants {g.group(0)}; "
+                f"{rel_path(path)}: allowed-tools grants {g.group(0)}; "
                 "scope Bash and Edit, and spell a write to one path Edit(path)"
             )
 
@@ -495,7 +503,7 @@ for path in sorted(glob.glob(f"{ROOT}/.claude/skills/*/SKILL.md")):
     at = re.search(r"^allowed-tools:\s*(.+)$", m.group(1), re.M)
     if not at:
         continue
-    where = os.path.relpath(path, ROOT)
+    where = rel_path(path)
     skill = os.path.basename(os.path.dirname(path))
     for g in GRANT.finditer(at.group(1)):
         if g.group(1) != "Bash" or not re.match(r"bash\b", g.group(2) or ""):
@@ -531,7 +539,7 @@ for md in sorted(glob.glob(f"{ROOT}/.claude/**/*.md", recursive=True)):
             for ref in SLASH.findall(line):
                 if ref[1:] not in invocable:
                     bad(
-                        f"{os.path.relpath(md, ROOT)}:{n}: `{ref}` is not a command or skill"
+                        f"{rel_path(md)}:{n}: `{ref}` is not a command or skill"
                     )
 
 # --- domain leak: a domain-agnostic harness names no single domain ---
@@ -579,7 +587,7 @@ for dirpath, dirnames, filenames in os.walk(f"{ROOT}/.claude"):
             m = FETCH.search(line)
             if m:
                 bad(
-                    f"{os.path.relpath(path, ROOT)}:{n}: '{m.group(0)}' fetches a package — the plugin directory refuses a plugin that runs one or tells you to; name the dependency or link its docs instead"
+                    f"{rel_path(path)}:{n}: '{m.group(0)}' fetches a package — the plugin directory refuses a plugin that runs one or tells you to; name the dependency or link its docs instead"
                 )
 
 # --- review inflation: the review loop must not un-size what the ladder sized ---
@@ -632,7 +640,7 @@ for dirpath, dirnames, filenames in os.walk(ROOT):
     ]
     for name in filenames:
         path = os.path.join(dirpath, name)
-        rel = os.path.relpath(path, ROOT)
+        rel = rel_path(path)
         if rel in EXTERNAL_ALLOWED or not SCAN_EXT.search(name):
             continue
         with open(path, encoding="utf-8", errors="replace") as fh:
@@ -657,7 +665,7 @@ if BENCH_PROMPTS:
         with open(p, encoding="utf-8") as fh:
             if fh.read().strip() not in BENCH_README:
                 bad(
-                    f"{os.path.relpath(p, ROOT)}: not quoted word for word in bench/README.md (D4)"
+                    f"{rel_path(p)}: not quoted word for word in bench/README.md (D4)"
                 )
 
 # --- the ladder: one ruleset, two copies (always-on rungs; on-demand depth) ---
@@ -729,7 +737,7 @@ for cmd in ("review", "sync"):
             if "check-debt.sh" not in fh.read():
                 bad(f"{cmd_path}: does not wire check-debt.sh (ADR-0008)")
     except FileNotFoundError:
-        bad(f"debt gate wiring: missing {os.path.relpath(cmd_path, ROOT)}")
+        bad(f"debt gate wiring: missing {rel_path(cmd_path)}")
 
 # --- host rule files: generated from 00-core.md, never hand-edited (hosts/build.py) ---
 _hb = os.path.join(ROOT, "hosts", "build.py")
@@ -832,13 +840,13 @@ marketplace = f"{ROOT}/.claude-plugin/marketplace.json"
 plugin_hooks = f"{ROOT}/.claude/hooks/hooks.json"
 for jf in (plugin_manifest, marketplace, plugin_hooks):
     if not os.path.isfile(jf):
-        bad(f"plugin packaging: missing {os.path.relpath(jf, ROOT)}")
+        bad(f"plugin packaging: missing {rel_path(jf)}")
         continue
     try:
         with open(jf, encoding="utf-8") as fh:
             json.load(fh)
     except json.JSONDecodeError as exc:
-        bad(f"plugin packaging: invalid JSON in {os.path.relpath(jf, ROOT)}: {exc}")
+        bad(f"plugin packaging: invalid JSON in {rel_path(jf)}: {exc}")
 
 # --- plugin packaging: a userConfig field uses only the keys the plugin directory accepts ---
 # The directory's validator rejects any other key in a field, `options` among them. Claude Code
@@ -1106,6 +1114,9 @@ else:
                 )
 
 # --- every Read settings.json denies, the Read hook refuses too, for Read and for Grep ---
+# The hook runs in the bash on PATH, as Claude Code runs it: shutil.which searches PATH, where a bare
+# "bash" from Python on Windows is found in System32 first, which is WSL's, not Git Bash.
+BASH = shutil.which("bash") or "bash"
 # A plugin install cannot carry permissions.deny: the hook is all it has. Each deny glob becomes a
 # sample path, and secret-scan.sh must refuse to Read it, and to Grep it (Claude Code applies Read
 # denies to Grep).
@@ -1120,7 +1131,7 @@ for rule in (settings.get("permissions") or {}).get("deny", []):
     ):
         payload = json.dumps({"tool_name": tool, "tool_input": tool_input})
         rc = subprocess.run(
-            ["bash", os.path.join(ROOT, ".claude/hooks/secret-scan.sh")],
+            [BASH, os.path.join(ROOT, ".claude/hooks/secret-scan.sh")],
             input=payload,
             capture_output=True,
             text=True,
