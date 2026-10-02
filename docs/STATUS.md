@@ -679,3 +679,5 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   protected branch, an error hidden by a "fix"), scored on "did it get caught".
 - A statusline showing branch and gate state.
 - Optional MCP server examples for the explorer and reviewer agents.
+
+<!-- scratch/45-windows-probe: Windows probes for #45, never merged -->

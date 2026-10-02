@@ -1,0 +1,31 @@
+# Scratch (#45, never merged): facts from Git Bash on Windows, in minutes rather than the suite's 35.
+name: win-probe
+on:
+  push:
+    branches: ["scratch/**"]
+permissions:
+  contents: read
+jobs:
+  probe:
+    name: probe (${{ matrix.leg }})
+    runs-on: windows-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - leg: copies
+            msys: ""
+          - leg: native symlinks
+            msys: winsymlinks:nativestrict
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Set MSYS
+        env:
+          MSYS_MODE: ${{ matrix.msys }}
+        run: if [ -n "$MSYS_MODE" ]; then echo "MSYS=$MSYS_MODE" >> "$GITHUB_ENV"; fi
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - name: Probe
+        run: bash tests/win-experiments.sh
