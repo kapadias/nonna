@@ -101,6 +101,108 @@ nonna_hook_is_copy() {
   [ -f "$1" ] && [ ! -L "$1" ] && [ -f "$2" ] && cmp -s "$1" "$2"
 }
 
+# nonna_abs <path>
+#   True for an absolute path: /..., or on Windows a drive's, C:/... or C:\... (Claude Code may hand her
+#   CLAUDE_PLUGIN_ROOT so), which a test for a leading / alone reads as relative.
+nonna_abs() {
+  case "$1" in /* | [A-Za-z]:/* | [A-Za-z]:\\*) return 0 ;; *) return 1 ;; esac
+}
+
+# nonna_links
+#   True where ln -s makes a link. Git Bash makes a copy instead, unless native symlinks are on (Developer
+#   Mode and MSYS=winsymlinks:nativestrict), and a copy of her script finds no lib/ beside itself.
+nonna_links() {
+  local d rc=1
+  d="$(mktemp -d 2>/dev/null)" || return 1
+  ln -s missing "$d/l" 2>/dev/null && [ -L "$d/l" ] && rc=0
+  rm -rf "$d"
+  return "$rc"
+}
+
+# nonna_hook_wrapper <target>
+#   The git hook she writes where ln -s makes a copy, not a link: a script that runs <target> with bash, so
+#   her script finds its lib/ beside itself, as it does through a link. <target> is what a link would hold:
+#   absolute, or from the hook's own directory (git starts a hook by its path, .git/hooks/<name>, from the
+#   top of the work tree). A target that is gone runs nothing and says so, where git skips a link that
+#   points at nothing without a word. Its text follows from <target> alone, so a hook is her wrapper only
+#   when it is this, byte for byte (nonna_hook_target). A newline cannot be written in it: no wrapper then.
+nonna_hook_wrapper() {
+  local q
+  case "$1" in "" | *$'\n'*) return 1 ;; esac
+  q="'$(printf '%s' "$1" | sed "s/'/'\\\\''/g")'"
+  printf '#!/bin/sh\n# Nonna: %s\n' "$1"
+  if nonna_abs "$1"; then
+    printf 't=%s\n' "$q"
+  else
+    # shellcheck disable=SC2016  # $0 is the wrapper's own, expanded when git runs it
+    printf 't="$(dirname "$0")"/%s\n' "$q"
+  fi
+  # shellcheck disable=SC2016  # the same
+  printf '%s\n' \
+    '[ -f "$t" ] || { echo "Nonna: $t is gone, so this git hook checks nothing; a Claude Code session here wires it again." >&2; exit 0; }' \
+    'exec bash "$t" "$@"'
+}
+
+# nonna_hook_target <git hook>
+#   Where a git hook leads: a link's target, as written, or the target of her wrapper (nonna_hook_wrapper),
+#   byte for byte. Prints nothing and fails for anything else.
+nonna_hook_target() {
+  local t
+  if [ -L "$1" ]; then
+    readlink "$1"
+    return
+  fi
+  [ -f "$1" ] || return 1
+  t="$(sed -n '2s/^# Nonna: //p' "$1" 2>/dev/null)" && [ -n "$t" ] || return 1
+  nonna_hook_wrapper "$t" | cmp -s - "$1" || return 1
+  printf '%s' "$t"
+}
+
+# nonna_hook_dangles <git hook>
+#   True when a git hook leads to nothing: a link that points at nothing, or her wrapper whose script is gone.
+nonna_hook_dangles() {
+  local t
+  if [ -L "$1" ]; then
+    [ ! -e "$1" ]
+    return
+  fi
+  t="$(nonna_hook_target "$1")" || return 1
+  nonna_abs "$t" || t="$(dirname "$1")/$t"
+  [ ! -f "$t" ]
+}
+
+# nonna_hook_link <target> <git hook>
+#   Wires <git hook> to <target>: a link, made from the hook's own directory (Git Bash rewrites a relative
+#   target made from elsewhere), or, where ln -s makes a copy, her wrapper. Fails when neither is written.
+nonna_hook_link() {
+  local dir="${2%/*}" name="${2##*/}" tmp
+  [ "$dir" != "$2" ] || dir=.
+  mkdir -p "$dir" 2>/dev/null || return 1
+  if (cd "$dir" && ln -s "$1" "$name") 2>/dev/null && [ -L "$2" ]; then return 0; fi
+  rm -f "$2" # what ln -s left in place of a link: a copy of her script
+  tmp="$dir/.$name.nonna.$$"
+  if nonna_hook_wrapper "$1" > "$tmp" 2>/dev/null && chmod +x "$tmp" && mv -f "$tmp" "$2"; then return 0; fi
+  rm -f "$tmp"
+  return 1
+}
+
+# nonna_hook_wrappers <directory> <her hooks directory>
+#   Where ln -s copies, a plugin's data directory holds wrappers in place of the link current -> the plugin:
+#   <directory>/<script> runs <her hooks directory>/<script>, for each script a git hook runs. Session start
+#   writes them again every session, so a git hook that leads to them follows her across an update, as it
+#   follows the link.
+nonna_hook_wrappers() {
+  local s tmp
+  mkdir -p "$1" 2>/dev/null || return 1
+  for s in require-status-sync.sh pre-commit.sh; do
+    tmp="$1/.$s.nonna.$$"
+    if ! { nonna_hook_wrapper "$2/$s" > "$tmp" && chmod +x "$tmp" && mv -f "$tmp" "$1/$s"; }; then
+      rm -f "$tmp"
+      return 1
+    fi
+  done
+}
+
 # nonna_mode [git-hook]
 #   Prints off, lite or full: what Nonna enforces in the repo in the current directory.
 #   Precedence: NONNA_MODE > git config nonna.mode (repo, then global) > the plugin's `mode`

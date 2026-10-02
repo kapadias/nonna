@@ -84,6 +84,13 @@ never offered to the model, so it is not counted.
 
 History lives in `CHANGELOG.md` and `git log`. Entries here describe the current unit of work.
 
+- **2026-10-02** — Native Windows: the CI legs' 240 failures traced, on a Windows runner, to five
+  causes (#45), and fixed in progress on `fix/45-windows-green`. Where Git Bash's `ln -s` makes a
+  copy, her git hooks are now wrappers, scripts that run hers (`nonna_hook_wrapper`, `lib/core.sh`),
+  and a plugin's `current` is a directory of them, so a staged key is refused without native
+  symlinks; a drive's path (`D:/…`) reads as absolute. The suite hides a tool behind scripts that run
+  the others, not links Git Bash cannot start (exit 127), and the lint names paths with `/` and runs
+  Git Bash, not WSL's `bash.exe`, for its cross-check. The Windows legs block once they pass.
 - **2026-10-01** — The plugin meets the claude.ai plugin directory's validator, which held it on
   four blocking findings and four warnings (part of #17). The `mode` option is free text, since
   the directory refuses `options`, and every hook reads anything but `lite`, `off` included, as

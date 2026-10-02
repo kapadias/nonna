@@ -72,6 +72,24 @@ shim() { # <dir> <tool> [<path>]: <dir>/<tool> runs <path>, by default the <tool
   case "$p" in /*) ;; *) return 0 ;; esac
   printf '#!/bin/sh\nexec '\''%s'\'' "$@"\n' "$(printf '%s' "$p" | sed "s/'/'\\\\''/g")" > "$1/$2" && chmod +x "$1/$2"
 }
+link() { # <target> <link>: a symbolic link, as these tests mean one, on every platform. Made from its own
+  # directory: Git Bash rewrites a relative target made from elsewhere. Native under Git Bash, where ln -s
+  # copies (which needs Developer Mode, or the right to make symlinks, as GitHub's Windows runners have).
+  local dir="${2%/*}" name="${2##*/}"
+  rm -f "$2"
+  (cd "$dir" && { ln -s "$1" "$name" 2>/dev/null; [ -L "$name" ] || { rm -rf "$name"; MSYS=winsymlinks:nativestrict ln -s "$1" "$name"; }; })
+}
+hook_to() { # <git hook>: where it leads, a link's target or her wrapper's (nonna_hook_target, lib/core.sh)
+  bash -c '. "$1/lib/core.sh"; nonna_hook_target "$2"' _ "$HOOKS" "$1"
+}
+script_of() { # <file>: the text of the script it finally runs, through links and her wrappers
+  local f="$1" t n=0
+  while [ "$n" -lt 4 ] && t="$(hook_to "$f")" && [ -n "$t" ]; do
+    case "$t" in /*) f="$t" ;; *) f="$(dirname "$f")/$t" ;; esac
+    n=$((n + 1))
+  done
+  cat "$f" 2>/dev/null
+}
 # A Mac ships no timeout(1). Without one, use the hooks' own fallback (lib/tests.sh): the command in its own
 # process group, the whole group killed when the alarm goes off, and 124 for it, as GNU's does. A hang still fails.
 if ! command -v timeout >/dev/null 2>&1; then
@@ -380,7 +398,7 @@ check "allows Grep glob *config where no secret file matches" 0 "$(sg '*config' 
 check "allows Grep glob *rc where no secret file matches" 0 "$(sg '*rc' "$CLEAN")"
 mkdir -p "$CLEAN/config/secrets"; printf 'k: v\n' > "$CLEAN/config/secrets/db.yml"
 check "blocks Grep glob *.yml once it would read secrets/db.yml" 2 "$(sg '*.yml' "$CLEAN")"
-rm -rf "$CLEAN/config"; OUT="$(mktemp -d)"; printf 'K=1\n' > "$OUT/.env"; mkdir -p "$CLEAN/docs"; ln -s "$OUT/.env" "$CLEAN/docs/notes.txt"
+rm -rf "$CLEAN/config"; OUT="$(mktemp -d)"; printf 'K=1\n' > "$OUT/.env"; mkdir -p "$CLEAN/docs"; link "$OUT/.env" "$CLEAN/docs/notes.txt"
 check "blocks a broad glob that picks a link to a secret file" 2 "$(sg '*' "$CLEAN")"
 printf '%s' '{"tool_name":"Grep","tool_input":{"pattern":"x","path":"/","glob":"*.yml"}}' | CLAUDE_PROJECT_DIR="$CLEAN" "$SS" 2>/dev/null; check "outside the project a broad glob is judged by name, not searched" 2 "$?"
 # A glob that names a secret file is refused where the file is there, whatever the sample names say
@@ -399,10 +417,10 @@ rm -rf "$NAMED"
 rm -rf "$SEC" "$CLEAN" "$OUT"
 # A name is not the file: case-folding file systems and symlinks reach a secret under another name.
 printf '%s' '{"tool_name":"Read","tool_input":{"file_path":".ENV"}}' | "$SS" 2>/dev/null; check "blocks Read of .ENV (a case-folding file system reads .env)" 2 "$?"
-LNK="$(mktemp -d)"; mkdir -p "$LNK/docs"; printf 'K=1\n' > "$LNK/.env"; ln -s ../.env "$LNK/docs/setup.txt"; printf 'x\n' > "$LNK/docs/real.txt"
+LNK="$(mktemp -d)"; mkdir -p "$LNK/docs"; printf 'K=1\n' > "$LNK/.env"; link ../.env "$LNK/docs/setup.txt"; printf 'x\n' > "$LNK/docs/real.txt"
 printf '{"tool_name":"Read","tool_input":{"file_path":"docs/setup.txt"}}' | CLAUDE_PROJECT_DIR="$LNK" "$SS" 2>/dev/null; check "blocks Read of a harmless name that links to .env" 2 "$?"
 printf '{"tool_name":"Read","tool_input":{"file_path":"%s/docs/setup.txt"}}' "$LNK" | CLAUDE_PROJECT_DIR="$LNK" "$SS" 2>/dev/null; check "...by its absolute path too" 2 "$?"
-ln -s "$LNK/docs/real.txt" "$LNK/docs/alias.txt"
+link "$LNK/docs/real.txt" "$LNK/docs/alias.txt"
 printf '{"tool_name":"Read","tool_input":{"file_path":"docs/alias.txt"}}' | CLAUDE_PROJECT_DIR="$LNK" "$SS"; check "allows a link to an ordinary file" 0 "$?"
 rm -rf "$LNK"
 
@@ -1030,7 +1048,7 @@ git -C "$T3" config nonna.mode lite
 rm -rf "$T3" "$B3" "$PS3"
 # Installed AS a symlink (the way session-start wires it): must still resolve lib/.
 copy_in "$TMP"
-ln -sf ../../.claude/hooks/require-status-sync.sh "$TMP/.git/hooks/pre-push"
+link ../../.claude/hooks/require-status-sync.sh "$TMP/.git/hooks/pre-push"
 sl_out="$(cd "$TMP" && .git/hooks/pre-push 2>&1)"; sl_rc=$?
 check "blocks a secret when run via the installed symlink" 1 "$sl_rc"
 contains "symlinked hook resolved its lib (no 'command not found')" "looks like" "$sl_out"
@@ -1075,7 +1093,7 @@ PC="$HOOKS/pre-commit.sh"
 TMP="$(mktemp -d)"
 "${GIT[@]}" -C "$TMP" init -q; mkdir -p "$TMP/.claude/hooks/lib" "$TMP/src"
 cp "$PC" "$TMP/.claude/hooks/"; cp "$HOOKS/lib/secret-patterns.sh" "$TMP/.claude/hooks/lib/"
-ln -sf ../../.claude/hooks/pre-commit.sh "$TMP/.git/hooks/pre-commit"
+link ../../.claude/hooks/pre-commit.sh "$TMP/.git/hooks/pre-commit"
 echo a > "$TMP/src/a.py"; "${GIT[@]}" -C "$TMP" add -A
 "${GIT[@]}" -C "$TMP" commit -q --no-verify -m base; "${GIT[@]}" -C "$TMP" branch -M main
 echo b >> "$TMP/src/a.py"; "${GIT[@]}" -C "$TMP" add -A
@@ -1180,7 +1198,7 @@ printf 'K = "%s"\n' "$FAKE_AWS" > "$TMP/:(exclude)*"; "${GIT[@]}" -C "$TMP" add 
 "${GIT[@]}" -C "$TMP" commit -q -m magic 2>/dev/null; check "pre-commit: a pathspec-magic file name does not hide a secret" 1 "$?"
 "${GIT[@]}" -C "$TMP" reset -q; rm -f "$TMP/:(exclude)*"
 # A tracked symlink replaced by a regular file is a type change (T), still staged content.
-ln -s a.py "$TMP/src/link.py"; "${GIT[@]}" -C "$TMP" add -A; "${GIT[@]}" -C "$TMP" commit -q --no-verify -m link
+link a.py "$TMP/src/link.py"; "${GIT[@]}" -C "$TMP" add -A; "${GIT[@]}" -C "$TMP" commit -q --no-verify -m link
 rm "$TMP/src/link.py"; printf 'K = "%s"\n' "$FAKE_AWS" > "$TMP/src/link.py"; "${GIT[@]}" -C "$TMP" add -A
 "${GIT[@]}" -C "$TMP" commit -q -m typechange 2>/dev/null; check "pre-commit: a symlink turned file does not hide a secret" 1 "$?"
 "${GIT[@]}" -C "$TMP" reset -q --hard
@@ -1274,7 +1292,7 @@ rc=0; ! printf '%s' "$out" | grep -q 'pre-approves' && [ ! -e "$TMP/.gitignore" 
 check "install: a settings.local.json of yours is kept, with no grant claimed and no .gitignore written" 0 "$rc"
 rm -rf "$TMP"
 # Where the line cannot be added, the pack is on disk and could be committed: fail, and say which file.
-TMP="$(mktemp -d)"; OUT="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; echo '[project]' > "$TMP/pyproject.toml"; ln -s "$OUT/elsewhere" "$TMP/.gitignore"
+TMP="$(mktemp -d)"; OUT="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; echo '[project]' > "$TMP/pyproject.toml"; link "$OUT/elsewhere" "$TMP/.gitignore"
 out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a .gitignore that is a symlink is a failure, not a success" 1 "$?"
 rc=0; [ ! -e "$OUT/elsewhere" ] || rc=1; check "install: ...and is not written through" 0 "$rc"
 contains "install: ...and says to add the line yourself" "add .claude/settings.local.json to it yourself" "$out"
@@ -1438,7 +1456,7 @@ rm -rf "$TMP"
 # Her own relative link is hers only in .git/hooks, where ../../ leads back to this repository. In any
 # other hooks directory the same link leads somewhere else, so it is judged like a hook of the user's.
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; git -C "$TMP" config core.hooksPath hk; mkdir "$TMP/hk"
-ln -s ../../.claude/hooks/pre-commit.sh "$TMP/hk/pre-commit"; ln -s ../../.claude/hooks/require-status-sync.sh "$TMP/hk/pre-push"
+link ../../.claude/hooks/pre-commit.sh "$TMP/hk/pre-commit"; link ../../.claude/hooks/require-status-sync.sh "$TMP/hk/pre-push"
 out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a link that only looks like hers, outside .git/hooks, is not hers" 1 "$?"
 contains "install: ...and is reported like any hook of the user's" "pre-commit: you already have a pre-commit hook" "$out"
 rm -rf "$TMP"
@@ -1463,7 +1481,7 @@ rm -rf "$TMP"
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
 PLUG="$CLAUDE_CONFIG_DIR/plugins/data/nonna-x/current/hooks"; mkdir -p "$PLUG"; : > "$PLUG/pre-commit.sh"; : > "$PLUG/require-status-sync.sh"
 chmod +x "$PLUG/pre-commit.sh" "$PLUG/require-status-sync.sh"
-ln -s "$PLUG/pre-commit.sh" "$TMP/.git/hooks/pre-commit"; ln -s "$PLUG/require-status-sync.sh" "$TMP/.git/hooks/pre-push"
+link "$PLUG/pre-commit.sh" "$TMP/.git/hooks/pre-commit"; link "$PLUG/require-status-sync.sh" "$TMP/.git/hooks/pre-push"
 out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a link her plugin wired is hers, so running install succeeds" 0 "$?"
 printf '%s' "$out" | grep -q 'already have'; check "install: ...and is not read as a hook of the user's" 1 "$?"
 chmod -x "$PLUG/pre-commit.sh"  # git skips a hook it cannot run, in silence, as it does a dangling one
@@ -1476,7 +1494,7 @@ rm -rf "$TMP" "$CLAUDE_CONFIG_DIR/plugins/data/nonna-x"
 # ../../ leads back to a repository root only from a directory named .git/hooks. One that merely ends
 # in .git/hooks (x.git/hooks) is not that, even where the link happens to reach her script.
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; mkdir -p "$TMP/x.git/hooks"; git -C "$TMP" config core.hooksPath "$TMP/x.git/hooks"
-ln -s ../../.claude/hooks/pre-commit.sh "$TMP/x.git/hooks/pre-commit"; ln -s ../../.claude/hooks/require-status-sync.sh "$TMP/x.git/hooks/pre-push"
+link ../../.claude/hooks/pre-commit.sh "$TMP/x.git/hooks/pre-commit"; link ../../.claude/hooks/require-status-sync.sh "$TMP/x.git/hooks/pre-push"
 out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: a link that only looks like hers, in a directory that merely ends in .git/hooks, is not hers" 1 "$?"
 contains "install: ...and is reported like any hook of the user's, too" "pre-commit: you already have a pre-commit hook" "$out"
 rm -rf "$TMP"
@@ -1494,8 +1512,8 @@ contains "install: ...and says which gate is not running" "pre-commit: could not
 printf '%s' "$out" | grep -qF '+ .git/hooks/pre-commit'; check "install: ...and does not claim the link" 1 "$?"
 rm -rf "$TMP"
 # Nor is a copy a link. Git Bash's ln -s makes one unless native symlinks are on (MSYS=winsymlinks:nativestrict),
-# and a copy of her hook cannot find the lib/ beside the real script: git runs it and it waves everything
-# through, which is worse than no hook, because nothing says so.
+# and a copy of her hook cannot find the lib/ beside the real script: git would run it and it would wave
+# everything through. There she writes a wrapper instead, a script that runs hers, which finds its lib/.
 copying_ln() { # -> a directory whose ln copies its target, as Git Bash's does by default
   local d; d="$(mktemp -d)"
   cat > "$d/ln" <<'SH'
@@ -1507,9 +1525,14 @@ SH
   chmod +x "$d/ln"; printf '%s' "$d"
 }
 CL="$(copying_ln)"; TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
-out="$(cd "$TMP" && PATH="$CL:$PATH" NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: where ln -s makes a copy, a git hook is a failure, not a success" 1 "$?"
-contains "install: ...and says the copy is not a link, and that the gate is not running" "ln -s made a copy" "$out"
-rc=0; [ ! -e "$TMP/.git/hooks/pre-commit" ] && [ ! -e "$TMP/.git/hooks/pre-push" ] || rc=1; check "install: ...and leaves no copy of a hook behind" 0 "$rc"
+out="$(cd "$TMP" && PATH="$CL:$PATH" NONNA_SRC="$ROOT" bash "$IN" 2>&1)"; check "install: where ln -s makes a copy, the git hooks are her wrappers, a success" 0 "$?"
+check "install: ...pre-commit runs her script, from .git/hooks" ../../.claude/hooks/pre-commit.sh "$(hook_to "$TMP/.git/hooks/pre-commit")"
+check "install: ...and pre-push" ../../.claude/hooks/require-status-sync.sh "$(hook_to "$TMP/.git/hooks/pre-push")"
+rc=0; [ -L "$TMP/.git/hooks/pre-commit" ] && rc=1; cmp -s "$TMP/.git/hooks/pre-commit" "$TMP/.claude/hooks/pre-commit.sh" && rc=1
+check "install: ...a wrapper: neither a link nor a copy" 0 "$rc"
+"${GIT[@]}" -C "$TMP" checkout -qb feature; printf 'k = "%s"\n' "$FAKE_AWS" > "$TMP/leak.txt"; "${GIT[@]}" -C "$TMP" add leak.txt
+out="$("${GIT[@]}" -C "$TMP" commit -qm leak 2>&1)"; check "install: ...and git runs her gate through it: a staged key is refused" 1 "$?"
+contains "install: ...by her pre-commit, which found its lib/" "AWS access key id" "$out"
 printf '%s' "$out" | grep -qF '+ .git/hooks/pre-commit'; check "install: ...and does not claim the link" 1 "$?"
 rm -rf "$TMP" "$CL"
 TMP="$(mktemp -d)"
@@ -1534,7 +1557,7 @@ contains "install: says to merge the hooks block" "settings.json" "$out"
 rm -rf "$TMP"
 # Never write through a symlink, and never claim success with a git hook pointing at nothing.
 TMP="$(mktemp -d)"; OUT="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
-ln -s "$OUT/elsewhere" "$TMP/.claude"; mkdir -p "$TMP/docs"; ln -s "$OUT/status" "$TMP/docs/STATUS.md"
+link "$OUT/elsewhere" "$TMP/.claude"; mkdir -p "$TMP/docs"; link "$OUT/status" "$TMP/docs/STATUS.md"
 out="$(cd "$TMP" && NONNA_SRC="$ROOT" bash "$IN" --mode full 2>&1)"; check "install: a missing harness is a failure, not a success" 1 "$?"
 rc=0; [ ! -e "$OUT/elsewhere" ] && [ ! -e "$OUT/status" ] || rc=1; check "install: never writes through a symlink out of the repo" 0 "$rc"
 rc=0; [ ! -e "$TMP/.git/hooks/pre-commit" ] && [ ! -L "$TMP/.git/hooks/pre-commit" ] || rc=1; check "install: links no git hook to a script that is not there" 0 "$rc"
@@ -1694,7 +1717,7 @@ mkdir -p "$TMP/src/test_utils"; printf 'os.system(x)\n' > "$TMP/src/test_utils/r
 out="$(cd "$TMP" && bash "$RL" main 2>/dev/null)"
 contains "review-lanes: a test-looking directory name does not silence production code" "security=yes" "$out"
 rm -rf "$TMP/src/test_utils"
-ln -s /dev/null "$TMP/src/link.py"
+link /dev/null "$TMP/src/link.py"
 out="$(cd "$TMP" && bash "$RL" main 2>/dev/null)"
 contains "review-lanes: an untracked symlink fails closed" "security=yes" "$out"
 rm -f "$TMP/src/link.py"
@@ -2048,16 +2071,56 @@ if [ -e "$TMP/.git/hooks/pre-push" ]; then rc=0; else rc=1; fi; check "auto-inst
 out="$(CLAUDE_PROJECT_DIR="$TMP" "$TMP/.claude/hooks/session-start.sh")"
 printf '%s' "$out" | grep -q "is not Nonna's"; check "no warning when Nonna's own hook is installed" 1 "$?"
 if [ -e "$TMP/.git/hooks/pre-commit" ]; then rc=0; else rc=1; fi; check "copy-in: wires the pre-commit hook too" 0 "$rc"
-check "copy-in: links the repo's own script, relatively" "../../.claude/hooks/require-status-sync.sh" "$(readlink "$TMP/.git/hooks/pre-push")"
+check "copy-in: links the repo's own script, relatively" "../../.claude/hooks/require-status-sync.sh" "$(hook_to "$TMP/.git/hooks/pre-push")"
 rm -rf "$TMP"
-# Where ln -s makes a copy (Git Bash without native symlinks), a git hook is a copy that cannot find the lib/
-# beside the real script and waves everything through. Session start must not leave one, nor say it added one.
+# Where ln -s makes a copy (Git Bash without native symlinks), a copy of her script would find no lib/ beside
+# it and wave everything through. Session start writes her wrapper instead, a script that runs hers.
 CL="$(copying_ln)"; TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; copy_in "$TMP"
 out="$(printf '{}' | PATH="$CL:$PATH" CLAUDE_PROJECT_DIR="$TMP" "$TMP/.claude/hooks/session-start.sh")"; check "copy-in: where ln -s makes a copy, it still exits 0" 0 "$?"
-rc=0; [ ! -e "$TMP/.git/hooks/pre-push" ] && [ ! -e "$TMP/.git/hooks/pre-commit" ] || rc=1; check "copy-in: ...and leaves no copy of a git hook behind" 0 "$rc"
-contains "copy-in: ...and says the copy is not a link, and that the gate is NOT enforced" "ln -s made a copy" "$out"
-case "$out" in *"Added .git/hooks"*) rc=1 ;; *) rc=0 ;; esac; check "copy-in: ...and does not claim to have added a git hook" 0 "$rc"
-rm -rf "$TMP" "$CL"
+check "copy-in: ...pre-push is her wrapper, to her script, relatively" ../../.claude/hooks/require-status-sync.sh "$(hook_to "$TMP/.git/hooks/pre-push")"
+check "copy-in: ...and pre-commit" ../../.claude/hooks/pre-commit.sh "$(hook_to "$TMP/.git/hooks/pre-commit")"
+contains "copy-in: ...and says it added both" "Added .git/hooks/pre-push and pre-commit" "$out"
+case "$out" in *"ln -s made a copy"* | *"NOT enforced"*) rc=1 ;; *) rc=0 ;; esac; check "copy-in: ...and warns of nothing" 0 "$rc"
+"${GIT[@]}" -C "$TMP" checkout -qb feature; printf 'k = "%s"\n' "$FAKE_AWS" > "$TMP/leak.txt"; "${GIT[@]}" -C "$TMP" add leak.txt
+out="$("${GIT[@]}" -C "$TMP" commit -qm leak 2>&1)"; check "copy-in: ...and git runs her gate through it: a staged key is refused" 1 "$?"
+contains "copy-in: ...by her pre-commit, which found its lib/" "AWS access key id" "$out"
+out="$(printf '{}' | PATH="$CL:$PATH" CLAUDE_PROJECT_DIR="$TMP" "$TMP/.claude/hooks/session-start.sh")"
+case "$out" in *"not Nonna's"* | *"NOT enforced"*) rc=1 ;; *) rc=0 ;; esac; check "copy-in: ...and the next session takes her wrappers for hers" 0 "$rc"
+rm -rf "$TMP"
+# A plugin's data directory, where ln -s copies: no link current -> the plugin, and no copy of the plugin
+# either, but her wrappers, written again every session, so a git hook follows her across an update.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; PD="$(mktemp -d)"; V1="$(mktemp -d)"; V2="$(mktemp -d)"
+cp -R "$ROOT/.claude/." "$V1/"; cp -R "$ROOT/.claude/." "$V2/"; printf '# the second version\n' >> "$V2/hooks/require-status-sync.sh"
+printf '{}' | PATH="$CL:$PATH" CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$V1" CLAUDE_PLUGIN_DATA="$PD/data" "$HOOKS/session-start.sh" >/dev/null
+rc=0; [ -d "$PD/data/current/hooks" ] && [ ! -L "$PD/data/current" ] && [ ! -e "$PD/data/current/hooks/lib" ] || rc=1
+check "plugin, where ln -s copies: the data dir holds her wrappers, not a link or a copy of her" 0 "$rc"
+check "plugin, where ln -s copies: pre-push goes through the data dir" "$PD/data/current/hooks/require-status-sync.sh" "$(hook_to "$TMP/.git/hooks/pre-push")"
+check "plugin, where ln -s copies: ...which runs the plugin's own script" "$V1/hooks/require-status-sync.sh" "$(hook_to "$PD/data/current/hooks/require-status-sync.sh")"
+rm -rf "$V1"
+printf '{}' | PATH="$CL:$PATH" CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$V2" CLAUDE_PLUGIN_DATA="$PD/data" "$HOOKS/session-start.sh" >/dev/null
+contains "plugin, where ln -s copies: after an update, pre-push runs the new version" "# the second version" "$(script_of "$TMP/.git/hooks/pre-push")"
+"${GIT[@]}" -C "$TMP" checkout -qb feature; printf 'k = "%s"\n' "$FAKE_AWS" > "$TMP/leak.txt"; "${GIT[@]}" -C "$TMP" add leak.txt
+"${GIT[@]}" -C "$TMP" commit -qm leak >/dev/null 2>&1; check "plugin, where ln -s copies: git runs her pre-commit through both wrappers" 1 "$?"
+rm -rf "$TMP" "$PD" "$V2" "$CL"
+# Her wrapper is hers byte for byte: nonna_hook_target reads it back, and nothing else that looks like it.
+W="$(mktemp -d)"
+wr() { bash -c '. "$1/lib/core.sh"; nonna_hook_wrapper "$2"' _ "$HOOKS" "$1"; }
+wr "../../a b/it's.sh" > "$W/h"; check "wrapper: hers reads back to its target, a space and a quote included" "../../a b/it's.sh" "$(hook_to "$W/h")"
+printf '\n' >> "$W/h"; check "wrapper: one byte more, and it is not hers" "" "$(hook_to "$W/h")"
+printf '#!/bin/sh\n# Nonna: /x/y.sh\nexec bash /z.sh "$@"\n' > "$W/h"; check "wrapper: a script that only names a target in her comment is not hers" "" "$(hook_to "$W/h")"
+wr "$(printf 'a\nb')" > "$W/h"; check "wrapper: a target with a newline gets none" 1 "$?"
+check "wrapper: a drive's path is absolute (Claude Code may hand her CLAUDE_PLUGIN_ROOT so)" "t='C:/p/hooks/x.sh'" "$(wr C:/p/hooks/x.sh | sed -n 3p)"
+check "wrapper: ...with backslashes too" "t='C:\\p\\hooks\\x.sh'" "$(wr 'C:\p\hooks\x.sh' | sed -n 3p)"
+check "wrapper: a relative target is from the hook's own directory" "t=\"\$(dirname \"\$0\")\"/'../../.claude/hooks/x.sh'" "$(wr ../../.claude/hooks/x.sh | sed -n 3p)"
+mkdir -p "$W/g"; wr /gone/require-status-sync.sh > "$W/g/pre-push"; chmod +x "$W/g/pre-push"
+out="$("$W/g/pre-push" 2>&1)"; check "wrapper: a target that is gone runs nothing, as git skips a link to nothing" 0 "$?"
+contains "wrapper: ...and says so" "/gone/require-status-sync.sh is gone, so this git hook checks nothing" "$out"
+# ...and session start repairs a wrapper of hers whose script is gone, as it repairs a dangling link of hers.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; PD="$(mktemp -d)"
+wr "$CLAUDE_CONFIG_DIR/plugins/cache/nonna/nonna/1.0.0/hooks/require-status-sync.sh" > "$TMP/.git/hooks/pre-push"; chmod +x "$TMP/.git/hooks/pre-push"
+CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$ROOT/.claude" "$HOOKS/session-start.sh" "$PD/data" </dev/null >/dev/null
+check "wrapper: a dangling wrapper of hers is repaired" "$PD/data/current/hooks/require-status-sync.sh" "$(hook_to "$TMP/.git/hooks/pre-push")"
+rm -rf "$TMP" "$PD" "$W"
 # A pre-existing foreign pre-push hook must never be overwritten — but going
 # silent about it means the DoD gate is off without anyone knowing. Warn.
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
@@ -2085,65 +2148,66 @@ printf 'touch "%s/sourced"\n' "$TMP" > "$TMP/.claude/hooks/lib/tests.sh"
 printf '{"scripts":{"test":"node t.js"}}\n' > "$TMP/package.json"
 CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$ROOT/.claude" "$HOOKS/session-start.sh" >/dev/null
 if [ -e "$TMP/sourced" ]; then rc=1; else rc=0; fi; check "plugin: never sources a repository's own hook library" 0 "$rc"
-check "plugin: links pre-push to its own script, not the repo's" "$ROOT/.claude/hooks/require-status-sync.sh" "$(readlink "$TMP/.git/hooks/pre-push")"
-check "plugin: links pre-commit to its own script, not the repo's" "$ROOT/.claude/hooks/pre-commit.sh" "$(readlink "$TMP/.git/hooks/pre-commit")"
+check "plugin: links pre-push to its own script, not the repo's" "$ROOT/.claude/hooks/require-status-sync.sh" "$(hook_to "$TMP/.git/hooks/pre-push")"
+check "plugin: links pre-commit to its own script, not the repo's" "$ROOT/.claude/hooks/pre-commit.sh" "$(hook_to "$TMP/.git/hooks/pre-commit")"
 rm -rf "$TMP"
 # Plugin install with a data dir: the hooks go through ${CLAUDE_PLUGIN_DATA}/current, refreshed every
 # session, because the versioned cache directory is removed after an update and git silently skips a
 # dangling hook. Simulate an update: v1 disappears, v2 arrives, the next session re-points current.
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; PD="$(mktemp -d)"; V1="$(mktemp -d)"; V2="$(mktemp -d)"
-cp -R "$ROOT/.claude/." "$V1/"; cp -R "$ROOT/.claude/." "$V2/"
+cp -R "$ROOT/.claude/." "$V1/"; cp -R "$ROOT/.claude/." "$V2/"; printf '# the second version\n' >> "$V2/hooks/require-status-sync.sh"
 CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$V1" "$HOOKS/session-start.sh" "$PD/data" >/dev/null
-check "plugin: pre-push goes through the data dir" "$PD/data/current/hooks/require-status-sync.sh" "$(readlink "$TMP/.git/hooks/pre-push")"
-check "plugin: pre-commit goes through the data dir" "$PD/data/current/hooks/pre-commit.sh" "$(readlink "$TMP/.git/hooks/pre-commit")"
+check "plugin: pre-push goes through the data dir" "$PD/data/current/hooks/require-status-sync.sh" "$(hook_to "$TMP/.git/hooks/pre-push")"
+check "plugin: pre-commit goes through the data dir" "$PD/data/current/hooks/pre-commit.sh" "$(hook_to "$TMP/.git/hooks/pre-commit")"
 rm -rf "$V1"
 CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$V2" "$HOOKS/session-start.sh" "$PD/data" >/dev/null
 if [ -e "$TMP/.git/hooks/pre-push" ] && [ -e "$TMP/.git/hooks/pre-commit" ]; then rc=0; else rc=1; fi
 check "plugin: after an update the hooks still resolve" 0 "$rc"
+contains "plugin: ...and pre-push runs the new version" "# the second version" "$(script_of "$TMP/.git/hooks/pre-push")"
 rm -rf "$TMP" "$PD" "$V2"
 # Claude Code exports the plugin data dir as CLAUDE_PLUGIN_DATA, and hooks.json passes no argument for it:
 # the environment alone is enough for the same links, through the data dir.
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; PD="$(mktemp -d)"
 CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$ROOT/.claude" CLAUDE_PLUGIN_DATA="$PD/data" "$HOOKS/session-start.sh" >/dev/null
-check "plugin: with the data dir in the environment alone, pre-push goes through it" "$PD/data/current/hooks/require-status-sync.sh" "$(readlink "$TMP/.git/hooks/pre-push")"
-check "plugin: ...and pre-commit" "$PD/data/current/hooks/pre-commit.sh" "$(readlink "$TMP/.git/hooks/pre-commit")"
+check "plugin: with the data dir in the environment alone, pre-push goes through it" "$PD/data/current/hooks/require-status-sync.sh" "$(hook_to "$TMP/.git/hooks/pre-push")"
+check "plugin: ...and pre-commit" "$PD/data/current/hooks/pre-commit.sh" "$(hook_to "$TMP/.git/hooks/pre-commit")"
 rm -rf "$TMP" "$PD"
 # A dangling link of ours (the old absolute link into a removed cache version) is repaired; a
 # dangling link that is not ours is left alone and reported.
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; PD="$(mktemp -d)"
-ln -s "$CLAUDE_CONFIG_DIR/plugins/cache/nonna/nonna/1.0.0/hooks/require-status-sync.sh" "$TMP/.git/hooks/pre-push"
-ln -s /gone/husky/pre-commit "$TMP/.git/hooks/pre-commit"
+link "$CLAUDE_CONFIG_DIR/plugins/cache/nonna/nonna/1.0.0/hooks/require-status-sync.sh" "$TMP/.git/hooks/pre-push"
+link /gone/husky/pre-commit "$TMP/.git/hooks/pre-commit"
 out="$(CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$ROOT/.claude" "$HOOKS/session-start.sh" "$PD/data")"
 if [ -e "$TMP/.git/hooks/pre-push" ]; then rc=0; else rc=1; fi; check "plugin: a dangling pre-push of ours is repaired" 0 "$rc"
-check "plugin: a dangling hook that is not ours is left alone" /gone/husky/pre-commit "$(readlink "$TMP/.git/hooks/pre-commit")"
+check "plugin: a dangling hook that is not ours is left alone" /gone/husky/pre-commit "$(hook_to "$TMP/.git/hooks/pre-commit")"
 contains "plugin: ...and reported" ".git/hooks/pre-commit is not Nonna's" "$out"
 rm -rf "$TMP" "$PD"
 # The plugin used to be Keel: its links point into a cache that is gone. They are ours, repaired.
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; PD="$(mktemp -d)"
-ln -s "$CLAUDE_CONFIG_DIR/plugins/cache/keel/keel/1.0.0/hooks/require-status-sync.sh" "$TMP/.git/hooks/pre-push"
+link "$CLAUDE_CONFIG_DIR/plugins/cache/keel/keel/1.0.0/hooks/require-status-sync.sh" "$TMP/.git/hooks/pre-push"
 CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$ROOT/.claude" "$HOOKS/session-start.sh" "$PD/data" >/dev/null
-check "plugin: a dangling Keel-era link is repaired" "$PD/data/current/hooks/require-status-sync.sh" "$(readlink "$TMP/.git/hooks/pre-push")"
+check "plugin: a dangling Keel-era link is repaired" "$PD/data/current/hooks/require-status-sync.sh" "$(hook_to "$TMP/.git/hooks/pre-push")"
 rm -rf "$TMP" "$PD"
 # A link elsewhere that only shares her script's name is not a gate of hers: git skips a dangling
 # one without a word, and a live one runs the user's script, not hers.
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
-ln -s /gone/elsewhere/require-status-sync.sh "$TMP/.git/hooks/pre-push"
+link /gone/elsewhere/require-status-sync.sh "$TMP/.git/hooks/pre-push"
 out="$(CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$ROOT/.claude" "$HOOKS/session-start.sh")"
 contains "plugin: a dangling link elsewhere, named like her script, is reported, not taken for a gate" ".git/hooks/pre-push is not Nonna's" "$out"
 rm -rf "$TMP"
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; mkdir -p "$TMP/scripts"
 printf '#!/bin/sh\nexit 0\n' > "$TMP/scripts/pre-commit.sh"; chmod +x "$TMP/scripts/pre-commit.sh"
-ln -s ../../scripts/pre-commit.sh "$TMP/.git/hooks/pre-commit"
+link ../../scripts/pre-commit.sh "$TMP/.git/hooks/pre-commit"
 out="$(CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$ROOT/.claude" "$HOOKS/session-start.sh")"
 contains "plugin: the user's own scripts/pre-commit.sh hook is reported as not hers" ".git/hooks/pre-commit is not Nonna's" "$out"
-check "plugin: ...and left as it was" ../../scripts/pre-commit.sh "$(readlink "$TMP/.git/hooks/pre-commit")"
+check "plugin: ...and left as it was" ../../scripts/pre-commit.sh "$(hook_to "$TMP/.git/hooks/pre-commit")"
 printf '#!/bin/sh\n# scripts/pre-commit.sh: lint staged files\nexit 0\n' > "$TMP/scripts/pre-commit.sh"
 out="$(CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$ROOT/.claude" "$HOOKS/session-start.sh")"
 contains "plugin: a user's hook that names itself is still not hers" ".git/hooks/pre-commit is not Nonna's" "$out"
 rm -rf "$TMP"
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; mkdir -p "$TMP/x/plugins/cache/nonna/evil"
 printf '#!/bin/sh\nexit 0\n' > "$TMP/x/plugins/cache/nonna/evil/pre-commit.sh"; chmod +x "$TMP/x/plugins/cache/nonna/evil/pre-commit.sh"
-ln -s "$TMP/x/plugins/cache/nonna/evil/pre-commit.sh" "$TMP/.git/hooks/pre-commit"
+link "$TMP/x/plugins/cache/nonna/evil/pre-commit.sh" "$TMP/.git/hooks/pre-commit"
 out="$(CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$ROOT/.claude" "$HOOKS/session-start.sh")"
 contains "plugin: a link shaped like her cache but elsewhere is not hers" ".git/hooks/pre-commit is not Nonna's" "$out"
 rm -rf "$TMP"
@@ -2155,7 +2219,7 @@ hers() { # <link target> [env args]: 0 when nonna_hook_is_hers takes it for her 
 check "plugin: a link that climbs out of her cache with .. is not hers" 1 "$(hers "$CLAUDE_CONFIG_DIR/plugins/cache/nonna/../../../../tmp/x/pre-commit.sh")"
 H="$(cd "$(mktemp -d)" && pwd -P)"
 check "plugin: her cache link is hers when HOME ends in a slash" 0 "$(hers "$H/.claude/plugins/cache/nonna/nonna/1.0.0/hooks/pre-commit.sh" -u CLAUDE_CONFIG_DIR HOME="$H/")"
-mkdir -p "$H/real/plugins"; ln -s "$H/real" "$H/cfg"
+mkdir -p "$H/real/plugins"; link "$H/real" "$H/cfg"
 check "plugin: her cache link is hers through a symlinked config directory" 0 "$(hers "$H/real/plugins/cache/nonna/nonna/1.0.0/hooks/pre-commit.sh" CLAUDE_CONFIG_DIR="$H/cfg")"
 rm -rf "$H"
 # Where a copy-in's git hooks find the repo's own scripts is computed from the hooks dir, not assumed: one ../
@@ -2231,7 +2295,7 @@ contains "copy-in: a copy of an older version of her script is not hers, and is 
 rm -rf "$TMP"
 # A link is not a copy, even to a file that is one.
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; copy_in "$TMP"; mkdir -p "$TMP/scripts"
-cp "$HOOKS/require-status-sync.sh" "$TMP/scripts/require-status-sync.sh"; ln -s ../../scripts/require-status-sync.sh "$TMP/.git/hooks/pre-push"
+cp "$HOOKS/require-status-sync.sh" "$TMP/scripts/require-status-sync.sh"; link ../../scripts/require-status-sync.sh "$TMP/.git/hooks/pre-push"
 out="$(CLAUDE_PROJECT_DIR="$TMP" "$TMP/.claude/hooks/session-start.sh")"
 contains "copy-in: the user's link to a file like hers is not hers" ".git/hooks/pre-push is not Nonna's" "$out"
 rm -rf "$TMP"
@@ -2260,7 +2324,7 @@ rm -rf "$TMP"
 # subdirectory's harness, relatively, and the gate is wired, not reported missing.
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; mkdir -p "$TMP/app"; copy_in "$TMP/app"
 out="$(CLAUDE_PROJECT_DIR="$TMP/app" "$TMP/app/.claude/hooks/session-start.sh")"
-check "copy-in, subdirectory: pre-push links to its own harness, relatively" "../../app/.claude/hooks/require-status-sync.sh" "$(readlink "$TMP/.git/hooks/pre-push")"
+check "copy-in, subdirectory: pre-push links to its own harness, relatively" "../../app/.claude/hooks/require-status-sync.sh" "$(hook_to "$TMP/.git/hooks/pre-push")"
 if [ -e "$TMP/.git/hooks/pre-push" ] && [ -e "$TMP/.git/hooks/pre-commit" ]; then rc=0; else rc=1; fi; check "copy-in, subdirectory: ...and both links resolve" 0 "$rc"
 case "$out" in *"missing from the harness"*) rc=1 ;; *) rc=0 ;; esac; check "copy-in, subdirectory: ...and does not call it missing" 0 "$rc"
 out="$(CLAUDE_PROJECT_DIR="$TMP/app" "$TMP/app/.claude/hooks/session-start.sh")"
@@ -2272,7 +2336,7 @@ TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; mkdir -p "$TMP/app"; copy_in 
 "${GIT[@]}" -C "$TMP" add -A; "${GIT[@]}" -C "$TMP" commit -qm init --no-verify
 "${GIT[@]}" -C "$TMP" worktree add -q "$TMP/wt" -b feature/wt 2>/dev/null
 out="$(CLAUDE_PROJECT_DIR="$TMP/wt/app" "$TMP/wt/app/.claude/hooks/session-start.sh")"
-check "copy-in, worktree subdirectory: pre-push links to that subdirectory's harness" "../../app/.claude/hooks/require-status-sync.sh" "$(readlink "$TMP/.git/hooks/pre-push")"
+check "copy-in, worktree subdirectory: pre-push links to that subdirectory's harness" "../../app/.claude/hooks/require-status-sync.sh" "$(hook_to "$TMP/.git/hooks/pre-push")"
 case "$out" in *"missing from the harness"*) rc=1 ;; *) rc=0 ;; esac; check "copy-in, worktree subdirectory: ...and does not call it missing" 0 "$rc"
 rm -rf "$TMP"
 # A submodule's hooks live under the superproject's .git/modules/, which session start does not write: the
@@ -2527,8 +2591,8 @@ TMP="$(mktemp -d)"; PD="$CLAUDE_CONFIG_DIR/plugins/data/nonna-nonna"; mkdir -p "
 out="$(cd "$TMP" && env -u NONNA_MODE CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_DATA="$PD" bash "$NS" setup 2>&1)"
 check "/nonna setup: records the detected command" "npm test --silent" "$(git -C "$TMP" config --get nonna.testCmd)"
 contains "/nonna setup: says so" "npm test --silent, detected and recorded" "$out"
-check "/nonna setup: wires pre-push through the plugin's data dir" "$PD/current/hooks/require-status-sync.sh" "$(readlink "$TMP/.git/hooks/pre-push")"
-check "/nonna setup: ...and pre-commit" "$PD/current/hooks/pre-commit.sh" "$(readlink "$TMP/.git/hooks/pre-commit")"
+check "/nonna setup: wires pre-push through the plugin's data dir" "$PD/current/hooks/require-status-sync.sh" "$(hook_to "$TMP/.git/hooks/pre-push")"
+check "/nonna setup: ...and pre-commit" "$PD/current/hooks/pre-commit.sh" "$(hook_to "$TMP/.git/hooks/pre-commit")"
 contains "/nonna setup: offers the deny-list" "OFFER: add Nonna's permissions.deny list" "$out"
 contains "/nonna setup: ...and shows its entries" "Read(./**/.env)" "$out"
 contains "/nonna setup: ends with the status" "pre-push ✓  pre-commit ✓" "$out"
@@ -2571,11 +2635,11 @@ rm -rf "$TMP"
 # hook of the user's that chains hers is left for the user to edit.
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; mkdir -p "$TMP/scripts"
 printf '#!/bin/sh\nexit 0\n' > "$TMP/.git/hooks/pre-push"; chmod +x "$TMP/.git/hooks/pre-push"
-printf '#!/bin/sh\nexit 0\n' > "$TMP/scripts/pre-commit.sh"; ln -s ../../scripts/pre-commit.sh "$TMP/.git/hooks/pre-commit"
+printf '#!/bin/sh\nexit 0\n' > "$TMP/scripts/pre-commit.sh"; link ../../scripts/pre-commit.sh "$TMP/.git/hooks/pre-commit"
 out="$(ns "$TMP" uninstall)"
 if [ -e "$TMP/.git/hooks/pre-push" ]; then rc=0; else rc=1; fi; check "/nonna uninstall: leaves a hook that is not hers" 0 "$rc"
 contains "/nonna uninstall: ...and names it" "pre-push is not hers" "$out"
-check "/nonna uninstall: leaves the user's own link named like her script" ../../scripts/pre-commit.sh "$(readlink "$TMP/.git/hooks/pre-commit")"
+check "/nonna uninstall: leaves the user's own link named like her script" ../../scripts/pre-commit.sh "$(hook_to "$TMP/.git/hooks/pre-commit")"
 printf '#!/bin/sh\n.claude/hooks/require-status-sync.sh "$@" || exit 1\n' > "$TMP/.git/hooks/pre-push"
 contains "/nonna uninstall: leaves a hook that chains hers to the user, and says so" "still runs her require-status-sync.sh" "$(ns "$TMP" uninstall)"
 rm -rf "$TMP"
@@ -2588,9 +2652,17 @@ out="$(ns "$TMP" uninstall)"
 contains "/nonna uninstall: a copy of her pre-push is named as one that enforces nothing" "pre-push is a copy of her require-status-sync.sh that enforces nothing (unless you copied its lib/ beside it): delete it" "$out"
 rc=0; [ -f "$TMP/.git/hooks/pre-push" ] && [ ! -L "$TMP/.git/hooks/pre-push" ] && cmp -s "$HOOKS/require-status-sync.sh" "$TMP/.git/hooks/pre-push" || rc=1; check "/nonna uninstall: ...and leaves it where it is" 0 "$rc"
 rm -rf "$TMP"
+# Her wrappers (where ln -s copies) are hers to /nonna: shown as wired, and taken out by uninstall.
+CL="$(copying_ln)"; TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; copy_in "$TMP"
+printf '{}' | PATH="$CL:$PATH" CLAUDE_PROJECT_DIR="$TMP" "$TMP/.claude/hooks/session-start.sh" >/dev/null
+contains "/nonna status: her wrappers are wired" "pre-push ✓  pre-commit ✓" "$(ns "$TMP" status)"
+out="$(ns "$TMP" uninstall)"
+if [ -e "$TMP/.git/hooks/pre-push" ] || [ -e "$TMP/.git/hooks/pre-commit" ]; then rc=1; else rc=0; fi; check "/nonna uninstall: takes her wrappers out" 0 "$rc"
+contains "/nonna uninstall: ...and names them" "(her wrapper for require-status-sync.sh)" "$out"
+rm -rf "$TMP" "$CL"
 # Her link in .git/hooks goes even when core.hooksPath now points elsewhere.
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
-ln -s "$CLAUDE_CONFIG_DIR/plugins/cache/nonna/nonna/2.0.0/hooks/require-status-sync.sh" "$TMP/.git/hooks/pre-push"
+link "$CLAUDE_CONFIG_DIR/plugins/cache/nonna/nonna/2.0.0/hooks/require-status-sync.sh" "$TMP/.git/hooks/pre-push"
 git -C "$TMP" config core.hooksPath .husky
 ns "$TMP" uninstall >/dev/null
 if [ -L "$TMP/.git/hooks/pre-push" ]; then rc=1; else rc=0; fi; check "/nonna uninstall: takes her link from .git/hooks when core.hooksPath points elsewhere" 0 "$rc"
@@ -3094,7 +3166,7 @@ printf '{}' | PATH="$FG:$PATH" CLAUDE_PROJECT_DIR="$MONO" "$SD" >/dev/null
 check "stop: a listing that fails runs every command, the repository's too" 3 "$(grep -c -e api -e web -e root "$CNT")"
 rm -rf "$FG"
 # A directory's command runs only inside the repository: one whose directory now leads out of it is red.
-OUT="$(mktemp -d)"; printf 'x = 1\n' > "$OUT/app.py"; rm -rf "$MONO/packages/api"; ln -s "$OUT" "$MONO/packages/api"
+OUT="$(mktemp -d)"; printf 'x = 1\n' > "$OUT/app.py"; rm -rf "$MONO/packages/api"; link "$OUT" "$MONO/packages/api"
 out="$(printf '{}' | CLAUDE_PROJECT_DIR="$MONO" "$SD")"
 contains "stop: a package directory that leads out of the repository reads red" "failed in packages/api" "$(printf '%s' "$out" | jq -r .reason)"
 rm -rf "$MONO" "$OUT"
@@ -3868,7 +3940,7 @@ print("ok" if ok else o)
 PY
 )"
 check "codex: SessionStart answers in the shape Codex reads (session-start.command.output)" ok "$got"
-check "codex: SessionStart links the git hooks through the plugin's data directory" "$CXD/current/hooks/require-status-sync.sh" "$(readlink "$CXR/.git/hooks/pre-push")"
+check "codex: SessionStart links the git hooks through the plugin's data directory" "$CXD/current/hooks/require-status-sync.sh" "$(hook_to "$CXR/.git/hooks/pre-push")"
 rc=0; [ -f "$CXR/.git/nonna/base-$CXS" ] || rc=1; check "codex: SessionStart reads Codex's session id, to mark where the session began" 0 "$rc"
 cx_run SubagentStart '*' "$(cx_event SubagentStart '{"turn_id": "turn-1", "agent_id": "agent-1", "agent_type": "default"}')" >/dev/null
 got="$(python3 - "$CXO" <<'PY'
@@ -4221,7 +4293,7 @@ check "copilot: session start records the test command for the stop gate" "go te
 check "copilot: session start records where the session began" 0 \
   "$(if [ -f "$(git -C "$SSR" rev-parse --absolute-git-dir)/nonna/base-c0p1l07-5e55" ]; then echo 0; else echo 1; fi)"
 check "copilot: session start wires both git hooks, through the plugin's data directory" "$CPD/current/hooks/require-status-sync.sh $CPD/current/hooks/pre-commit.sh" \
-  "$(readlink "$SSR/.git/hooks/pre-push") $(readlink "$SSR/.git/hooks/pre-commit")"
+  "$(hook_to "$SSR/.git/hooks/pre-push") $(hook_to "$SSR/.git/hooks/pre-commit")"
 # Equivalence, as the adapter sits on the critical surface: Claude Code's own golden payloads for Write,
 # Edit, Read and Grep, rewritten in Copilot's argument names, get the same exit code from each gate; and a
 # grep over several paths, in every order, is refused exactly when one of its paths is.
@@ -4769,7 +4841,7 @@ rm -rf "$FX"
 # for Hooks, so each case below starts without it.
 FX="$(lint_fixture)"
 rm -rf "$FX/hooks"
-ln -s .claude/hooks "$FX/Hooks"
+link .claude/hooks "$FX/Hooks"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a root Hooks symlink to a directory holding hooks.json" 1 "$?"
 contains "lint: names the hooks file it would load" "Hooks/hooks.json: Gemini CLI loads hooks/hooks.json" "$out"
 rm -rf "$FX"
