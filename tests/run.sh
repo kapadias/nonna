@@ -82,6 +82,12 @@ link() { # <target> <link>: a symbolic link, as these tests mean one, on every p
 hook_to() { # <git hook>: where it leads, a link's target or her wrapper's (nonna_hook_target, lib/core.sh)
   bash -c '. "$1/lib/core.sh"; nonna_hook_target "$2"' _ "$HOOKS" "$1"
 }
+hook_kind() { # <git hook>: link, wrapper (hers), file, or none
+  if [ -L "$1" ]; then echo link; elif [ -n "$(hook_to "$1")" ]; then echo wrapper; elif [ -e "$1" ]; then echo file; else echo none; fi
+}
+# What her hooks are here, as she makes them: links where ln -s makes one, else her wrappers (Git Bash's
+# default, where ln -s copies). The tests below hold each platform to its own.
+WANT_HOOK="$(d="$(mktemp -d)"; : > "$d/t"; (cd "$d" && ln -s t l) 2>/dev/null; if [ -L "$d/l" ]; then echo link; else echo wrapper; fi; rm -rf "$d")"
 script_of() { # <file>: the text of the script it finally runs, through links and her wrappers
   local f="$1" t n=0
   while [ "$n" -lt 4 ] && t="$(hook_to "$f")" && [ -n "$t" ]; do
@@ -2072,6 +2078,7 @@ out="$(CLAUDE_PROJECT_DIR="$TMP" "$TMP/.claude/hooks/session-start.sh")"
 printf '%s' "$out" | grep -q "is not Nonna's"; check "no warning when Nonna's own hook is installed" 1 "$?"
 if [ -e "$TMP/.git/hooks/pre-commit" ]; then rc=0; else rc=1; fi; check "copy-in: wires the pre-commit hook too" 0 "$rc"
 check "copy-in: links the repo's own script, relatively" "../../.claude/hooks/require-status-sync.sh" "$(hook_to "$TMP/.git/hooks/pre-push")"
+check "copy-in: ...a link where ln -s makes one, else her wrapper" "$WANT_HOOK" "$(hook_kind "$TMP/.git/hooks/pre-push")"
 rm -rf "$TMP"
 # Where ln -s makes a copy (Git Bash without native symlinks), a copy of her script would find no lib/ beside
 # it and wave everything through. Session start writes her wrapper instead, a script that runs hers.
@@ -2120,7 +2127,47 @@ TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; PD="$(mktemp -d)"
 wr "$CLAUDE_CONFIG_DIR/plugins/cache/nonna/nonna/1.0.0/hooks/require-status-sync.sh" > "$TMP/.git/hooks/pre-push"; chmod +x "$TMP/.git/hooks/pre-push"
 CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$ROOT/.claude" "$HOOKS/session-start.sh" "$PD/data" </dev/null >/dev/null
 check "wrapper: a dangling wrapper of hers is repaired" "$PD/data/current/hooks/require-status-sync.sh" "$(hook_to "$TMP/.git/hooks/pre-push")"
-rm -rf "$TMP" "$PD" "$W"
+rm -rf "$TMP" "$PD"
+# ...never in place of a hook that is there: one written while she wires (a hook manager, another session) stays.
+mkdir -p "$W/k"; printf '#!/bin/sh\nexit 0\n' > "$W/k/pre-push"; cp "$W/k/pre-push" "$W/kept"
+bash -c '. "$1/lib/core.sh"; nonna_hook_link /some/target "$2"' _ "$HOOKS" "$W/k/pre-push"; check "wrapper: nonna_hook_link fails where a hook is" 1 "$?"
+cmp -s "$W/k/pre-push" "$W/kept"; check "wrapper: ...and leaves that hook as it was" 0 "$?"
+# ...and where a file system has no hard links (FAT) the wrapper still goes in, by mv -n.
+NHL="$(mktemp -d)"; cat > "$NHL/ln" <<'SH'
+#!/bin/sh
+case "$1" in -s*) shift ;; *) echo "ln: no hard links here" >&2; exit 1 ;; esac
+case "$1" in /*) src="$1" ;; *) src="$(dirname "$2")/$1" ;; esac
+cp -R "$src" "$2"
+SH
+chmod +x "$NHL/ln"; mkdir -p "$W/f"; printf '#!/bin/sh
+' > "$W/f/x.sh"
+(cd "$W/f" && PATH="$NHL:$PATH" bash -c '. "$1/lib/core.sh"; nonna_hook_link x.sh pre-push' _ "$HOOKS"); check "wrapper: where there are no hard links (FAT), nonna_hook_link still writes her wrapper" 0 "$?"
+check "wrapper: ...to her script" x.sh "$(hook_to "$W/f/pre-push")"
+rc=0; [ -z "$(find "$W/f" -name '*nonna*')" ] || rc=1; check "wrapper: ...and leaves no temp file" 0 "$rc"
+rm -rf "$NHL"
+# ...nor writes through a link in a plugin's data dir, into her own scripts: current, or its hooks.
+CL="$(copying_ln)"; V1="$(mktemp -d)"; cp -R "$ROOT/.claude/." "$V1/"; cksum "$V1"/hooks/*.sh > "$W/sums"
+for at in current current/hooks; do
+  TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; PD="$(mktemp -d)"; mkdir -p "$PD/data/current"
+  if [ "$at" = current ]; then rmdir "$PD/data/current"; link "$V1" "$PD/data/current"; else link "$V1/hooks" "$PD/data/current/hooks"; fi
+  printf '{}' | PATH="$CL:$PATH" CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$V1" CLAUDE_PLUGIN_DATA="$PD/data" "$HOOKS/session-start.sh" >/dev/null
+  cksum "$V1"/hooks/*.sh | cmp -s - "$W/sums"; check "wrapper: a link at the data dir's $at is not written through, into her scripts" 0 "$?"
+  check "wrapper: ...the link goes, and her wrapper stands at $at" "$V1/hooks/pre-commit.sh" "$(hook_to "$PD/data/current/hooks/pre-commit.sh")"
+  rm -rf "$TMP" "$PD"
+done
+# ...and a chain of her wrappers whose end is gone dangles: the git hook's, then the data dir's, then nothing.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; PD="$(mktemp -d)"; V2="$(mktemp -d)"; cp -R "$ROOT/.claude/." "$V2/"
+printf '{}' | PATH="$CL:$PATH" CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$V2" CLAUDE_PLUGIN_DATA="$PD/data" "$HOOKS/session-start.sh" >/dev/null
+dangles() { bash -c '. "$1/lib/core.sh"; nonna_hook_dangles "$2"' _ "$HOOKS" "$1"; }
+dangles "$TMP/.git/hooks/pre-push"; check "wrapper: a chain of her wrappers to a plugin that is there does not dangle" 1 "$?"
+rm -rf "$V2"
+dangles "$TMP/.git/hooks/pre-push"; check "wrapper: ...and dangles once the plugin is gone, two wrappers down" 0 "$?"
+# ...as does a link to her wrapper: links work now, and current is a directory of her wrappers from before.
+mkdir -p "$W/m"; printf '#!/bin/sh
+' > "$W/m/x.sh"; wr "$W/m/x.sh" > "$W/m/w"; chmod +x "$W/m/w"; link w "$W/m/pre-push"
+dangles "$W/m/pre-push"; check "wrapper: a link to her wrapper of a script that is there does not dangle" 1 "$?"
+rm -f "$W/m/x.sh"; dangles "$W/m/pre-push"; check "wrapper: ...and dangles once the script is gone" 0 "$?"
+rm -rf "$TMP" "$PD" "$V1" "$CL" "$W"
 # A pre-existing foreign pre-push hook must never be overwritten — but going
 # silent about it means the DoD gate is off without anyone knowing. Warn.
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
@@ -2159,6 +2206,7 @@ cp -R "$ROOT/.claude/." "$V1/"; cp -R "$ROOT/.claude/." "$V2/"; printf '# the se
 CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$V1" "$HOOKS/session-start.sh" "$PD/data" >/dev/null
 check "plugin: pre-push goes through the data dir" "$PD/data/current/hooks/require-status-sync.sh" "$(hook_to "$TMP/.git/hooks/pre-push")"
 check "plugin: pre-commit goes through the data dir" "$PD/data/current/hooks/pre-commit.sh" "$(hook_to "$TMP/.git/hooks/pre-commit")"
+rc="wrapper"; [ -L "$PD/data/current" ] && rc="link"; check "plugin: ...current is a link where ln -s makes one, else her wrappers" "$WANT_HOOK" "$rc"
 rm -rf "$V1"
 CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$V2" "$HOOKS/session-start.sh" "$PD/data" >/dev/null
 if [ -e "$TMP/.git/hooks/pre-push" ] && [ -e "$TMP/.git/hooks/pre-commit" ]; then rc=0; else rc=1; fi

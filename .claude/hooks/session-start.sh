@@ -59,7 +59,7 @@ if nonna_copy_in; then # the repo's own harness: its own scripts, relative to th
 elif [ -n "$nonna_root" ]; then # a plugin: its own scripts, never ones the repo ships
   hooks_src="$nonna_root/hooks"
   if [ -n "$data" ] && mkdir -p "$data" 2>/dev/null; then
-    if { [ -L "$data/current" ] || [ ! -e "$data/current" ]; } && nonna_links; then
+    if { [ -L "$data/current" ] || [ ! -e "$data/current" ]; } && nonna_links "$data"; then
       ln -sfn "$nonna_root" "$data/current" 2>/dev/null && hooks_src="$data/current/hooks"
     # Where ln -s copies (Git Bash), current is a directory of her wrappers, written again every session. A
     # link left from when links worked goes first: written through, it would write into her.

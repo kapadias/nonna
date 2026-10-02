@@ -108,14 +108,15 @@ nonna_abs() {
   case "$1" in /* | [A-Za-z]:/* | [A-Za-z]:\\*) return 0 ;; *) return 1 ;; esac
 }
 
-# nonna_links
-#   True where ln -s makes a link. Git Bash makes a copy instead, unless native symlinks are on (Developer
-#   Mode and MSYS=winsymlinks:nativestrict), and a copy of her script finds no lib/ beside itself.
+# nonna_links <directory>
+#   True where ln -s makes a link in <directory>, to a file that is there, as she makes them. Git Bash makes
+#   a copy instead, unless native symlinks are on (Developer Mode and MSYS=winsymlinks:nativestrict), and a
+#   copy of her script finds no lib/ beside itself. The probe's names come from mktemp, never guessed.
 nonna_links() {
-  local d rc=1
-  d="$(mktemp -d 2>/dev/null)" || return 1
-  ln -s missing "$d/l" 2>/dev/null && [ -L "$d/l" ] && rc=0
-  rm -rf "$d"
+  local p rc=1
+  p="$(mktemp "$1/.nonna-link.XXXXXX" 2>/dev/null)" || return 1
+  (cd "$1" && ln -s "${p##*/}" "${p##*/}.l") 2>/dev/null && [ -L "$p.l" ] && rc=0
+  rm -f "$p" "$p.l"
   return "$rc"
 }
 
@@ -159,31 +160,48 @@ nonna_hook_target() {
 }
 
 # nonna_hook_dangles <git hook>
-#   True when a git hook leads to nothing: a link that points at nothing, or her wrapper whose script is gone.
+#   True when a git hook leads to nothing git or her wrapper can run: a link that points at nothing, or her
+#   wrapper whose script is gone ([ -f ] is her wrapper's own test), through every link and wrapper on the
+#   way (a plugin's: the git hook, then current/hooks/). A chain longer than any she makes is not trusted.
 nonna_hook_dangles() {
-  local t
-  if [ -L "$1" ]; then
-    [ ! -e "$1" ]
-    return
-  fi
-  t="$(nonna_hook_target "$1")" || return 1
-  nonna_abs "$t" || t="$(dirname "$1")/$t"
-  [ ! -f "$t" ]
+  local f="$1" t n=0
+  [ -e "$f" ] || [ -L "$f" ] || return 1 # no git hook at all
+  while [ "$n" -lt 8 ]; do
+    [ -f "$f" ] || return 0
+    if [ -L "$f" ]; then
+      t="$(readlink "$f")"
+    else
+      t="$(nonna_hook_target "$f")" || return 1 # not her wrapper: the script itself, and it is there
+    fi
+    nonna_abs "$t" || t="$(dirname "$f")/$t"
+    f="$t"
+    n=$((n + 1))
+  done
+  return 0
 }
 
 # nonna_hook_link <target> <git hook>
 #   Wires <git hook> to <target>: a link, made from the hook's own directory (Git Bash rewrites a relative
-#   target made from elsewhere), or, where ln -s makes a copy, her wrapper. Fails when neither is written.
+#   target made from elsewhere), or, where ln -s makes a copy, her wrapper. Never in place of a hook that is
+#   there, one written while she wires included (a hook manager, another session): the wrapper is written to
+#   a temp file mktemp makes, which no link planted there can redirect, and goes in by a hard link, which
+#   fails where a file is. Fails unless the hook is then hers, to <target>.
 nonna_hook_link() {
   local dir="${2%/*}" name="${2##*/}" tmp
   [ "$dir" != "$2" ] || dir=.
+  if [ -e "$2" ] || [ -L "$2" ]; then return 1; fi
   mkdir -p "$dir" 2>/dev/null || return 1
-  if (cd "$dir" && ln -s "$1" "$name") 2>/dev/null && [ -L "$2" ]; then return 0; fi
-  rm -f "$2" # what ln -s left in place of a link: a copy of her script
-  tmp="$dir/.$name.nonna.$$"
-  if nonna_hook_wrapper "$1" > "$tmp" 2>/dev/null && chmod +x "$tmp" && mv -f "$tmp" "$2"; then return 0; fi
+  if (cd "$dir" && ln -s "$1" "$name") 2>/dev/null; then
+    [ -L "$2" ] && return 0
+    rm -f "$2" # ln -s made a copy of her script, which finds no lib/ beside it
+  fi
+  tmp="$(mktemp "$dir/.$name.nonna.XXXXXX" 2>/dev/null)" || return 1
+  if nonna_hook_wrapper "$1" > "$tmp" && chmod +x "$tmp"; then
+    # debt: without hard links (FAT) mv -n may replace a hook written in the instant it looks, revisit if one is lost
+    ln "$tmp" "$2" 2>/dev/null || mv -n "$tmp" "$2" 2>/dev/null
+  fi
   rm -f "$tmp"
-  return 1
+  [ "$(nonna_hook_target "$2" 2>/dev/null)" = "$1" ]
 }
 
 # nonna_hook_wrappers <directory> <her hooks directory>
@@ -193,9 +211,13 @@ nonna_hook_link() {
 #   follows the link.
 nonna_hook_wrappers() {
   local s tmp
+  # A link there would have her write through it, into what it leads to: her own scripts, say.
+  if [ -L "$1" ]; then rm -f "$1" || return 1; fi
   mkdir -p "$1" 2>/dev/null || return 1
+  # Nor into her own hooks by any other road (a link above it): a wrapper of itself would run itself forever.
+  [ "$(cd "$1" && pwd -P)" != "$(cd "$2" 2>/dev/null && pwd -P)" ] || return 1
   for s in require-status-sync.sh pre-commit.sh; do
-    tmp="$1/.$s.nonna.$$"
+    tmp="$(mktemp "$1/.$s.XXXXXX" 2>/dev/null)" || return 1
     if ! { nonna_hook_wrapper "$2/$s" > "$tmp" && chmod +x "$tmp" && mv -f "$tmp" "$1/$s"; }; then
       rm -f "$tmp"
       return 1
