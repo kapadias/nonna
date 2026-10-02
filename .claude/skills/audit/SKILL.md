@@ -3,7 +3,7 @@ name: audit
 description: Repo-wide over-engineering sweep: ranked delete/stdlib/native/yagni/shrink findings + the debt ledger. Read-only, one-shot.
 argument-hint: "[optional: a directory to scope; defaults to the whole repo]"
 model: opus
-allowed-tools: Task, Read, Grep, Glob, Bash(bash .claude/skills/lean/scripts/check-debt.sh:*)
+allowed-tools: Task, Read, Grep, Glob, Bash(bash "${CLAUDE_SKILL_DIR}/../lean/scripts/check-debt.sh":*)
 ---
 
 Audit for over-engineering: **$ARGUMENTS** (if empty, the whole repository).
@@ -22,9 +22,8 @@ and security are `/review`'s job, not this skill's.
 2. **Rank.** Merge the returned findings, deduplicate, and order biggest cut first. One line per
    finding, tagged `delete:` / `stdlib:` / `native:` / `yagni:` / `shrink:` (the tag format is
    defined in the `lean` skill).
-3. **Ledger.** Run `bash $NONNA/skills/lean/scripts/check-debt.sh --ledger`, where `$NONNA` is the
-   harness root announced at SessionStart (`.claude` in a standalone checkout — never guess it),
-   and append its output to the report. A `no-trigger` marker from the script is itself a finding —
+3. **Ledger.** Run `bash "${CLAUDE_SKILL_DIR}/../lean/scripts/check-debt.sh" --ledger` and append
+   its output to the report. A `no-trigger` marker from the script is itself a finding —
    report it, do not discard it.
 
 ## Output

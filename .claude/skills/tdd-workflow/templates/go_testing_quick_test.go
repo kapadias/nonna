@@ -6,7 +6,7 @@
 //
 // Run:  go test ./...
 // Deps: none — testing/quick is in the standard library. For richer generators and automatic
-// shrinking, prefer pgregory.net/rapid (go get pgregory.net/rapid); the invariants below port
+// shrinking, prefer pgregory.net/rapid (a dependency for your go.mod); the invariants below port
 // directly. testing/quick is used here so the skeleton runs with zero external dependencies.
 //
 // Determinism: testing/quick seeds from its own source; if the SUT uses randomness or the clock,

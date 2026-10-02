@@ -2,8 +2,9 @@
 # Pre-push git hook — the Definition of Done (rules/sync.md): a push that changes
 # CODE must also update docs/STATUS.md, and must not introduce a secret.
 #
-# Auto-installed by .claude/hooks/session-start.sh, or manually:
-#   ln -sf ../../.claude/hooks/require-status-sync.sh .git/hooks/pre-push
+# Auto-installed by .claude/hooks/session-start.sh. By hand, make .git/hooks/pre-push a symlink to
+# this file, its target relative to .git/hooks (two levels up to the repository root, then
+# .claude/hooks/require-status-sync.sh): session start reads an absolute one as a foreign hook.
 # Bypass (only when you truly changed no code): git push --no-verify
 set -uo pipefail
 # Replace refs change what git reads, not what a push sends: every git call below reads the pushed objects.

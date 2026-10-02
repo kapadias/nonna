@@ -202,6 +202,11 @@ Your AI agent says "done"; Nonna makes it prove it.
   `disableAllHooks` line turns every hook off, or its repository hooks, and `review-lanes.sh` sends
   a change to the hooks file to a security review. Golden-tested against Copilot's documented
   payloads and held equal to Claude Code's goldens; not yet run in a live Copilot session.
+- **An icon for the plugin directory.** `.claude/.claude-plugin/icon.png` is the logo, 800 by 800
+  pixels with transparent corners, for the listing to show. `assets/build.py` renders it from
+  `assets/nonna.svg`, the one image drawn by hand, which it reads and never writes, and `--check`
+  fails on an icon that is missing, the wrong size, over the byte budget or rendered from a logo
+  that has since changed.
 
 ### Changed
 
@@ -360,6 +365,60 @@ Your AI agent says "done"; Nonna makes it prove it.
 - **A sample word next to a real key no longer made it a sample.** The placeholder rule (`XXXX`,
   `EXAMPLE`, `your-` and the like) read the whole match, so a key given as `${SAMPLE-key}`, or with
   `EXAMPLE` glued after it, passed. It reads only the key's own start now.
+- **The `mode` option takes its values from its description, not from a list.** The plugin
+  directory's validator rejects any key in a `userConfig` field but `type`, `title`, `description`,
+  `required`, `default`, `sensitive`, `multiple`, `min` and `max`, and `options` is none of them, so
+  the manifest no longer has it. The description says the option takes `lite` or `full` and that
+  anything else, `off` included, counts as full, and the hooks read it that way: `nonna_mode` let an
+  `off` through, which the list had kept out, and session start now records `full` for the git
+  hooks rather than nothing, so they no longer stay lite while Claude Code's hooks are full.
+  Switching her off stays `/nonna off`'s. `claude plugin validate --strict` accepts `options`, so
+  `tests/harness_lint.py` now holds every `userConfig` field to those keys.
+- **`hooks.json` no longer hands `SessionStart` the plugin data dir as an argument.** Claude Code
+  exports it to every hook as `CLAUDE_PLUGIN_DATA`, and `session-start.sh` already read that when it
+  got no argument, so the command is now the script and nothing after it, like every other, and the
+  linter holds it to that form. `/nonna setup` and Codex's hooks file still pass the argument,
+  which `session-start.sh` still takes.
+- **A copy-in's warning for a hook manager named a path that leads nowhere.** With `core.hooksPath`
+  set, session start says where the manager should point, and for a copy-in it said
+  `../../.claude/hooks/<script>`, which holds only from `.git/hooks`. It names the repository's own
+  scripts by their absolute path now, and a submodule's names its own, not the superproject's. The
+  link a copy-in makes in `.git/hooks` is computed rather than written out (`nonna_copy_in_hooks`:
+  one `../` for each level below `.git/`, then the subdirectory the session runs in), and the links
+  already there are still hers. So a copy-in in a subdirectory of its repository, or of a linked
+  worktree, is wired too: its gate was reported missing and never wired. The linter refuses a
+  written-out `../` path to `.claude/` in a shipped script or JSON file, since the plugin
+  directory's validator flags it.
+- **Nothing the plugin ships fetches a package or tells you to.** `format.sh` fell back to
+  `npx --no-install prettier` when no prettier was on `PATH`; it runs the project's own
+  `node_modules/.bin/prettier` now, or nothing. `dep-audit.sh` told you to run `npm i -g`,
+  `pipx install`, `go install` or `cargo install` for a scanner it could not find; it names the
+  scanner's documentation page, and the test templates name their dev dependencies and leave the
+  installing to your lockfile. A lint check holds every file under `.claude/` to it (`npx`, `pnpx`,
+  `uvx`, `bunx`, `pipx`, `pnpm dlx`, `yarn dlx`, `npm exec`, `npm x`, `@latest`, `go install`,
+  `go get`, `cargo install`, `npm install` of a named package, `pip install` without
+  `--require-hashes`): the plugin directory refuses a plugin that fetches a package, pinned or not,
+  because it runs code nobody reviewed.
+- **No skill pre-approves an unscoped `Bash`, or a write it does not make.** `allowed-tools`
+  pre-approves what it names while the skill runs. `/test` and `/coverage` granted a bare `Bash`
+  and `/fix` a bare `Edit` and `Write`: every command, every file. They take the normal permission
+  prompt now (`/fix`, for source edits). `/adr`, `/review` and `/fix` are granted only the place
+  each writes, as `Edit(docs/adr/**)` and `Edit(.claude/reviews/**)`: Claude Code never consults a
+  `Write(path)` rule, and `Edit(path)` covers the Write tool too. `/ship`, `/rollback` and `/fix`
+  pre-approve `git push -u origin`, and `/ship` and `/rollback` `gh pr create`, where they had every
+  `git push` and `gh pr`. The lint rejects a bare `Bash`, `Edit` or `Write` (a scope of wildcards
+  alone too, such as `Bash(*)`, `Bash(*:*)` or `Edit(**)`, and an `Edit` path that leaves the
+  project by `//`, `~` or `..`) and any `Write(…)`.
+- **Script grants name the plugin's own scripts.** `/fix`, `/review`, `/ship` and `/audit` granted
+  `Bash(bash .claude/skills/<skill>/scripts/<script>:*)`, a path in the project: under a plugin
+  install it matched a script the project ships there, and left the plugin's own to ask. Claude Code
+  substitutes `${CLAUDE_SKILL_DIR}` in `allowed-tools` and in the skill body for both installs, so
+  each grant is now `Bash(bash "${CLAUDE_SKILL_DIR}/<path>":*)`, the path from the skill's own
+  directory (`../lean/scripts/check-debt.sh` for a sibling's script), and the body runs the same
+  text, with no harness root to resolve. `/ship` no longer pre-approves `tests/run.sh` and
+  `tests/harness_lint.py`: they sit outside the plugin, and its body never runs them. The lint holds
+  every `Bash(bash …)` grant to that form, to a script that exists inside `.claude/`, and to a skill
+  body that runs it as written.
 
 ## [1.0.0] — 2026-08-01 — "The Model Cannot Ship Itself"
 

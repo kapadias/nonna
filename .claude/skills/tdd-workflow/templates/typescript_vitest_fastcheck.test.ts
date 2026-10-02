@@ -4,8 +4,8 @@
 //   • Golden   — assert an exact, hand-verified oracle. Catches *wrong*.
 //   • Property — assert an invariant over generated inputs. Catches *the case you didn't think of*.
 //
-// Run:  npx vitest run            (or: npm test)
-// Deps: vitest, fast-check        (npm i -D vitest fast-check)
+// Run:  npm test                  (your test script, which runs vitest)
+// Deps: vitest, fast-check        (dev dependencies, pinned in your lockfile)
 //
 // Determinism: pass a fixed `seed` to fc.assert so a failing run reproduces exactly; if the SUT uses
 // randomness or the clock, inject them (see .claude/rules/engineering.md).

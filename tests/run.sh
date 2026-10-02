@@ -1919,6 +1919,30 @@ if [ -e "$FMT/ran" ]; then rc=0; else rc=1; fi; check "format: the plugin never 
 copy_in "$TMP"; fmt "$TMP/.claude/hooks/format.sh"
 if [ -e "$FMT/ran" ]; then rc=0; else rc=1; fi; check "format: a copy-in formats the file just edited" 0 "$rc"
 rm -rf "$FMT" "$TMP"
+# A copy-in fetches nothing: with no prettier on PATH it runs the project's own, node_modules/.bin/prettier,
+# and never npx. The hook gets a PATH of its own, so no prettier or npx the machine has can be found.
+FSB="$(mktemp -d)"; FMT="$(mktemp -d)"; TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
+echo '# x' > "$TMP/notes.md"; echo 'let x = 1' > "$TMP/app.ts"
+for b in bash sh env cat dirname git jq awk; do
+  p="$(command -v "$b" 2>/dev/null || true)"; if [ -n "$p" ]; then ln -s "$p" "$FSB/$b" 2>/dev/null || true; fi
+done
+printf '#!/bin/sh\necho "$*" >> "%s/npx"\n' "$FMT" > "$FSB/npx"; chmod +x "$FSB/npx"
+copy_in "$TMP"
+fmt "$TMP/.claude/hooks/format.sh" PATH="$FSB"; check "format: a copy-in with no prettier anywhere exits 0" 0 "$?"
+if [ -e "$FMT/npx" ]; then rc=0; else rc=1; fi; check "format: a copy-in with no prettier anywhere never runs npx" 1 "$rc"
+mkdir -p "$TMP/node_modules/.bin"
+printf '#!/bin/sh\necho "$*" >> "%s/project"\n' "$FMT" > "$TMP/node_modules/.bin/prettier"; chmod +x "$TMP/node_modules/.bin/prettier"
+fmt "$TMP/.claude/hooks/format.sh" PATH="$FSB"; check "format: a copy-in with the project's own prettier exits 0" 0 "$?"
+contains "format: a copy-in formats a .md with the project's own node_modules/.bin/prettier" "--write $TMP/notes.md" "$(cat "$FMT/project" 2>/dev/null)"
+if [ -e "$FMT/npx" ]; then rc=0; else rc=1; fi; check "format: a copy-in with the project's own prettier never runs npx" 1 "$rc"
+fmt "$TMP/.claude/hooks/format.sh" PATH="$FSB" CLAUDE_FILE_PATH="$TMP/app.ts"
+contains "format: a copy-in formats a .ts with the project's own prettier too" "--write $TMP/app.ts" "$(cat "$FMT/project" 2>/dev/null)"
+rm -f "$FMT/project"
+printf '#!/bin/sh\necho "$*" >> "%s/path"\n' "$FMT" > "$FSB/prettier"; chmod +x "$FSB/prettier"
+fmt "$TMP/.claude/hooks/format.sh" PATH="$FSB"
+if [ -e "$FMT/path" ]; then rc=0; else rc=1; fi; check "format: a prettier on PATH still comes first" 0 "$rc"
+if [ -e "$FMT/project" ]; then rc=0; else rc=1; fi; check "format: a prettier on PATH leaves the project's own alone" 1 "$rc"
+rm -rf "$FSB" "$FMT" "$TMP"
 
 echo "== modes (nonna_mode: off | lite | full) =="
 # One switch per repo, read the same way by Claude Code hooks and by git hooks. Precedence:
@@ -1938,6 +1962,10 @@ check "mode: a lite copy-in (the hooks, no rules) defaults to lite, for everyone
 check "mode: a full copy-in (the hooks and the rules) defaults to full" full "$(mode_of)"
 rm -rf "$TMP/.claude"
 check "mode: the plugin option beats the install default" full "$(mode_of CLAUDE_PLUGIN_OPTION_MODE=full)"
+# The option is free text, so it can hold a value nobody meant: that fails closed to full, not to lite.
+check "mode: a plugin option that is neither lite nor full (Lite) fails closed to full" full "$(mode_of CLAUDE_PLUGIN_OPTION_MODE=Lite)"
+# Off too: switching her off is /nonna off's, in git config, never the option's.
+check "mode: a plugin option of off fails closed to full" full "$(mode_of CLAUDE_PLUGIN_OPTION_MODE=off)"
 git -C "$TMP" config nonna.defaultMode full
 check "mode: the recorded default beats the install default" full "$(mode_of)"
 check "mode: the live plugin option beats the recorded default" lite "$(mode_of CLAUDE_PLUGIN_OPTION_MODE=lite)"
@@ -2065,6 +2093,13 @@ CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$V2" "$HOOKS/session-start.sh" "$P
 if [ -e "$TMP/.git/hooks/pre-push" ] && [ -e "$TMP/.git/hooks/pre-commit" ]; then rc=0; else rc=1; fi
 check "plugin: after an update the hooks still resolve" 0 "$rc"
 rm -rf "$TMP" "$PD" "$V2"
+# Claude Code exports the plugin data dir as CLAUDE_PLUGIN_DATA, and hooks.json passes no argument for it:
+# the environment alone is enough for the same links, through the data dir.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; PD="$(mktemp -d)"
+CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$ROOT/.claude" CLAUDE_PLUGIN_DATA="$PD/data" "$HOOKS/session-start.sh" >/dev/null
+check "plugin: with the data dir in the environment alone, pre-push goes through it" "$PD/data/current/hooks/require-status-sync.sh" "$(readlink "$TMP/.git/hooks/pre-push")"
+check "plugin: ...and pre-commit" "$PD/data/current/hooks/pre-commit.sh" "$(readlink "$TMP/.git/hooks/pre-commit")"
+rm -rf "$TMP" "$PD"
 # A dangling link of ours (the old absolute link into a removed cache version) is repaired; a
 # dangling link that is not ours is left alone and reported.
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; PD="$(mktemp -d)"
@@ -2115,6 +2150,37 @@ check "plugin: her cache link is hers when HOME ends in a slash" 0 "$(hers "$H/.
 mkdir -p "$H/real/plugins"; ln -s "$H/real" "$H/cfg"
 check "plugin: her cache link is hers through a symlinked config directory" 0 "$(hers "$H/real/plugins/cache/nonna/nonna/1.0.0/hooks/pre-commit.sh" CLAUDE_CONFIG_DIR="$H/cfg")"
 rm -rf "$H"
+# Where a copy-in's git hooks find the repo's own scripts is computed from the hooks dir, not assumed: one ../
+# for each component from .git/ down to it, then the subdirectory the session runs in (git rev-parse
+# --show-prefix), then .claude/hooks. A dir that is not under .git/ has none, nor does a submodule's.
+copy_in_hooks() { # <hooks dir> [prefix]: what nonna_copy_in_hooks prints for it, then its exit status
+  bash -c '. "$1/lib/core.sh"; nonna_copy_in_hooks "$2" "$3"; echo " $?"' _ "$HOOKS" "$1" "${2:-}"
+}
+check "copy-in link: from .git/hooks" "../../.claude/hooks 0" "$(copy_in_hooks .git/hooks)"
+check "copy-in link: ...from an absolute path to it" "../../.claude/hooks 0" "$(copy_in_hooks /a/.git/hooks)"
+check "copy-in link: a linked worktree's own hooks dir is two levels deeper" "../../../../.claude/hooks 0" "$(copy_in_hooks /a/.git/worktrees/w/hooks)"
+check "copy-in link: the last /.git/ in a path is the one that counts" "../../.claude/hooks 0" "$(copy_in_hooks /a/.git/b/.git/hooks)"
+check "copy-in link: from a subdirectory (git prints ../.git/hooks), to that subdirectory's harness" "../../app/.claude/hooks 0" "$(copy_in_hooks ../.git/hooks app/)"
+check "copy-in link: ...and from a subdirectory of a linked worktree, where git prints the shared hooks dir" "../../app/.claude/hooks 0" "$(copy_in_hooks /a/.git/hooks app/)"
+check "copy-in link: a hook manager's directory has none" " 1" "$(copy_in_hooks .husky)"
+check "copy-in link: nor an empty one" " 1" "$(copy_in_hooks '')"
+check "copy-in link: nor .githooks, whose name only starts with .git" " 1" "$(copy_in_hooks .githooks)"
+check "copy-in link: nor a submodule's, under the superproject's .git/modules/" " 1" "$(copy_in_hooks /a/.git/modules/sub/hooks)"
+# Property: from every depth under .git/, with or without a subdirectory, the link it computes reaches the
+# repo's own scripts, and no other.
+TMP="$(mktemp -d)"; mkdir -p "$TMP/.claude/hooks" "$TMP/app/.claude/hooks"; : > "$TMP/.claude/hooks/x.sh"; : > "$TMP/app/.claude/hooks/y.sh"
+d="$TMP/.git"; lost=""
+for n in 0 1 2 3 4; do
+  mkdir -p "$d/hooks"
+  link="$(bash -c '. "$1/lib/core.sh"; nonna_copy_in_hooks "$2" ""' _ "$HOOKS" "$d/hooks")"
+  [ -e "$d/hooks/$link/x.sh" ] || lost="$lost $n"
+  link="$(bash -c '. "$1/lib/core.sh"; nonna_copy_in_hooks "$2" app/' _ "$HOOKS" "$d/hooks")"
+  [ -e "$d/hooks/$link/y.sh" ] || lost="$lost $n(app/)"
+  d="$d/lvl$n"
+done
+if [ -z "$lost" ]; then rc=0; else rc=1; fi
+check "copy-in link: property: from every depth under .git/ it reaches the repo's own scripts${lost:+ (not at depth$lost)}" 0 "$rc"
+rm -rf "$TMP"
 # A foreign hook is hers only if it runs her script; mentioning her name is not enough.
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
 printf '#!/bin/sh\n# thanks, Nonna\nexit 0\n' > "$TMP/.git/hooks/pre-push"; chmod +x "$TMP/.git/hooks/pre-push"
@@ -2173,6 +2239,40 @@ out="$(CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$ROOT/.claude" "$HOOKS/sess
 if [ -e "$TMP/.husky/pre-push" ] || [ -e "$TMP/.git/hooks/pre-push" ]; then rc=1; else rc=0; fi
 check "plugin: a hook manager's directory is not written" 0 "$rc"
 contains "plugin: says where the hook manager should point" "require-status-sync.sh" "$out"
+rm -rf "$TMP"
+# A hook manager under a copy-in is told where her scripts are, as under a plugin, by a path that exists: a path
+# relative to the hooks dir is right only when that dir is .git/hooks.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; copy_in "$TMP"; git -C "$TMP" config core.hooksPath .husky
+out="$(CLAUDE_PROJECT_DIR="$TMP" "$TMP/.claude/hooks/session-start.sh")"
+if [ -e "$TMP/.husky" ] || [ -e "$TMP/.git/hooks/pre-push" ]; then rc=1; else rc=0; fi
+check "copy-in: a hook manager's directory is not written" 0 "$rc"
+contains "copy-in: says where the hook manager should point, at her script by its absolute path" "point its pre-push at $(cd "$TMP" && pwd -P)/.claude/hooks/require-status-sync.sh" "$out"
+rm -rf "$TMP"
+# A copy-in in a subdirectory of its repository (git prints ../.git/hooks there): its hooks link to that
+# subdirectory's harness, relatively, and the gate is wired, not reported missing.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; mkdir -p "$TMP/app"; copy_in "$TMP/app"
+out="$(CLAUDE_PROJECT_DIR="$TMP/app" "$TMP/app/.claude/hooks/session-start.sh")"
+check "copy-in, subdirectory: pre-push links to its own harness, relatively" "../../app/.claude/hooks/require-status-sync.sh" "$(readlink "$TMP/.git/hooks/pre-push")"
+if [ -e "$TMP/.git/hooks/pre-push" ] && [ -e "$TMP/.git/hooks/pre-commit" ]; then rc=0; else rc=1; fi; check "copy-in, subdirectory: ...and both links resolve" 0 "$rc"
+case "$out" in *"missing from the harness"*) rc=1 ;; *) rc=0 ;; esac; check "copy-in, subdirectory: ...and does not call it missing" 0 "$rc"
+out="$(CLAUDE_PROJECT_DIR="$TMP/app" "$TMP/app/.claude/hooks/session-start.sh")"
+case "$out" in *"is not Nonna's"*) rc=1 ;; *) rc=0 ;; esac; check "copy-in, subdirectory: ...and the next session takes the link for hers" 0 "$rc"
+rm -rf "$TMP"
+# The same from a subdirectory of a linked worktree, where git prints the shared hooks dir, absolute: the link goes to
+# the main checkout's copy of that subdirectory's harness, as a worktree's root link goes to the main checkout's.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; mkdir -p "$TMP/app"; copy_in "$TMP/app"
+"${GIT[@]}" -C "$TMP" add -A; "${GIT[@]}" -C "$TMP" commit -qm init --no-verify
+"${GIT[@]}" -C "$TMP" worktree add -q "$TMP/wt" -b feature/wt 2>/dev/null
+out="$(CLAUDE_PROJECT_DIR="$TMP/wt/app" "$TMP/wt/app/.claude/hooks/session-start.sh")"
+check "copy-in, worktree subdirectory: pre-push links to that subdirectory's harness" "../../app/.claude/hooks/require-status-sync.sh" "$(readlink "$TMP/.git/hooks/pre-push")"
+case "$out" in *"missing from the harness"*) rc=1 ;; *) rc=0 ;; esac; check "copy-in, worktree subdirectory: ...and does not call it missing" 0 "$rc"
+rm -rf "$TMP"
+# A submodule's hooks live under the superproject's .git/modules/, which session start does not write: the
+# warning names the submodule's own scripts, not the superproject's.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; mkdir -p "$TMP/.git/modules"
+"${GIT[@]}" init -q --separate-git-dir="$TMP/.git/modules/sub" "$TMP/sub"; copy_in "$TMP/sub"
+out="$(CLAUDE_PROJECT_DIR="$TMP/sub" "$TMP/sub/.claude/hooks/session-start.sh")"
+contains "copy-in, submodule: says where its pre-push should point, at its own script by its absolute path" "point its pre-push at $(cd "$TMP/sub" && pwd -P)/.claude/hooks/require-status-sync.sh" "$out"
 rm -rf "$TMP"
 # A linked worktree shares the main checkout's hooks directory.
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; "${GIT[@]}" -C "$TMP" commit -q --allow-empty -m init --no-verify
@@ -2246,6 +2346,16 @@ TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
 printf '{"scripts":{"test":"node t.js"}}\n' > "$TMP/package.json"
 CLAUDE_PLUGIN_OPTION_RUN_TESTS=false CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$ROOT/.claude" "$HOOKS/session-start.sh" >/dev/null
 git -C "$TMP" config --get nonna.testCmd >/dev/null; check "plugin: run_tests off records no test command" 1 "$?"
+rm -rf "$TMP"
+# The mode option is free text: session start records for the git hooks what Claude Code's hooks read it as, full
+# for a value nobody meant, so the two never disagree.
+TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
+CLAUDE_PLUGIN_OPTION_MODE=Lite CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$ROOT/.claude" "$HOOKS/session-start.sh" >/dev/null
+check "plugin: a mode option that is neither lite nor full (Lite) is recorded as full" full "$(git -C "$TMP" config --get nonna.defaultMode)"
+check "plugin: ...so a git hook, without the option, reads full too" full "$(cd "$TMP" && env -u CLAUDE_PLUGIN_OPTION_MODE -u NONNA_MODE bash -c '. "$1/lib/core.sh"; nonna_mode git-hook' _ "$HOOKS")"
+git -C "$TMP" config nonna.defaultMode lite
+CLAUDE_PLUGIN_OPTION_MODE=off CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$ROOT/.claude" "$HOOKS/session-start.sh" >/dev/null
+check "plugin: a mode option of off is recorded as full" full "$(git -C "$TMP" config --get nonna.defaultMode)"
 rm -rf "$TMP"
 TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q
 out="$(CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$ROOT/.claude" "$HOOKS/session-start.sh")"
@@ -2527,6 +2637,16 @@ echo "== dep-audit.sh (supply-chain gate) =="
 DA="$SKILLS/supply-chain/scripts/dep-audit.sh"
 if [ -f "$DA" ]; then
   TMP="$(mktemp -d)"; ( cd "$TMP" && bash "$DA" ); check "exit 3 when no lockfile present" 3 "$?"; rm -rf "$TMP"
+  # A scanner it cannot find is a stop, and it says where to get one: a documentation page, never a command that fetches it.
+  TMP="$(mktemp -d)"; NOSCAN="$(mktemp -d)"; ln -s "$(command -v bash)" "$NOSCAN/bash"
+  for f in pnpm-lock.yaml yarn.lock requirements.txt go.sum Cargo.lock; do : > "$TMP/$f"; done
+  out="$(cd "$TMP" && PATH="$NOSCAN" bash "$DA" 2>&1)"; check "exit 2 when a lockfile's scanner is missing" 2 "$?"
+  contains "a missing pnpm names its documentation page" "https://pnpm.io/installation" "$out"
+  contains "a missing yarn names its documentation page" "https://yarnpkg.com/getting-started/install" "$out"
+  contains "a missing pip-audit names its documentation page" "https://pypi.org/project/pip-audit/" "$out"
+  contains "a missing govulncheck names its documentation page" "https://pkg.go.dev/golang.org/x/vuln/cmd/govulncheck" "$out"
+  contains "a missing cargo-audit names its documentation page" "https://crates.io/crates/cargo-audit" "$out"
+  rm -rf "$TMP" "$NOSCAN"
 else
   echo "  (skip: dep-audit.sh not found)"
 fi
@@ -4340,6 +4460,19 @@ out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks an even
 contains "lint: names the one-sided event" "hook wiring: 'SessionEnd' is in hooks.json but not settings.json" "$out"
 rm -rf "$FX"
 
+# The plugin directory's validator rejects a userConfig key outside its list, `options` among them; Claude Code's
+# own `plugin validate --strict` takes `options`, so this rule is all that keeps it out.
+FX="$(lint_fixture)"
+python3 - "$FX/.claude/.claude-plugin/plugin.json" <<'PY'
+import json, sys
+p = sys.argv[1]; cfg = json.load(open(p))
+cfg["userConfig"]["mode"]["options"] = ["lite", "full"]
+json.dump(cfg, open(p, "w"), indent=2)
+PY
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a userConfig field with a key the plugin directory rejects" 1 "$?"
+contains "lint: names the field and the key" "userConfig.mode: key 'options'" "$out"
+rm -rf "$FX"
+
 # Descriptions load on every turn and had no budget until now; prove it bites.
 FX="$(lint_fixture)"
 python3 -c "
@@ -4369,6 +4502,82 @@ FX="$(lint_fixture)"
 printf '\n```!\nbash "${CLAUDE_SKILL_DIR}/scripts/other.sh"\n```\n' >> "$FX/.claude/skills/nonna/SKILL.md"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: holds a fenced ! block to the same pre-approval" 1 "$?"
 contains "lint: names the fenced block" "other.sh" "$out"
+rm -rf "$FX"
+# A skill's allowed-tools pre-approves what it names: a bare Bash every command, a bare Edit or Write every
+# file. Claude Code never consults a Write(path) rule, so a write to one path is spelled Edit(path).
+FX="$(lint_fixture)"
+sed_i 's|^allowed-tools: .*|allowed-tools: Read, Bash|' "$FX/.claude/skills/adr/SKILL.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a skill granting a bare Bash" 1 "$?"
+contains "lint: names the skill and the bare Bash" "skills/adr/SKILL.md: allowed-tools grants Bash;" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+sed_i 's|^allowed-tools: .*|allowed-tools: Read, Bash(*)|' "$FX/.claude/skills/adr/SKILL.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks Bash(*), which is a bare Bash" 1 "$?"
+contains "lint: names the skill and Bash(*)" "skills/adr/SKILL.md: allowed-tools grants Bash(*);" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+sed_i 's|^allowed-tools: .*|allowed-tools: Read, Bash()|' "$FX/.claude/skills/adr/SKILL.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks Bash(), which is a bare Bash too" 1 "$?"
+contains "lint: names the skill and Bash()" "skills/adr/SKILL.md: allowed-tools grants Bash();" "$out"
+rm -rf "$FX"
+# A scope of wildcards alone is no scope: Edit(**) pre-approves every file, as a bare Edit does.
+FX="$(lint_fixture)"
+sed_i 's|^allowed-tools: .*|allowed-tools: Read, Edit(**)|' "$FX/.claude/skills/adr/SKILL.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks Edit(**), which is a bare Edit" 1 "$?"
+contains "lint: names the skill and Edit(**)" "skills/adr/SKILL.md: allowed-tools grants Edit(**);" "$out"
+rm -rf "$FX"
+# Nor is an Edit path that leaves the project (the filesystem root //, home ~, or a .. anywhere in it), or a Bash
+# scope of wildcards and separators alone.
+FX="$(lint_fixture)"
+sed_i 's|^allowed-tools: .*|allowed-tools: Read, Edit(//**), Edit(~/**), Edit(../**), Edit(./../**), Edit(docs/../../**), Bash(:*), Bash(*:*), Bash(* *)|' "$FX/.claude/skills/adr/SKILL.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks an Edit path that leaves the project, or a Bash scope of wildcards alone" 1 "$?"
+for g in 'Edit(//**)' 'Edit(~/**)' 'Edit(../**)' 'Edit(./../**)' 'Edit(docs/../../**)' 'Bash(:*)' 'Bash(*:*)' 'Bash(* *)'; do
+  contains "lint: names $g" "skills/adr/SKILL.md: allowed-tools grants $g;" "$out"
+done
+rm -rf "$FX"
+FX="$(lint_fixture)"
+sed_i 's|^allowed-tools: .*|allowed-tools: Read, Edit|' "$FX/.claude/skills/adr/SKILL.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a skill granting a bare Edit" 1 "$?"
+contains "lint: names the skill and the bare Edit" "skills/adr/SKILL.md: allowed-tools grants Edit;" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+sed_i 's|^allowed-tools: .*|allowed-tools: Read, Write|' "$FX/.claude/skills/adr/SKILL.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a skill granting a bare Write" 1 "$?"
+contains "lint: names the skill and the bare Write" "skills/adr/SKILL.md: allowed-tools grants Write;" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+sed_i 's|^allowed-tools: .*|allowed-tools: Read, Write(docs/**)|' "$FX/.claude/skills/adr/SKILL.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a Write(path) grant, which Claude Code never consults" 1 "$?"
+contains "lint: names the skill and the Write(path)" "skills/adr/SKILL.md: allowed-tools grants Write(docs/**);" "$out"
+rm -rf "$FX"
+# A script grant names the plugin's own script, as bash "${CLAUDE_SKILL_DIR}/<script>". A path in the project
+# matches only a copy-in install, and under a plugin install would pre-approve the project's script there.
+# The script must be in the plugin, and the skill's body must run it as the grant is written.
+FX="$(lint_fixture)"
+sed_i 's|Bash(bash "\${CLAUDE_SKILL_DIR}/../fast-lane/scripts/check-trivial.sh":\*)|Bash(bash .claude/skills/fast-lane/scripts/check-trivial.sh:*)|' "$FX/.claude/skills/fix/SKILL.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a script grant that names the project's path" 1 "$?"
+contains "lint: names the skill and the grant" 'skills/fix/SKILL.md: Bash(bash .claude/skills/fast-lane/scripts/check-trivial.sh:*) must be' "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+sed_i 's|\.\./fast-lane/scripts/check-trivial\.sh|../fast-lane/scripts/nope.sh|g' "$FX/.claude/skills/fix/SKILL.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a script grant whose script is not there" 1 "$?"
+contains "lint: names the skill and the missing script" 'skills/fix/SKILL.md: Bash(bash "${CLAUDE_SKILL_DIR}/../fast-lane/scripts/nope.sh":*) names a script that does not exist' "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+sed_i 's|`bash "\${CLAUDE_SKILL_DIR}/../fast-lane/scripts/check-trivial.sh"`|the classifier|' "$FX/.claude/skills/fix/SKILL.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a script grant its skill body does not run" 1 "$?"
+contains "lint: names the skill and the grant its body does not run" 'skills/fix/SKILL.md: Bash(bash "${CLAUDE_SKILL_DIR}/../fast-lane/scripts/check-trivial.sh":*) is not run by the skill body' "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+sed_i 's|\.\./fast-lane/scripts/check-trivial\.sh|../../../tests/run.sh|g' "$FX/.claude/skills/fix/SKILL.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a script grant that climbs out of .claude/" 1 "$?"
+contains "lint: names the skill and the grant that climbs out" 'skills/fix/SKILL.md: Bash(bash "${CLAUDE_SKILL_DIR}/../../../tests/run.sh":*) climbs out of' "$out"
+rm -rf "$FX"
+# Out of the plugin and back into a .claude/ is still out: a plugin install has no .claude/ at that path.
+FX="$(lint_fixture)"
+sed_i 's|\.\./fast-lane/scripts/check-trivial\.sh|../../../.claude/skills/fast-lane/scripts/check-trivial.sh|g' "$FX/.claude/skills/fix/SKILL.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a script grant that climbs out of .claude/ and back in" 1 "$?"
+contains "lint: names the skill and the grant that climbs out and back" 'skills/fix/SKILL.md: Bash(bash "${CLAUDE_SKILL_DIR}/../../../.claude/skills/fast-lane/scripts/check-trivial.sh":*) climbs out of' "$out"
 rm -rf "$FX"
 # A user-only skill's description never rides the model's turn, so the every-turn budget skips it.
 FX="$(lint_fixture)"
@@ -4847,6 +5056,77 @@ printf '# pony%s\n' tail >> "$FX/.claude/hooks/lib/core.sh"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: the external name stays out of every other hook file" 1 "$?"
 contains "lint: names the hook file carrying the external name" "lib/core.sh" "$out"
 rm -rf "$FX"
+# The plugin fetches no package, pinned or not, and recommends none: the plugin directory refuses one that does.
+# Every file under .claude/ is read, dot-directories and all, so each form is tried in a file of its own kind.
+FX="$(lint_fixture)"
+printf 'npx foo\n' > "$FX/.claude/skills/supply-chain/fetch.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: a plugin file that runs npx fails" 1 "$?"
+contains "lint: names the file, the line and the token" "supply-chain/fetch.md:1: 'npx'" "$out"
+rm -rf "$FX"
+FX="$(lint_fixture)"
+printf 'go install x@latest\n' > "$FX/.claude/.claude-plugin/fetch.txt"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: a go install in a dot-directory fails" 1 "$?"
+contains "lint: names the file that runs go install" ".claude-plugin/fetch.txt:1: 'go install'" "$out"
+rm -rf "$FX"
+# Each form on a line of its own: every one is named by its line, so none can stop firing unseen.
+FX="$(lint_fixture)"
+cat > "$FX/.claude/skills/supply-chain/fetch.md" <<'EOF'
+npx foo
+pnpx foo
+uvx foo
+bunx foo
+pipx install foo
+pnpm dlx foo
+yarn dlx foo
+npm exec foo
+npm x foo
+use foo@latest
+npm i -D vitest
+npm install --save-dev vitest
+go install x@v1
+go get x
+cargo install x
+pip3 install x
+python3 -m pip install x
+EOF
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: every package fetcher fails" 1 "$?"
+n=0
+while IFS= read -r line; do
+  n=$((n + 1)); contains "lint: flags '$line'" "supply-chain/fetch.md:$n: '" "$out"
+done < "$FX/.claude/skills/supply-chain/fetch.md"
+rm -rf "$FX"
+# What names no package, or only what a lock names, stays: npm ci, a bare npm install, pip install --require-hashes.
+FX="$(lint_fixture)"
+cat > "$FX/.claude/skills/supply-chain/fetch.md" <<'EOF'
+`npm ci` and a bare `npm install` name no package.
+Run npm install, then npm test.
+npm install --omit=dev
+pip install --require-hashes -r requirements.txt
+inpx snpx npxs
+EOF
+NONNA_LINT_ROOT="$FX" python3 "$LINT" >/dev/null 2>&1; check "lint: npm ci, a bare npm install, pip install --require-hashes and words that end in npx pass" 0 "$?"
+rm -rf "$FX"
+# A binary file (the plugin's icon) is not text: one with a NUL byte, and one that is not UTF-8, are skipped.
+FX="$(lint_fixture)"
+python3 -c 'import sys
+for name, data in (("icon.png", b"\x89PNG\r\n\x1a\n\x00npx foo"), ("nul.dat", b"npx foo\x00"), ("latin1.txt", b"npx foo \xe9")):
+    open(sys.argv[1] + "/" + name, "wb").write(data)' "$FX/.claude/.claude-plugin"
+NONNA_LINT_ROOT="$FX" python3 "$LINT" >/dev/null 2>&1; check "lint: a binary file under .claude/ is skipped, not read as text" 0 "$?"
+rm -rf "$FX"
+# Two places under .claude/ are git-ignored and never ship: a /review verdict, whose summary may well name npx, and
+# a contributor's own approvals. Neither is read.
+FX="$(lint_fixture)"
+mkdir -p "$FX/.claude/reviews"
+printf '{"verdict":"approve","summary":"format.sh no longer runs npx"}\n' > "$FX/.claude/reviews/abc1234-code.json"
+printf '{"permissions":{"allow":["Bash(npx tsc:*)"]}}\n' > "$FX/.claude/settings.local.json"
+NONNA_LINT_ROOT="$FX" python3 "$LINT" >/dev/null 2>&1; check "lint: a git-ignored review verdict and settings.local.json are not read" 0 "$?"
+rm -rf "$FX"
+# Only those two: a name that only starts like settings.local.json ships, so it is read.
+FX="$(lint_fixture)"
+printf '{"permissions":{"allow":["Bash(npx tsc:*)"]}}\n' > "$FX/.claude/settings.local.jsonc"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: a fetcher in a file that only starts like settings.local.json fails" 1 "$?"
+contains "lint: names the file the fetcher is in" ".claude/settings.local.jsonc:1: 'npx'" "$out"
+rm -rf "$FX"
 # Nothing may follow the script: `|| true` turns the gate's block (exit 2) into a pass, in one mode only.
 FX="$(lint_fixture)"
 set_hook_cmd "$FX/.claude/hooks/hooks.json" PreToolUse '"${CLAUDE_PLUGIN_ROOT}"/hooks/guard-branch.sh || true'
@@ -4859,9 +5139,40 @@ out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a tail 
 contains "lint: names the tailed settings.json command" "PreToolUse hook '\"\$CLAUDE_PROJECT_DIR\"/.claude/hooks/guard-branch.sh; exit 0'" "$out"
 rm -rf "$FX"
 FX="$(lint_fixture)"
-set_hook_cmd "$FX/.claude/hooks/hooks.json" Stop '"${CLAUDE_PLUGIN_ROOT}"/hooks/stop-dod.sh "${CLAUDE_PLUGIN_DATA}"'
-out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: only SessionStart may take the plugin data dir" 1 "$?"
-contains "lint: names the event given the data dir" "Stop hook" "$out"
+set_hook_cmd "$FX/.claude/hooks/hooks.json" SessionStart '"${CLAUDE_PLUGIN_ROOT}"/hooks/session-start.sh "${CLAUDE_PLUGIN_DATA}"'
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: hooks.json passes no argument, SessionStart reads the plugin data dir from its environment" 1 "$?"
+contains "lint: names the event given the data dir" "SessionStart hook" "$out"
+rm -rf "$FX"
+# Codex's file alone still passes it (${PLUGIN_DATA}), to SessionStart alone.
+FX="$(lint_fixture)"
+set_hook_cmd "$FX/.claude/hooks/codex-hooks.json" Stop 'NONNA_HOST=codex "${PLUGIN_ROOT}"/hooks/stop-dod.sh "${PLUGIN_DATA}"'
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: only a Codex SessionStart may take the plugin data dir" 1 "$?"
+contains "lint: names the Codex event given the data dir" "Stop hook" "$out"
+rm -rf "$FX"
+# A shipped file does not spell where the harness sits relative to a repository: lib/core.sh computes it, and the
+# plugin directory validator flags it written out. The three kinds the lint reads, one in a dot-directory.
+FX="$(lint_fixture)"
+printf '# ../../.claude/hooks\n' | tee -a "$FX/.claude/hooks/lib/tests.sh" >> "$FX/.claude/hooks/lib/shell-words.awk"
+printf '{"link": "../../.claude/hooks"}\n' > "$FX/.claude/.claude-plugin/link.json"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a relative path to .claude/ in a shipped file" 1 "$?"
+contains "lint: names the shell script" ".claude/hooks/lib/tests.sh:" "$out"
+contains "lint: ...the awk script" ".claude/hooks/lib/shell-words.awk:" "$out"
+contains "lint: ...and the JSON file in a dot-directory" ".claude/.claude-plugin/link.json:" "$out"
+rm -rf "$FX"
+# Two places under .claude/ are git-ignored and never ship: a /review verdict, which may quote the old path, and a
+# contributor's own approvals. Neither is read.
+FX="$(lint_fixture)"
+mkdir -p "$FX/.claude/reviews"
+printf '{"verdict":"approve","summary":"core.sh no longer spells ../../.claude/hooks"}\n' > "$FX/.claude/reviews/abc1234-code.json"
+printf '{"permissions":{"allow":["Bash(../../.claude/hooks/x.sh:*)"]}}\n' > "$FX/.claude/settings.local.json"
+NONNA_LINT_ROOT="$FX" python3 "$LINT" >/dev/null 2>&1; check "lint: a git-ignored review verdict and settings.local.json may name a relative path to .claude/" 0 "$?"
+rm -rf "$FX"
+# Only those two: a name that only starts like settings.local.json is not git-ignored, so it ships, and is read.
+FX="$(lint_fixture)"
+mkdir -p "$FX/.claude/settings.local.json.d"
+printf '{"link": "../../.claude/hooks"}\n' > "$FX/.claude/settings.local.json.d/x.json"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: a file that only starts like settings.local.json is read" 1 "$?"
+contains "lint: names that file" ".claude/settings.local.json.d/x.json:" "$out"
 rm -rf "$FX"
 # Keys other than the command decide whether a hook can block at all: async cannot, a timeout lets
 # the action through, and a non-command type hands the decision to a model. Each is refused.
@@ -4923,7 +5234,7 @@ python3 -c 'import json,sys; p=sys.argv[1]; c=json.load(open(p)); c["version"]="
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a Codex manifest on another version than the plugin's" 1 "$?"
 contains "lint: names the Codex manifest's version" "version 0.0.1" "$out"
 rm -rf "$FX"
-# Arguments after the script (SessionStart gets the plugin data dir) are not part of the gate's identity.
+# The two install modes are compared by the script each command runs, not by how its path is spelled.
 FX="$(lint_fixture)"
 set_hook_cmd "$FX/.claude/settings.json" Stop '"$CLAUDE_PROJECT_DIR"/.claude/hooks/format.sh'
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a gate wired differently in the two install modes" 1 "$?"
@@ -5006,6 +5317,8 @@ echo "== assets/build.py (the launch images, built from the benchmark data) =="
 # and of the committed glyph outlines. --check is the gate: an image that no longer matches a fresh
 # build is a wrong number on a launch page. It must run on the standard library alone (CI's lint job
 # installs nothing), so it runs here under `python3 -I -S`, which cannot see site-packages.
+# The plugin's icon is assets/nonna.svg, drawn by hand and rendered into .claude/.claude-plugin/:
+# --check holds it to the logo as it holds the other images to a fresh build.
 AB="$ROOT/assets/build.py"
 out="$(python3 "$ROOT/tests/test_assets.py" 2>&1)"; rc=$?
 check "assets: unit tests pass (numbers from the data, lettering to the digit, the SVGs)" 0 "$rc"
@@ -5013,12 +5326,13 @@ check "assets: unit tests pass (numbers from the data, lettering to the digit, t
 out="$(python3 -I -S "$AB" --check 2>&1)"; rc=$?
 check "assets: --check passes on the real tree, on the standard library alone" 0 "$rc"
 [ "$rc" -eq 0 ] || printf '%s\n' "$out"
-contains "assets: --check reports what it verified" "10 images" "$out"
+contains "assets: --check reports what it verified" "11 images" "$out"
 
 assets_copy() { # -> echoes a copy of what build.py reads and writes
-  local d; d="$(mktemp -d)"; mkdir -p "$d/bench/tasks" "$d/bench/results"
+  local d; d="$(mktemp -d)"; mkdir -p "$d/bench/tasks" "$d/bench/results" "$d/.claude/.claude-plugin"
   cp -R "$ROOT/assets" "$d/"; cp -R "$ROOT/bench/tasks/traps" "$d/bench/tasks/"
   cp -R "$ROOT/bench/results/round3" "$d/bench/results/"
+  cp "$ROOT/.claude/.claude-plugin/icon.png" "$d/.claude/.claude-plugin/"
   printf '%s' "$d"
 }
 assets_check() { NONNA_ASSETS_ROOT="$1" python3 -I -S "$AB" --check 2>&1; } # <root>
@@ -5069,6 +5383,16 @@ out="$(assets_check "$AX")"; check "assets: --check fails on a PNG that is missi
 contains "assets: names the missing PNG" "assets/social-preview.png" "$out"
 rm -rf "$AX"
 
+AX="$(assets_copy)"; rm "$AX/.claude/.claude-plugin/icon.png"
+out="$(assets_check "$AX")"; check "assets: --check fails on an icon that is missing" 1 "$?"
+contains "assets: names it where the plugin keeps it" ".claude/.claude-plugin/icon.png: missing" "$out"
+rm -rf "$AX"
+
+AX="$(assets_copy)"; printf '<!-- hand edit -->\n' >> "$AX/assets/nonna.svg"
+out="$(assets_check "$AX")"; check "assets: --check fails on an icon rendered from a logo that has changed" 1 "$?"
+contains "assets: says the icon is stale" ".claude/.claude-plugin/icon.png: rendered from a different SVG" "$out"
+rm -rf "$AX"
+
 AX="$(assets_copy)"; printf 'not a png' > "$AX/assets/cards/push.png"
 out="$(assets_check "$AX")"; check "assets: --check fails on a file that is not a PNG" 1 "$?"
 contains "assets: names it" "assets/cards/push.png: not a PNG" "$out"
@@ -5098,7 +5422,7 @@ contains "assets: names the variable that points at one" "CHROMIUM" "$out"
 rm -rf "$AX"
 
 # --render, with a stand-in for Chromium that draws a blank PNG of the size it is asked for
-AX="$(assets_copy)"; rm "$AX"/assets/*.png "$AX"/assets/cards/*.png
+AX="$(assets_copy)"; rm "$AX"/assets/*.png "$AX"/assets/cards/*.png "$AX/.claude/.claude-plugin/icon.png"
 cat > "$AX/fake-chromium" <<'PY'
 #!/usr/bin/env python3
 import os, re, struct, sys, zlib

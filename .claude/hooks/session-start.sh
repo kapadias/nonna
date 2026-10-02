@@ -40,16 +40,20 @@ if [ -n "$sid" ] && base_dir="$(git rev-parse --git-path nonna 2>/dev/null)" && 
 fi
 
 # 1. Wire the git hooks (pre-push, pre-commit). A copy-in install links relative to the repo's own
-#    .claude/hooks, which survives a repo move. A plugin install links through
-#    ${CLAUDE_PLUGIN_DATA}/current, a link to the running plugin version refreshed every session: the
-#    versioned cache directory is removed after an update, and git silently skips a dangling hook.
-#    A foreign hook is never overwritten, a hook manager's directory never written: both are
-#    reported, because a gate that is off without saying so is what ADR-0004 exists to prevent.
+#    .claude/hooks (in the subdirectory the session runs in), which survives a repo move. A plugin
+#    install links through ${CLAUDE_PLUGIN_DATA}/current, a link to the running plugin version
+#    refreshed every session: the versioned cache directory is removed after an update, and git
+#    silently skips a dangling hook. A foreign hook is never overwritten, a hook manager's directory
+#    never written: both are reported, because a gate that is off without saying so is what ADR-0004
+#    exists to prevent.
 data="${1:-${CLAUDE_PLUGIN_DATA:-}}"
 hooks_dir="$(git rev-parse --git-path hooks 2>/dev/null || true)"
 hooks_src=""
-if nonna_copy_in; then
-  hooks_src="../../.claude/hooks" # the repo's own harness: its own scripts, relative
+if nonna_copy_in; then # the repo's own harness: its own scripts, relative to the hooks dir
+  # Outside .git/ (a hook manager's dir) or a submodule's, nothing is linked: the warning below names
+  # the resolved path of the .claude/ nonna_copy_in just found here.
+  hooks_src="$(nonna_copy_in_hooks "$hooks_dir" "$(git rev-parse --show-prefix 2>/dev/null)")" \
+    || hooks_src="$(cd .claude && pwd -P)/hooks"
 elif [ -n "$nonna_root" ]; then # a plugin: its own scripts, never ones the repo ships
   hooks_src="$nonna_root/hooks"
   if [ -n "$data" ] && mkdir -p "$data" 2>/dev/null && ln -sfn "$nonna_root" "$data/current" 2>/dev/null; then
@@ -110,17 +114,16 @@ hook_warn=""
 
 # 2. Plugin install: record what the git hooks cannot read from the plugin's options, in the repo's
 #    own git config, which is never committed and never cloned, so a hostile repo cannot plant it.
-#    The mode option is mirrored every session into nonna.defaultMode, which ranks below the user's
-#    nonna.mode (repo or global): Nonna never writes nonna.mode. The first time Nonna meets the
-#    repo, and only when the run_tests option allows it (the default), the test command detection
-#    finds is recorded; a command already set is never overwritten, nor an empty one (gate off).
+#    The mode option is mirrored every session into nonna.defaultMode, as the hooks read it (lite,
+#    else full: nonna_option_mode), which ranks below the user's nonna.mode (repo or global): Nonna
+#    never writes nonna.mode. The first time Nonna meets the repo, and only when the run_tests
+#    option allows it (the default), the test command detection finds is recorded; a command
+#    already set is never overwritten, nor an empty one (gate off).
 if ! nonna_copy_in && [ -n "$nonna_root" ] && git rev-parse --git-dir >/dev/null 2>&1; then
-  case "${CLAUDE_PLUGIN_OPTION_MODE:-}" in
-    lite | full)
-      [ "$(git config --local --get nonna.defaultMode 2>/dev/null)" = "$CLAUDE_PLUGIN_OPTION_MODE" ] \
-        || git config nonna.defaultMode "$CLAUDE_PLUGIN_OPTION_MODE" 2>/dev/null || true
-      ;;
-  esac
+  option_mode="$(nonna_option_mode)"
+  if [ -n "$option_mode" ] && [ "$(git config --local --get nonna.defaultMode 2>/dev/null)" != "$option_mode" ]; then
+    git config nonna.defaultMode "$option_mode" 2>/dev/null || true
+  fi
   case "${CLAUDE_PLUGIN_OPTION_RUN_TESTS:-true}" in
     false | False | FALSE | 0 | no | off) : ;;
     *)

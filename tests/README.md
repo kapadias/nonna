@@ -140,10 +140,11 @@ Exercises each deterministic gate with fixed inputs and asserts the exit code:
   the standard library alone (`python3 -I -S`, as CI's lint job would). It passes on the real
   tree, and on a copy that has had exactly one thing broken it fails, naming the file: an SVG
   edited by hand, data that moved without a rebuild, a `traps.tsv` that disagrees with
-  `summary.json`, and a PNG that is missing, not a PNG, the wrong size, over the 1 MB budget or
-  rendered from a different SVG. A plain run rewrites the SVGs byte for byte; `--render` fails
+  `summary.json`, a PNG that is missing, not a PNG, the wrong size, over the 1 MB budget or
+  rendered from a different SVG, and the plugin's icon, which lives outside `assets/`, missing or
+  left behind by an edit to the logo. A plain run rewrites the SVGs byte for byte; `--render` fails
   without a browser, on a browser that fails or draws the wrong size, and with a stand-in browser
-  it renders and then passes `--check`.
+  it renders, the icon included, and then passes `--check`.
 - **harness_lint itself** — see below.
 
 ### `harness_lint.py` — structural self-validation
@@ -173,7 +174,9 @@ rubric, and an adapted project's name anywhere but `README.md`.
 disagrees with itself, find the `✗ Nonna` line in a hook response or a tool result, and lay text
 out from the committed glyph outlines. The banner's own lettering is the oracle: "nonna", the
 tagline, a pill and the footer come out of the same JSON **to the digit**, so the font and its
-weights are pinned rather than eyeballed.
+weights are pinned rather than eyeballed. The logo, `assets/nonna.svg`, is the one image drawn by
+hand: a plain run leaves it as its author wrote it, and `--check` looks for its PNG, the plugin's
+icon, in `.claude/.claude-plugin/`.
 
 ### The linter is itself a gate
 

@@ -16,7 +16,8 @@ Or from a terminal: `claude plugin marketplace add kapadias/nonna && claude plug
 
 The plugin starts in lite mode: the test gate, "where's the test?", the branch and secret guards, the
 git hooks and six house rules. [Full mode](#full-mode) adds more, for teams. The plugin's two
-options, `run_tests` and `mode`, are under [Configuration](#configuration).
+options, `run_tests` and `mode` (free text: `lite` or `full`, and anything else counts as full), are
+under [Configuration](#configuration).
 
 The first session in each git repository tells you, once, what Nonna did there:
 
@@ -124,7 +125,7 @@ rm -rf .git/nonna .git/nonna-green .git/.nonna-branch-warned-*
 | `NONNA_CRITICAL_PATHS` | the environment Claude Code runs in       | Colon-separated globs of paths to treat as critical: `/fix` sends a change there to the full loop, and `/review` gives it the full review with security.  |
 | `NONNA_LADDER`         | the environment Claude Code runs in       | Full mode under the plugin: `off` leaves the constitution's decision ladder out, `on` keeps it even when another plugin states it.                        |
 | `run_tests`            | plugin option                             | On (the default): while a repository has no `nonna.testCmd`, each session detects one and records it. Off: nothing is recorded.                           |
-| `mode`                 | plugin option                             | `lite` (the default) or `full`: the mode wherever you set no `nonna.mode`. Each session mirrors it into `nonna.defaultMode`, where the git hooks read it. |
+| `mode`                 | plugin option                             | Free text: `lite` (the default) or `full`; anything else counts as full. Each session mirrors `lite` or `full` to `nonna.defaultMode`, for the git hooks. |
 
 Change the plugin's options with `/plugin configure nonna@nonna`, or set them as you install from a
 terminal: `claude plugin install nonna@nonna --config mode=full`.

@@ -30,8 +30,7 @@
     "mode": {
       "type": "string",
       "title": "Default mode",
-      "description": "lite: test gate, branch guard, secret guard, short rules. full: adds the docs/STATUS.md gate, the full rules and the develop/main flow. Override per repo with /nonna lite|full|off.",
-      "options": ["lite", "full"],
+      "description": "lite or full (anything else counts as full). lite: test gate, branch guard, secret guard, short rules. full: adds the docs/STATUS.md gate, the full rules and the develop/main flow. Override per repo with /nonna lite|full|off.",
       "default": "lite"
     }
   }

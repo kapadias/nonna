@@ -10,6 +10,9 @@ bench/results/round3 (summary.json, traps.tsv, the example streams), bench/tasks
 portrait and the glyph outlines in assets/font/. No number in an image is typed in here: change the
 data and every image that quotes it goes stale until it is rebuilt, and --check says so.
 
+The logo, assets/nonna.svg, is the one image drawn by hand: build.py reads it, never writes it, and
+--render draws it into the plugin's icon, .claude/.claude-plugin/icon.png.
+
 Text is outlined as SVG paths, laid out from assets/font/space-grotesk.json, so viewing or building
 needs no font. Only --render needs a browser: $CHROMIUM, or a chromium on PATH. --check rebuilds the
 SVGs and compares them with the committed ones, then reads each PNG's header, size and stamp, on the
@@ -45,6 +48,8 @@ Box = tuple[float, float, float, float]
 # --- where things live, relative to the repository root ---------------------------------------
 FONT = "assets/font/space-grotesk.json"
 BANNER = "assets/nonna-banner.svg"
+LOGO = "assets/nonna.svg"
+ICON = ".claude/.claude-plugin/icon.png"  # the logo, rendered, for the plugin directory's listing
 RESULTS = "bench/results/round3"
 TRAPS = "bench/tasks/traps"
 EXAMPLES = f"{RESULTS}/examples-src"
@@ -547,7 +552,7 @@ class Scene:
 
 # What an image may carry: markup that draws, and nothing that runs or reaches outside the file.
 # So a short allow-list, not a list of what to keep out (a prefixed <s:script>, SMIL, image-set()
-# and a CSS escape all got past that): the SVG elements the ten images and the banner's portrait
+# and a CSS escape all got past that): the SVG elements the eleven images and the banner's portrait
 # use today, which tests/test_assets.py holds equal to the list, and attributes that stay in the
 # file. Anything else is refused however it is spelled.
 SVG_NS = "http://www.w3.org/2000/svg"
@@ -639,6 +644,8 @@ class Image:
     width: int  # the SVG's; the PNG is width*scale wide
     height: int
     scale: int
+    png: str | None = None  # path from the root; None puts the PNG beside the SVG
+    source: bool = False  # the SVG is made by hand: read, never written
 
 
 def _dollars(c: float) -> str:
@@ -807,9 +814,11 @@ def build_all(root: Path) -> list[Image]:
     font = load_font(root / FONT)
     n = load_numbers(root)
     mark = portrait((root / BANNER).read_text(encoding="utf-8"))
+    logo = (root / LOGO).read_text(encoding="utf-8")
     images = [
         Image("scorecard", scorecard_svg(font, n), 1200, 560, 2),
         Image("social-preview", social_svg(font, n, mark), 1280, 640, 1),
+        Image("nonna", logo, 400, 400, 2, png=ICON, source=True),
     ]
     for task in n.tasks:
         prompt = prompt_line(
@@ -908,7 +917,8 @@ def check(root: Path, images: list[Image]) -> list[str]:
         else:
             if committed != img.svg:
                 problems.append(f"{rel}.svg: differs from a fresh build")
-        problems += _png_problems(root / f"{rel}.png", f"{rel}.png", img)
+        png = img.png or f"{rel}.png"
+        problems += _png_problems(root / png, png, img)
     return problems
 
 
@@ -961,7 +971,7 @@ def render(root: Path, images: list[Image]) -> None:
     chromium = find_chromium()
     for img in images:
         svg = root / "assets" / f"{img.name}.svg"
-        png = svg.with_suffix(".png")
+        png = root / img.png if img.png else svg.with_suffix(".png")
         cmd = render_command(chromium, svg, png, img.width, img.height, img.scale)
         done = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         if done.returncode != 0:
@@ -1005,6 +1015,8 @@ def main(argv: list[str] | None = None) -> int:
             )
             return 0
         for img in images:
+            if img.source:
+                continue
             path = root / "assets" / f"{img.name}.svg"
             path.parent.mkdir(parents=True, exist_ok=True)
             # LF on every platform, so the bytes --check compares are the same everywhere

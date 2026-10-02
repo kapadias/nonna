@@ -7,7 +7,7 @@ imports of your own code. The two styles are complementary:
   • Property — assert an invariant over generated inputs. Catches *the case you didn't think of*.
 
 Run:  pytest -q
-Deps: pytest, hypothesis   (pip install pytest hypothesis)
+Deps: pytest, hypothesis   (dev dependencies, pinned in your lockfile)
 
 Determinism: Hypothesis seeds its own RNG; if your SUT uses randomness or the clock, inject a seed and
 a fixed `now` so the test is reproducible bit-for-bit (see .claude/rules/engineering.md).

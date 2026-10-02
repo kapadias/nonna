@@ -28,10 +28,12 @@ case "$file" in
       ruff check --fix "$file" >/dev/null 2>&1 || true
     fi ;;
   *.ts|*.tsx|*.js|*.jsx|*.json|*.css|*.md|*.yaml|*.yml)
+    # A prettier on PATH, else the project's own: the hook never fetches one the project lacks.
+    project_prettier="${CLAUDE_PROJECT_DIR:-.}/node_modules/.bin/prettier"
     if have prettier; then
       prettier --write "$file" >/dev/null 2>&1 || true
-    elif have npx; then
-      npx --no-install prettier --write "$file" >/dev/null 2>&1 || true
+    elif [ -x "$project_prettier" ]; then
+      "$project_prettier" --write "$file" >/dev/null 2>&1 || true
     fi ;;
   *.go)
     have gofmt && { gofmt -w "$file" >/dev/null 2>&1 || true; } ;;
