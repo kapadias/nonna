@@ -84,6 +84,12 @@ never offered to the model, so it is not counted.
 
 History lives in `CHANGELOG.md` and `git log`. Entries here describe the current unit of work.
 
+- **2026-10-03** — The branch guard reads a Unicode space as a word boundary (#54). Claude Code splits
+  a piped command on every character JavaScript's `\s` matches, Unicode spaces (`U+00A0` and kin)
+  among them, which bash keeps in a word and the C locale's `[[:space:]]` does not cover; so
+  `git push origin<U+00A0>main | cat` reached bash as a push to `main`. The guard now reads the command
+  again with each such space made an ASCII one (one `awk` pass), so the boundary is seen; it only ever
+  adds boundaries, so it refuses more, never less.
 - **2026-10-03** — Native Windows: CI's three Windows legs pass every check, and block (#45). Each
   leg failed 240, 240 and 169 checks, traced on a Windows runner to causes in her and in the suite.
   In her: where Git Bash's `ln -s` makes a copy, her git hooks are wrappers, scripts that run hers
@@ -653,9 +659,10 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   - #43: `subagent-verdict.sh` may judge the wrong text when a reviewer reports through a handback.
   - #44: one record-to-payload mapping for every host's `apply_patch`.
   - #45: native Windows's measured gaps (below).
-- #54 (HIGH, found measuring #45): Claude Code rewrites a command that holds a `|`, splitting its words
-  on whitespace bash keeps in one (a no-break space and other Unicode spaces), so
-  `git push origin<NBSP>main | cat` pushes to `main` past the branch guard, on every platform.
+- #54 (HIGH, found measuring #45): fixed. Claude Code rewrites a command that holds a `|`, splitting
+  its words on whitespace bash keeps in one (a no-break space and other Unicode spaces), so
+  `git push origin<NBSP>main | cat` reached bash as a push to `main` past the branch guard, on every
+  platform. The guard now reads such a space as an ASCII one.
 - Native Windows (#30; its gaps are #45): the Windows CI legs pass and block, and the docs say to
   use WSL 2 until these are fixed: backslash paths in the guards (`guard-branch.sh`,
   `secret-scan.sh`, `lib/secret-patterns.sh`); the PowerShell tool, which no hook matches;
