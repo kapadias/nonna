@@ -33,7 +33,10 @@ Exercises each deterministic gate with fixed inputs and asserts the exit code:
   synced push.
 - **session-start**: emits context, auto-installs the pre-push hook, and warns
   instead of overwriting a foreign one. When `ln -s` only copies the script (Git Bash), it
-  removes the copy and says the gate is not enforced; `install.sh` does the same and exits 1. A
+  writes her wrapper in its place, a script that runs hers, and a staged key is refused through it,
+  in a copy-in and through both of a plugin's wrappers; `install.sh` does the same. Her wrapper is
+  hers byte for byte, never in place of a hook that is there, and one whose script is gone is
+  repaired, as a dangling link of hers is (ADR-0016). A
   byte copy of her script already in `.git/hooks` is named as a copy (session start warns,
   `install.sh` exits 1, `/nonna status` gives it no check mark, `/nonna uninstall` says to delete
   it) and never deleted, and is not taken for a hook that chains hers: only a line of code that
@@ -140,10 +143,11 @@ Exercises each deterministic gate with fixed inputs and asserts the exit code:
   the standard library alone (`python3 -I -S`, as CI's lint job would). It passes on the real
   tree, and on a copy that has had exactly one thing broken it fails, naming the file: an SVG
   edited by hand, data that moved without a rebuild, a `traps.tsv` that disagrees with
-  `summary.json`, and a PNG that is missing, not a PNG, the wrong size, over the 1 MB budget or
-  rendered from a different SVG. A plain run rewrites the SVGs byte for byte; `--render` fails
+  `summary.json`, a PNG that is missing, not a PNG, the wrong size, over the 1 MB budget or
+  rendered from a different SVG, and the plugin's icon, which lives outside `assets/`, missing or
+  left behind by an edit to the logo. A plain run rewrites the SVGs byte for byte; `--render` fails
   without a browser, on a browser that fails or draws the wrong size, and with a stand-in browser
-  it renders and then passes `--check`.
+  it renders, the icon included, and then passes `--check`.
 - **harness_lint itself** — see below.
 
 ### `harness_lint.py` — structural self-validation
@@ -173,7 +177,9 @@ rubric, and an adapted project's name anywhere but `README.md`.
 disagrees with itself, find the `✗ Nonna` line in a hook response or a tool result, and lay text
 out from the committed glyph outlines. The banner's own lettering is the oracle: "nonna", the
 tagline, a pill and the footer come out of the same JSON **to the digit**, so the font and its
-weights are pinned rather than eyeballed.
+weights are pinned rather than eyeballed. The logo, `assets/nonna.svg`, is the one image drawn by
+hand: a plain run leaves it as its author wrote it, and `--check` looks for its PNG, the plugin's
+icon, in `.claude/.claude-plugin/`.
 
 ### The linter is itself a gate
 
@@ -204,7 +210,8 @@ Both run in CI on every push and pull request (`.github/workflows/ci.yml`),
 alongside `shellcheck` over every script and `claude plugin validate --strict` on both
 manifests. `run.sh` also runs on a macOS runner under `/bin/bash` 3.2 with only Apple's tools on
 the PATH (no Homebrew), because the guards parse shell in bash and awk and those differ from
-Linux's. It runs a third time under Git Bash on Windows, in three legs, and there it only
-reports: 112 of 1279 checks fail there without native symlinks and 50 with them (run 36771120623), and
-[`docs/INSTALL.md`](../docs/INSTALL.md#windows) says which gates that costs. Adopters wire their own
+Linux's. It runs a third time under Git Bash on Windows, in three legs, where every check passes
+too and the job blocks a merge; [`docs/INSTALL.md`](../docs/INSTALL.md#windows) says what Windows still
+lets through. There its tests about links make real ones, which needs the right to make symlinks
+(Developer Mode, or an administrator's, as GitHub's runners have). Adopters wire their own
 lint/type/test/coverage gate as additional jobs — see [`stacks/`](../stacks/).

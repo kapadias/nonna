@@ -63,6 +63,8 @@ nonna_codex_payload() {
 _nonna_codex_files() {
   local payload patch records
   payload="$(cat)"
+  # Exactly as the JSON holds it, never as bash would run it (nonna_json_command): Codex parses the patch
+  # itself, and keeps a CR inside a line (lib/patch.sh takes one off a line's end, as Codex's parser does).
   patch="$(printf '%s' "$payload" | nonna_json_field '.tool_input.command' \
     | LC_ALL=C tr '\000' '\001')" || return 1
   if [ -z "$patch" ]; then # nothing to write, unless the reader failed on a patch that is there

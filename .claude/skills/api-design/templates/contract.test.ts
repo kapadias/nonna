@@ -6,7 +6,7 @@
 // AGAINST the contract, then implement behind it (the implementation is replaceable; the contract is
 // not). Pair this with the schema in ./openapi-contract.stub.yaml.
 //
-// Run:  npx vitest run        (npm i -D vitest)
+// Run:  npm test              (your test script, which runs vitest, pinned in your lockfile)
 //
 // Adopt: replace `createOrder` below with a call to your real handler or an HTTP client hitting the
 // endpoint (e.g. supertest / fetch against a test server). Keep the assertions — they ARE the contract.

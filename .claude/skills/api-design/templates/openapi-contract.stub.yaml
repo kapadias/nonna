@@ -7,7 +7,8 @@
 #   • collections are BOUNDED — cursor pagination with a server-capped page size
 #   • untrusted input is constrained at the edge (min/max, enum, required) — reject, don't clamp
 #
-# Validate this file:  npx @redocly/cli lint openapi-contract.stub.yaml   (or any OpenAPI 3.1 linter)
+# Validate this file:  redocly lint openapi-contract.stub.yaml   (or any OpenAPI 3.1 linter)
+# redocly is @redocly/cli, a dev dependency pinned in your lockfile.
 openapi: 3.1.0
 info:
   title: Orders API

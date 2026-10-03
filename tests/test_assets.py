@@ -752,10 +752,24 @@ class PngTest(unittest.TestCase):
         self.assertEqual(build.png_stamp(restamped), "cd" * 32)  # the old stamp goes
         self.assertEqual(restamped.count(b"nonna-svg-sha256"), 1)
 
+    def test_check_looks_for_the_png_where_the_image_says_it_goes(self):
+        svg = '<svg xmlns="http://www.w3.org/2000/svg"/>\n'
+        img = build.Image("x", svg, 1, 1, 1, png="out/icon.png")
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "assets").mkdir()
+            (root / "assets/x.svg").write_text(svg, encoding="utf-8")
+            self.assertEqual(build.check(root, [img]), ["out/icon.png: missing"])
+            (root / "out").mkdir()
+            png = build.stamp_png(make_png(1, 1), build.digest(svg))
+            (root / "out/icon.png").write_bytes(png)
+            self.assertEqual(build.check(root, [img]), [])
+
     def test_render_command_is_the_headless_screenshot(self):
-        cmd = build.render_command(
-            "/x/chrome", Path("/a/b.svg"), Path("/a/b.png"), 1200, 560, 2
-        )
+        # An absolute path wherever the test runs: /a/b.svg has no drive, so on Windows it is relative.
+        base = Path(Path.cwd().anchor)
+        svg, png = base / "a" / "b.svg", base / "a" / "b.png"
+        cmd = build.render_command("/x/chrome", svg, png, 1200, 560, 2)
         self.assertEqual(
             cmd,
             [
@@ -766,9 +780,9 @@ class PngTest(unittest.TestCase):
                 "--hide-scrollbars",
                 "--default-background-color=00000000",
                 "--force-device-scale-factor=2",
-                "--screenshot=/a/b.png",
+                f"--screenshot={png}",
                 "--window-size=1200,560",
-                "file:///a/b.svg",
+                svg.as_uri(),
             ],
         )
 
@@ -820,7 +834,7 @@ class ImagesTest(unittest.TestCase):
     def test_the_set(self):
         self.assertEqual(
             [i.name for i in self.images],
-            ["scorecard", "social-preview"] + [f"cards/{t}" for t in ORDER],
+            ["scorecard", "social-preview", "nonna"] + [f"cards/{t}" for t in ORDER],
         )
         self.assertEqual(
             {
@@ -828,13 +842,32 @@ class ImagesTest(unittest.TestCase):
                 for i in self.images
                 if "/" not in i.name
             },
-            {"scorecard": (1200, 560, 2), "social-preview": (1280, 640, 1)},
+            {
+                "scorecard": (1200, 560, 2),
+                "social-preview": (1280, 640, 1),
+                "nonna": (400, 400, 2),
+            },
         )
         for t in ORDER:
             self.assertEqual(
                 (self.by_name[f"cards/{t}"].width, self.by_name[f"cards/{t}"].height),
                 (1080, 1080),
             )
+
+    def test_the_icon_is_the_hand_made_logo_rendered_into_the_plugin(self):
+        icon = self.by_name["nonna"]
+        self.assertEqual(
+            icon.svg, (ROOT / "assets/nonna.svg").read_text(encoding="utf-8")
+        )
+        self.assertTrue(icon.source)
+        self.assertEqual(icon.png, ".claude/.claude-plugin/icon.png")
+        self.assertEqual(
+            (icon.width * icon.scale, icon.height * icon.scale), (800, 800)
+        )
+        for i in self.images:
+            if i is not icon:
+                with self.subTest(i.name):
+                    self.assertEqual((i.png, i.source), (None, False))
 
     def test_every_svg_is_well_formed_and_is_alt_text_first(self):
         for i in self.images:
@@ -989,6 +1022,28 @@ class SceneTest(unittest.TestCase):
             scene.text("nonna nonna nonna", 10, 60, style)
         with self.assertRaisesRegex(ValueError, "outside"):
             scene.text("nonna", 10, 95, style)  # baseline past the bottom
+
+
+class PlainRunTest(unittest.TestCase):
+    def test_a_plain_run_writes_the_built_svgs_and_leaves_a_hand_made_one_alone(self):
+        built = build.Image("built", "<svg>built</svg>\n", 1, 1, 1)
+        made = build.Image("made", "<svg>made</svg>\n", 1, 1, 1, source=True)
+        with tempfile.TemporaryDirectory() as d:
+            assets = Path(d) / "assets"
+            assets.mkdir()
+            # its author's line endings: a rewrite would turn them into LF
+            (assets / "made.svg").write_bytes(b"<svg>made</svg>\r\n")
+            with (
+                unittest.mock.patch.dict(build.os.environ, {"NONNA_ASSETS_ROOT": d}),
+                unittest.mock.patch.object(
+                    build, "build_all", return_value=[built, made]
+                ),
+            ):
+                self.assertEqual(build.main([]), 0)
+            self.assertEqual(
+                (assets / "built.svg").read_text(encoding="utf-8"), built.svg
+            )
+            self.assertEqual((assets / "made.svg").read_bytes(), b"<svg>made</svg>\r\n")
 
 
 if __name__ == "__main__":

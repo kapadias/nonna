@@ -168,13 +168,12 @@ Your AI agent says "done"; Nonna makes it prove it.
   link targets and inline code spans. A number, a command or a link changed in `README.md` fails
   the lint until every translation follows. Each keeps the
   credit; none repeats the golden-test count, and one left behind is checked like `README.md`'s.
-- **Native Windows is measured, and it is not safe yet: use WSL 2** (#30). CI runs the gate tests
-  under Git Bash on `windows-latest` in three legs (`core.autocrlf` true, false, and false with
-  native symlinks), and `tests/windows-probe.sh` prints what Windows does to the hooks. The job reports and
-  does not block. On the latest run 1167 of the 1279 checks passed without native symlinks and 1229 with them; the rest are the suite's own
-  POSIX assumptions and the gaps below. `docs/INSTALL.md` says which hooks run, which let a blocked
-  action through and which never start, with versions. The gaps: a backslash path passes the
-  file-tool guards, the PowerShell tool and `git.exe` pass the branch guard, and with no Git for
+- **Native Windows is measured, and it is not safe yet: use WSL 2** (#30, #45). CI runs the gate
+  tests under Git Bash on `windows-latest` in three legs (`core.autocrlf` true, false, and false with
+  native symlinks), and `tests/windows-probe.sh` prints what Windows does to the hooks. Every check
+  passes in each leg, and the job blocks a merge. `docs/INSTALL.md` says which hooks run, which let
+  a blocked action through and which never start, with versions. The gaps: a backslash path passes
+  the file-tool guards, the PowerShell tool and `git.exe` pass the branch guard, and with no Git for
   Windows PowerShell cannot parse a hook's command, so none of them runs.
 - **A Codex plugin** (#25, ADR-0013). Codex reads the same marketplace and installs the same
   `.claude/`; `.codex-plugin/plugin.json` points it at `hooks/codex-hooks.json`, which runs her
@@ -202,6 +201,11 @@ Your AI agent says "done"; Nonna makes it prove it.
   `disableAllHooks` line turns every hook off, or its repository hooks, and `review-lanes.sh` sends
   a change to the hooks file to a security review. Golden-tested against Copilot's documented
   payloads and held equal to Claude Code's goldens; not yet run in a live Copilot session.
+- **An icon for the plugin directory.** `.claude/.claude-plugin/icon.png` is the logo, 800 by 800
+  pixels with transparent corners, for the listing to show. `assets/build.py` renders it from
+  `assets/nonna.svg`, the one image drawn by hand, which it reads and never writes, and `--check`
+  fails on an icon that is missing, the wrong size, over the byte budget or rendered from a logo
+  that has since changed.
 
 ### Changed
 
@@ -216,13 +220,17 @@ Your AI agent says "done"; Nonna makes it prove it.
   is not a terminal. A pack an earlier `install.sh` wrote is kept: delete it and run again.
 - **`install.sh` exits non-zero when a git hook is not wired**: a foreign hook that does not run
   hers, a hook manager's directory, or a link it could not make.
-- **Text checks out as LF whatever `core.autocrlf` says** (`.gitattributes`), and **a git hook that
-  `ln -s` copied is refused, and one already there is named.** Git for Windows sets
+- **Text checks out as LF whatever `core.autocrlf` says** (`.gitattributes`), and **where `ln -s`
+  copies, her git hooks are wrappers that run hers** (ADR-0016). Git for Windows sets
   `core.autocrlf=true`: a CRLF checkout failed two data checks, and WSL's bash cannot start a CRLF
   script. Git Bash's `ln -s` makes a copy of the hook, which cannot find the `lib/` beside her
-  script and lets a staged key through. `session-start.sh` and `install.sh` now remove the copy
-  they just made and say the gate is not enforced, where they had said they added it. A copy
-  already in `.git/hooks`, which the old session start left, is named and left for you to delete:
+  script and lets a staged key through. `session-start.sh` and `install.sh` now write her wrapper
+  in its place, a short script that runs her script, so a staged key is refused without native
+  symlinks. A plugin's `current` is a directory of wrappers, not a stale copy of the plugin, and a
+  plugin root that arrives as `D:/…` reads as absolute. A wrapper is hers only byte for byte, never
+  goes in place of a hook that is there, and one whose script is gone is repaired as a dangling
+  link of hers is. A copy already in `.git/hooks`, which an old session start left, is named and
+  left for you to delete:
   session start warns, `install.sh` exits 1, `/nonna status` shows no check mark, and
   `/nonna uninstall` names it. Her pre-push script names its own path in a comment, which had made
   a copy of it count as a hook that chains hers, so a comment no longer counts as a chain, on any
@@ -322,6 +330,22 @@ Your AI agent says "done"; Nonna makes it prove it.
 
 ### Fixed
 
+- **The branch guard reads a Unicode space as the word boundary Claude Code makes of it** (#54).
+  Claude Code rewrites a command that holds a pipe through shell-quote, which splits a word on every
+  character JavaScript's `\s` matches — including Unicode spaces (`U+00A0` and kin) that bash keeps
+  inside a word and that `[[:space:]]` in the C locale does not cover. So `git push origin<U+00A0>main
+  | cat` reached bash as a push to `main`, past the guard. The guard now reads the command again with
+  each such space turned into an ASCII one, so the boundary it makes is seen. CR, VT and FF were
+  already covered.
+- **The branch guard reads a command's CRs as the bash that runs it does** (#45, ADR-0017). Git Bash's
+  bash drops every CR from a command, so there `gi<CR>t push --force` is a force push, and so are
+  `git pu<CR>sh --force` and a push to `ma<CR>in`. A native `jq.exe` writes each newline as CRLF,
+  including one inside a value, so where awk failed a git command split by a backslash-newline got
+  through. The guard now asks the hooks' bash how it reads a CR, the first time a command holds one:
+  where it drops every one (Git Bash), the command is read without them; where it keeps them (Linux,
+  macOS), every CR stays (a CR before `#` starts no comment there); where a command could switch that
+  (Cygwin's `igncr`), a command that holds a CR is refused. Every other field, a path or a Codex
+  patch, is read exactly as the JSON holds it, and only the CRLF a jq.exe adds is undone.
 - **`subagent-verdict.sh` graded the wrong transcript and blocked the wrong verdicts** (#7). The
   SubagentStop gate read `transcript_path`, which for that event is the _parent_ session's
   transcript — so `check-review.sh` ran against the orchestrator's prose and rejected every
@@ -360,6 +384,60 @@ Your AI agent says "done"; Nonna makes it prove it.
 - **A sample word next to a real key no longer made it a sample.** The placeholder rule (`XXXX`,
   `EXAMPLE`, `your-` and the like) read the whole match, so a key given as `${SAMPLE-key}`, or with
   `EXAMPLE` glued after it, passed. It reads only the key's own start now.
+- **The `mode` option takes its values from its description, not from a list.** The plugin
+  directory's validator rejects any key in a `userConfig` field but `type`, `title`, `description`,
+  `required`, `default`, `sensitive`, `multiple`, `min` and `max`, and `options` is none of them, so
+  the manifest no longer has it. The description says the option takes `lite` or `full` and that
+  anything else, `off` included, counts as full, and the hooks read it that way: `nonna_mode` let an
+  `off` through, which the list had kept out, and session start now records `full` for the git
+  hooks rather than nothing, so they no longer stay lite while Claude Code's hooks are full.
+  Switching her off stays `/nonna off`'s. `claude plugin validate --strict` accepts `options`, so
+  `tests/harness_lint.py` now holds every `userConfig` field to those keys.
+- **`hooks.json` no longer hands `SessionStart` the plugin data dir as an argument.** Claude Code
+  exports it to every hook as `CLAUDE_PLUGIN_DATA`, and `session-start.sh` already read that when it
+  got no argument, so the command is now the script and nothing after it, like every other, and the
+  linter holds it to that form. `/nonna setup` and Codex's hooks file still pass the argument,
+  which `session-start.sh` still takes.
+- **A copy-in's warning for a hook manager named a path that leads nowhere.** With `core.hooksPath`
+  set, session start says where the manager should point, and for a copy-in it said
+  `../../.claude/hooks/<script>`, which holds only from `.git/hooks`. It names the repository's own
+  scripts by their absolute path now, and a submodule's names its own, not the superproject's. The
+  link a copy-in makes in `.git/hooks` is computed rather than written out (`nonna_copy_in_hooks`:
+  one `../` for each level below `.git/`, then the subdirectory the session runs in), and the links
+  already there are still hers. So a copy-in in a subdirectory of its repository, or of a linked
+  worktree, is wired too: its gate was reported missing and never wired. The linter refuses a
+  written-out `../` path to `.claude/` in a shipped script or JSON file, since the plugin
+  directory's validator flags it.
+- **Nothing the plugin ships fetches a package or tells you to.** `format.sh` fell back to
+  `npx --no-install prettier` when no prettier was on `PATH`; it runs the project's own
+  `node_modules/.bin/prettier` now, or nothing. `dep-audit.sh` told you to run `npm i -g`,
+  `pipx install`, `go install` or `cargo install` for a scanner it could not find; it names the
+  scanner's documentation page, and the test templates name their dev dependencies and leave the
+  installing to your lockfile. A lint check holds every file under `.claude/` to it (`npx`, `pnpx`,
+  `uvx`, `bunx`, `pipx`, `pnpm dlx`, `yarn dlx`, `npm exec`, `npm x`, `@latest`, `go install`,
+  `go get`, `cargo install`, `npm install` of a named package, `pip install` without
+  `--require-hashes`): the plugin directory refuses a plugin that fetches a package, pinned or not,
+  because it runs code nobody reviewed.
+- **No skill pre-approves an unscoped `Bash`, or a write it does not make.** `allowed-tools`
+  pre-approves what it names while the skill runs. `/test` and `/coverage` granted a bare `Bash`
+  and `/fix` a bare `Edit` and `Write`: every command, every file. They take the normal permission
+  prompt now (`/fix`, for source edits). `/adr`, `/review` and `/fix` are granted only the place
+  each writes, as `Edit(docs/adr/**)` and `Edit(.claude/reviews/**)`: Claude Code never consults a
+  `Write(path)` rule, and `Edit(path)` covers the Write tool too. `/ship`, `/rollback` and `/fix`
+  pre-approve `git push -u origin`, and `/ship` and `/rollback` `gh pr create`, where they had every
+  `git push` and `gh pr`. The lint rejects a bare `Bash`, `Edit` or `Write` (a scope of wildcards
+  alone too, such as `Bash(*)`, `Bash(*:*)` or `Edit(**)`, and an `Edit` path that leaves the
+  project by `//`, `~` or `..`) and any `Write(…)`.
+- **Script grants name the plugin's own scripts.** `/fix`, `/review`, `/ship` and `/audit` granted
+  `Bash(bash .claude/skills/<skill>/scripts/<script>:*)`, a path in the project: under a plugin
+  install it matched a script the project ships there, and left the plugin's own to ask. Claude Code
+  substitutes `${CLAUDE_SKILL_DIR}` in `allowed-tools` and in the skill body for both installs, so
+  each grant is now `Bash(bash "${CLAUDE_SKILL_DIR}/<path>":*)`, the path from the skill's own
+  directory (`../lean/scripts/check-debt.sh` for a sibling's script), and the body runs the same
+  text, with no harness root to resolve. `/ship` no longer pre-approves `tests/run.sh` and
+  `tests/harness_lint.py`: they sit outside the plugin, and its body never runs them. The lint holds
+  every `Bash(bash …)` grant to that form, to a script that exists inside `.claude/`, and to a skill
+  body that runs it as written.
 
 ## [1.0.0] — 2026-08-01 — "The Model Cannot Ship Itself"
 

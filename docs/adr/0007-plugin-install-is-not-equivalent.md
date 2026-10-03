@@ -82,3 +82,14 @@ this ADR describes is closed for the top-level conversation. ADR 0008's `Subagen
 extends the same carrier to spawned subagents in plugin mode. The "deferred … the current core is
 ~29,000 characters" text in Options considered is historical: it describes the pre-compaction core,
 not the shipped one.
+
+## Amendment (2026-10-01)
+
+The approval prompt in Consequences is gone for the workflows that run a gate script. Claude Code
+substitutes `${CLAUDE_SKILL_DIR}`, the skill's own directory, in a skill's `allowed-tools` and in its
+body, under a plugin install and a copy-in alike. So `/fix`, `/review`, `/ship` and `/audit` grant
+`Bash(bash "${CLAUDE_SKILL_DIR}/../<skill>/scripts/<script>":*)` and run that same text: the
+plugin's own script, pre-approved in both installs. The grants they had named the script by its
+path in the project (`.claude/skills/...`), which matched only a copy-in, and under a plugin install
+would have pre-approved whatever script the project ships at that path. `/sync`, which grants
+nothing, still runs its script from the harness root and may prompt.

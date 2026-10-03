@@ -61,8 +61,13 @@ kitchen_door() { # <technical reason>: the git hooks are the gate
 # escape, or a run inside her /nonna directory. While she is off, only such a command is refused
 # for being unreadable; she keeps her settings then, and nothing else.
 could_be_hers() { # <raw text>
-  local bsnl=$'\\\n' # a continued line: the shell joins g\<newline>it into git
-  [ "${in_hers:-0}" = 1 ] || printf '%s' "${1//"$bsnl"/}" | grep -qiE "g[\\'\"]*i[\\'\"]*t|n[\\'\"]*o[\\'\"]*n[\\'\"]*n[\\'\"]*a|\\$'"
+  local bsnl=$'\\\n' t # a continued line: the shell joins g\<newline>it into git
+  [ "${in_hers:-0}" = 1 ] && return 0
+  # Nor does a CR's escape, in a payload no reader read (Git Bash runs gi<CR>t as git; a command that
+  # was read holds its CRs as its bash reads them). Taken out as a stream, since bash's own ${t//}
+  # takes seconds on a long command; a pipe that fails leaves it could be hers.
+  t="$(printf '%s' "$1" | LC_ALL=C sed -e 's/\\r//g' -e 's/\\u000[dD]//g')" || return 0
+  printf '%s' "${t//"$bsnl"/}" | grep -qiE "g[\\'\"]*i[\\'\"]*t|n[\\'\"]*o[\\'\"]*n[\\'\"]*n[\\'\"]*a|\\$'"
 }
 unread() { # <what could not be read>: fail closed, never guess
   [ "$off" = 0 ] || could_be_hers "${cmd:-$payload}" || exit 0
@@ -123,7 +128,7 @@ case "$tool" in
     exit 0
     ;;
   Bash)
-    cmd="$(printf '%s' "$payload" | nonna_json_field '.tool_input.command')"
+    cmd="$(printf '%s' "$payload" | nonna_json_command '.tool_input.command')" # as bash will run it
     [ -n "$cmd" ] || ! has_field command || unread "the command could not be read"
     [ -n "$cmd" ] || exit 0
     cwd="$(printf '%s' "$payload" | nonna_json_field '.cwd')" # where the Bash tool will run it
@@ -137,57 +142,81 @@ case "$tool" in
     # message is masked only where the reading is sure to be the shell's. A match in any refuses.
     # When the reader fails (awk missing or failing), a command that could touch git or her settings
     # (git or nonna in it, however quoted, or a $'…' escape) is refused; nothing else here reads one.
-    words() { printf '%s\n' "$cmd" | LC_ALL=C awk -v out="$1" -f "$here/lib/shell-words.awk" 2>/dev/null; }
     quoted() { case "$1" in *[\'\"\\]*) return 0 ;; esac; return 1; }
     cant_read() {
       could_be_hers "$cmd" && unread "the command reader (awk) failed"
       exit 0
     }
-    lvl="$(words B)" || cant_read
-    segs="$(words A)" || cant_read
-    segs="$segs"$'\n'"$lvl"
-    code="$lvl" # every opened level, read as the code a nested shell would run
-    n=0
-    while [ "$n" -lt 6 ] && quoted "$lvl"; do
-      next="$(printf '%s\n' "$lvl" | LC_ALL=C awk -v out=B -v nomask=1 -v relevel=1 -f "$here/lib/shell-words.awk" 2>/dev/null)" || cant_read
-      [ "$next" = "$lvl" ] && break
-      segs="$segs"$'\n'"$next"
-      code="$code"$'\n'"$next"
-      lvl="$next"
-      n=$((n + 1))
-    done
-    if [ "$n" -ge 6 ] && quoted "$lvl"; then
-      [ "$off" = 0 ] || could_be_hers "$cmd" || exit 0
-      kitchen_door "refusing quotes nested deeper than the guard reads; run the inner command itself."
-    fi
-
-    # Brace lists and globs, as the shell expands them before it runs a word (lib/expand.awk): a line
-    # it would expand is read again, expanded, with a glob read as the name of hers it could match
-    # (git, git-push, a protected branch, .git/hooks). The command itself is read quote-exact (a
-    # quoted brace is text); every opened level as code. A glob group (bash's @(…) under extglob,
-    # zsh's (a|b)) is read in readings of its own, when a ( follows a word's character or $'…' could
-    # hide one. An expansion too large to read in time is refused.
-    top="$(printf '%s\n' "$cmd" | LC_ALL=C awk -v out=A -v qmark=1 -f "$here/lib/shell-words.awk" 2>/dev/null)" || cant_read
-    if printf '%s' "$cmd" | grep -qE "[^[:space:]\$();&|<>\`]\(|\\$'"; then
-      xw="$(printf '%s\n' "$cmd" | LC_ALL=C awk -v out=A -v qmark=1 -v xglob=1 -f "$here/lib/shell-words.awk" 2>/dev/null)" || cant_read
-      top="$top"$'\n'"$xw"
-      xl="$(printf '%s\n' "$cmd" | LC_ALL=C awk -v out=B -v xglob=1 -f "$here/lib/shell-words.awk" 2>/dev/null)" || cant_read
-      code="$code"$'\n'"$xl"
+    # Read a command the way the shell will run it, appending every reading to segs: A keeps each word
+    # whole; B exposes what a quoted string holds, re-read up to six times as a nested shell removes a
+    # quote; then each is expanded (lib/expand.awk), a glob read as the name of hers it could match
+    # (git, a protected branch, .git/hooks). A glob group is read in readings of its own. Called for
+    # the command, and for its Unicode-space-normalized form (below), so a glob behind such a space is
+    # matched too. awk failing, or an expansion too large to read in time, refuses (cant_read gives git
+    # or her settings the benefit of the doubt). could_be_hers and kitchen_door judge the real command.
+    read_command() { # <command>
+      local c="$1" a lvl code next top xl xw n grown
+      a="$(printf '%s\n' "$c" | LC_ALL=C awk -v out=A -f "$here/lib/shell-words.awk" 2>/dev/null)" || cant_read
+      lvl="$(printf '%s\n' "$c" | LC_ALL=C awk -v out=B -f "$here/lib/shell-words.awk" 2>/dev/null)" || cant_read
+      segs="$segs"$'\n'"$a"$'\n'"$lvl"
+      code="$lvl" # every opened level, read as the code a nested shell would run
       n=0
-      while [ "$n" -lt 6 ] && quoted "$xl"; do
-        xw="$(printf '%s\n' "$xl" | LC_ALL=C awk -v out=B -v nomask=1 -v relevel=1 -v xglob=1 -f "$here/lib/shell-words.awk" 2>/dev/null)" || cant_read
-        [ "$xw" = "$xl" ] && break
-        code="$code"$'\n'"$xw"
-        xl="$xw"
+      while [ "$n" -lt 6 ] && quoted "$lvl"; do
+        next="$(printf '%s\n' "$lvl" | LC_ALL=C awk -v out=B -v nomask=1 -v relevel=1 -f "$here/lib/shell-words.awk" 2>/dev/null)" || cant_read
+        [ "$next" = "$lvl" ] && break
+        segs="$segs"$'\n'"$next"
+        code="$code"$'\n'"$next"
+        lvl="$next"
         n=$((n + 1))
       done
-    fi
-    grown="$(printf '%s\n%s\n' "$top" "${code//$'\016'/?}" | LC_ALL=C awk -f "$here/lib/expand.awk" 2>/dev/null)"
-    case $? in
-      0) segs="$segs"$'\n'"$grown" ;;
-      3) too_long "a brace list or a glob expands to more than it can read before the hook times out." ;;
-      *) unread "the brace and glob reader (awk) failed" ;;
-    esac
+      if [ "$n" -ge 6 ] && quoted "$lvl"; then
+        [ "$off" = 0 ] || could_be_hers "$cmd" || exit 0
+        kitchen_door "refusing quotes nested deeper than the guard reads; run the inner command itself."
+      fi
+
+      # Brace lists and globs, as the shell expands them before it runs a word (lib/expand.awk). The
+      # command itself is read quote-exact (a quoted brace is text); every opened level as code. A glob
+      # group (bash's @(…) under extglob, zsh's (a|b)) is read in readings of its own, when a ( follows
+      # a word's character or $'…' could hide one.
+      top="$(printf '%s\n' "$c" | LC_ALL=C awk -v out=A -v qmark=1 -f "$here/lib/shell-words.awk" 2>/dev/null)" || cant_read
+      if printf '%s' "$c" | grep -qE "[^[:space:]\$();&|<>\`]\(|\\$'"; then
+        xw="$(printf '%s\n' "$c" | LC_ALL=C awk -v out=A -v qmark=1 -v xglob=1 -f "$here/lib/shell-words.awk" 2>/dev/null)" || cant_read
+        top="$top"$'\n'"$xw"
+        xl="$(printf '%s\n' "$c" | LC_ALL=C awk -v out=B -v xglob=1 -f "$here/lib/shell-words.awk" 2>/dev/null)" || cant_read
+        code="$code"$'\n'"$xl"
+        n=0
+        while [ "$n" -lt 6 ] && quoted "$xl"; do
+          xw="$(printf '%s\n' "$xl" | LC_ALL=C awk -v out=B -v nomask=1 -v relevel=1 -v xglob=1 -f "$here/lib/shell-words.awk" 2>/dev/null)" || cant_read
+          [ "$xw" = "$xl" ] && break
+          code="$code"$'\n'"$xw"
+          xl="$xw"
+          n=$((n + 1))
+        done
+      fi
+      grown="$(printf '%s\n%s\n' "$top" "${code//$'\016'/?}" | LC_ALL=C awk -f "$here/lib/expand.awk" 2>/dev/null)"
+      case $? in
+        0) segs="$segs"$'\n'"$grown" ;;
+        3) too_long "a brace list or a glob expands to more than it can read before the hook times out." ;;
+        *) unread "the brace and glob reader (awk) failed" ;;
+      esac
+    }
+    segs=""
+    read_command "$cmd"
+
+    # Claude Code rewrites a command that holds a pipe through shell-quote, which splits a word on every
+    # character JavaScript's \s matches. That set includes Unicode spaces — U+00A0 and kin — that bash
+    # keeps inside a word and that [[:space:]] in the C locale does not cover (it covers only space,
+    # tab, newline, CR, VT, FF). So "git push origin<U+00A0>main | cat" reaches bash as "git push
+    # origin main | cat": the push target is main. Read the command again with each such space turned
+    # into an ASCII one, through the whole pipeline above (a glob behind the space is expanded too), so
+    # the word boundary it makes is seen (#54). A match in any reading refuses, and this only ever adds
+    # boundaries, so applying it whenever one of these bytes is present (not only with a pipe) can
+    # refuse more but never less. One awk pass to normalize, so a long command cannot outrun the hook's
+    # timeout the way a bash ${//} in the user's locale would.
+    USP='\302\240|\341\232\200|\342\200\200|\342\200\201|\342\200\202|\342\200\203|\342\200\204|\342\200\205|\342\200\206|\342\200\207|\342\200\210|\342\200\211|\342\200\212|\342\200\250|\342\200\251|\342\200\257|\342\201\237|\343\200\200|\357\273\277'
+    nspaced="$(printf '%s' "$cmd" | LC_ALL=C awk -v re="$USP" '{ gsub(re, " "); print }')" || cant_read
+    [ "$nspaced" = "$cmd" ] || read_command "$nspaced"
+
     runs_git() { printf '%s\n' "$segs" | grep -qiE "${GIT}[a-z]"; }
     RD=$'\002' # the mark shell-words.awk puts before a redirection the shell performs
 

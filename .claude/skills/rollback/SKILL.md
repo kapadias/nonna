@@ -4,7 +4,7 @@ disable-model-invocation: true
 description: Revert a bad change or roll back a deployment — the risk-reducing counterpart to /ship. Fast-path but still gated by tests.
 argument-hint: "<commit-hash or PR number or description of what to revert>"
 model: sonnet
-allowed-tools: Bash(git log:*), Bash(git diff:*), Bash(git branch:*), Bash(git status:*), Bash(git checkout:*), Bash(git switch:*), Bash(git revert:*), Bash(git push:*), Bash(gh pr:*), Read, Grep, Glob
+allowed-tools: Bash(git log:*), Bash(git diff:*), Bash(git branch:*), Bash(git status:*), Bash(git checkout:*), Bash(git switch:*), Bash(git revert:*), Bash(git push -u origin:*), Bash(gh pr create:*), Bash(gh pr list:*), Read, Grep, Glob
 ---
 
 !git log --oneline -20

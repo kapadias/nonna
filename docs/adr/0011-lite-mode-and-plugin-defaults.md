@@ -124,8 +124,12 @@ lighter mode to select". A plugin user's first day is that use.
    `${CLAUDE_PLUGIN_DATA}/current`, which each session points at the running version so the hooks
    survive updates.
    - A dangling link of Nonna's (or Keel's) is repaired. Hers means the link she would make now,
-     one into her cache or data in the plugins directory Claude Code uses, or a copy-in's
-     `../../.claude/hooks/<script>`; a path merely shaped like hers is not.
+     one into her cache or data in the plugins directory Claude Code uses, or a copy-in's link to
+     its own `.claude/hooks/<script>`, computed from the hooks directory (`nonna_copy_in_hooks`: one
+     `../` for each level from `.git/`, then the subdirectory the session runs in, so
+     `../../.claude/hooks/<script>` from `.git/hooks` at the top); a path merely shaped like hers is
+     not. A submodule's hooks, under the superproject's `.git/modules/`, are not linked: the warning
+     names the copy-in's scripts by their absolute path, as for a hook manager.
    - A foreign hook is never overwritten, and neither is a hook manager's directory.
    - A hook that points at nothing is reported. So is a hook manager, any gate that could not be
      wired, and a foreign hook, unless it chains hers by naming her script's path.
