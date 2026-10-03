@@ -91,9 +91,10 @@ wire_hook() { # <git hook name> <script name>
     if nonna_hook_is_hers "$(nonna_hook_target "$dest" 2>/dev/null)" "$2" "$target"; then
       # Hers, but git skips a link that points at nothing without a word, and her wrapper runs nothing.
       ! nonna_hook_dangles "$dest" || hook_warns+=("$dest points at nothing, so her $1 gate is NOT enforced")
-    elif nonna_hook_is_copy "$dest" "$real"; then
+    elif nonna_hook_is_copy "$dest" "$real" || { [ -n "$nonna_root" ] && nonna_hook_is_copy "$dest" "$nonna_root/hooks/$2"; }; then
       # What an older session start left where ln -s copies (Git Bash): it runs, finds no lib/ beside itself
-      # and enforces nothing. Named and never deleted: it was there before me.
+      # and enforces nothing. Named and never deleted: it was there before me. Compared with her script itself,
+      # since where ln -s copies a plugin's data dir holds her wrapper of it.
       hook_warns+=("$dest is a copy of her $2, not a link, and a copy cannot find its lib/ (unless you copied its lib/ beside it), so her $1 gate is NOT enforced; delete it")
     else # the user's own, even when it shares her script's name, unless it chains hers
       nonna_hook_chains_hers "$dest" "$2" "$target" \
