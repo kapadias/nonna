@@ -123,7 +123,7 @@ case "$tool" in
     exit 0
     ;;
   Bash)
-    cmd="$(printf '%s' "$payload" | nonna_json_field '.tool_input.command')"
+    cmd="$(printf '%s' "$payload" | nonna_json_command '.tool_input.command')" # as bash will run it
     [ -n "$cmd" ] || ! has_field command || unread "the command could not be read"
     [ -n "$cmd" ] || exit 0
     cwd="$(printf '%s' "$payload" | nonna_json_field '.cwd')" # where the Bash tool will run it

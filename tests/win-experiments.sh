@@ -1,27 +1,46 @@
 #!/usr/bin/env bash
-# Scratch (#45, never merged): the security re-review's fixes on Git Bash: the mode, OSTYPE, unknown, Codex.
+# Scratch (#45, never merged): can a command switch how Git Bash reads a CR partway through? And the CR
+# checks of tests/run.sh (asking bash, a command only), on Git Bash.
 set -u
 exec </dev/null
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"; HOOKS="$ROOT/.claude/hooks"; GB="$HOOKS/guard-branch.sh"; SS="$HOOKS/secret-scan.sh"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"; HOOKS="$ROOT/.claude/hooks"; SS="$HOOKS/secret-scan.sh"; GB="$HOOKS/guard-branch.sh"
 say() { printf 'probe %s: %s\n' "$1" "$2"; }
+show() { od -An -c | tr -s ' ' | tr '\n' ' '; }
+CR="$(printf '\r')"; LF='
+'
+say E16 "BASH_VERSINFO[5]=${BASH_VERSINFO[5]} OSTYPE=$OSTYPE MSYSTEM=${MSYSTEM:-} uname=$(uname -s) BASH=$BASH"
+say E16 "igncr as bash starts: $(bash -c 'shopt -o igncr' 2>&1)"
+say E16 "default, set +o igncr, set -o igncr (a line each): $(bash -c "printf '<%s>' a${CR}b${LF}set +o igncr 2>/dev/null${LF}printf '<%s>' a${CR}b${LF}set -o igncr 2>/dev/null${LF}printf '<%s>' a${CR}b" 2>&1 | show)"
+say E16 "default, shopt -uo igncr, shopt -so igncr (a line each): $(bash -c "printf '<%s>' a${CR}b${LF}shopt -uo igncr 2>/dev/null${LF}printf '<%s>' a${CR}b${LF}shopt -so igncr 2>/dev/null${LF}printf '<%s>' a${CR}b" 2>&1 | show)"
+say E16 "set +o igncr, then on the same line: $(bash -c "set +o igncr; printf '<%s>' a${CR}b" 2>&1 | show)"
+say E16 "a CR that ends a line: $(bash -c "printf '<%s>' a${CR}${LF}" 2>&1 | show)"
+say E16 "SHELLOPTS=igncr from the environment: $(env SHELLOPTS=igncr bash -c "printf '<%s>' a${CR}b" 2>&1 | show)"
+say E16 "a script file, set +o igncr then a CR: $(d="$(mktemp -d)"; printf 'set +o igncr\nprintf "<%%s>" a\rb\n' > "$d/s.sh"; bash "$d/s.sh" 2>&1 | show; rm -rf "$d")"
+say E16 "eval of a string with a CR: $(bash -c "eval \"printf '<%s>' a\$(printf '\\\\r')b\"" 2>&1 | show)"
+say E16 "source of a file with a CR: $(d="$(mktemp -d)"; printf 'printf "<%%s>" a\rb\n' > "$d/s.sh"; bash -c ". '$d/s.sh'" 2>&1 | show; rm -rf "$d")"
+say E16 "json.sh asks: $(bash -c '. "$1/lib/json.sh"; _nonna_cr_mode' _ "$HOOKS")"
+
+# The checks, as tests/run.sh has them.
 pass=0; fail=0
-check() { if [ "$2" = "$3" ]; then pass=$((pass + 1)); say ok "$1"; else fail=$((fail + 1)); say FAIL "$1 (want $2, got $3)"; fi; }
+check() { if [ "$2" = "$3" ]; then pass=$((pass + 1)); say ok "$1"; else fail=$((fail + 1)); say FAIL "$1 (want $(printf %q "$2"), got $(printf %q "$3"))"; fi; }
 contains() { case "$3" in *"$2"*) pass=$((pass + 1)); say ok "$1" ;; *) fail=$((fail + 1)); say FAIL "$1 (missing: $2)" ;; esac; }
-mode() { bash -c '. "$1/lib/json.sh"; printf %s "$_nonna_cr"' _ "$HOOKS"; }
-say E15 "BASH_VERSINFO[5]=${BASH_VERSINFO[5]} mode=$(mode) with OSTYPE=linux-gnu: $(OSTYPE=linux-gnu mode) with OSTYPE=cygwin: $(OSTYPE=cygwin mode)"
-eval "$(sed -n '/^DROPS_CR=no/p' "$ROOT/tests/run.sh")"
-eval "$(sed -n '/^check "json: where bash drops every CR, so does a field"/,/^check "json: ...nor one of linux-gnu"/p' "$ROOT/tests/run.sh")"
-# Codex: an apply_patch whose line holds a CR before a key, read as Codex reads it.
-KEY="sk-proj-$(printf 'A%.0s' $(seq 1 120))"
-PAY="$(python3 -c 'import json,sys; print(json.dumps({"tool_name":"apply_patch","tool_input":{"command":"*** Begin Patch\n*** Add File: k.py\n+a\r"+sys.argv[1]+"\n*** End Patch"}}))' "$KEY")"
-out="$(printf '%s' "$PAY" | bash -c '. "$1/lib/core.sh"; . "$1/lib/host-codex.sh"; _nonna_codex_files' _ "$HOOKS")"
-contains "codex: the patch keeps its CR, as this platform reads it" 'a\u000dsk-proj-' "$out"
-R="$(mktemp -d)"; git -C "$R" init -q
-rc=0; printf '%s' "$PAY" | (cd "$R" && NONNA_HOST=codex "$SS" >/dev/null 2>&1) || rc=$?
-check "codex: secret-scan refuses a key behind a CR in a patch line" 2 "$rc"
-# The guard still refuses what Git Bash runs, with the mode as it is.
+eval "$(sed -n '/^link() {/,/^}/p' "$ROOT/tests/run.sh")"
+eval "$(sed -n '/^cr_bytes() {/,/^esac/p' "$ROOT/tests/run.sh")"
+say E16 "the suite measures CR_MODE=$CR_MODE"
+eval "$(sed -n "/^# A command is read as this platform.s bash will run it/,/^done. _ \"\$HOOKS\" . python3 -c \"\$CR_PROP\" check)\"/p" "$ROOT/tests/run.sh")"
+LNK="$(mktemp -d)"; printf 'K=1\n' > "$LNK/.env"
+eval "$(sed -n '/^link .env "\$LNK\/\$(printf/,/^printf .*name ending in a CR/p' "$ROOT/tests/run.sh")"
+say E16 "the name with a CR, as ls shows it: $(ls -la "$LNK" | tail -n +2 | tr '\n' '|')"
+rm -rf "$LNK"
 TMP="$(mktemp -d)"; git -C "$TMP" init -q; git -C "$TMP" checkout -qb feature/x
 eval "$(sed -n '/^gbp() {/p' "$ROOT/tests/run.sh")"
-check "guard: gi<CR>t push, as bash reads it here" "$([ "$DROPS_CR" = yes ] && echo 2 || echo 0)" "$(gbp "$PATH" "$(printf 'gi\rt push --for''ce origin feature/x')")"
-check "guard: ...and with OSTYPE=linux-gnu in the environment" "$([ "$DROPS_CR" = yes ] && echo 2 || echo 0)" "$(OSTYPE=linux-gnu gbp "$PATH" "$(printf 'gi\rt push --for''ce origin feature/x')")"
-say E15 "$pass passed, $fail failed"
+eval "$(sed -n '/^crv() {/,/^}/p' "$ROOT/tests/run.sh")"
+eval "$(sed -n '/^crv "a CR before #, as bash reads it/,/^crv "...and ma<CR>in is main"/p' "$ROOT/tests/run.sh")"
+CXS=s; CXR="$TMP"; FAKE_OAI="sk-proj-$(printf 'A%.0s' $(seq 1 120))"
+eval "$(sed -n "/^cx_event() {/,/^}/p" "$ROOT/tests/run.sh")"; eval "$(sed -n "/^cx_tool() {/,/^}/p" "$ROOT/tests/run.sh")"
+eval "$(sed -n '/^cx_patch() {/,/^}/p' "$ROOT/tests/run.sh")"
+eval "$(sed -n '/^out="\$(cx_patch .\*\*\* Add File: k.py. "+a/,/the patch keeps its CR/p' "$ROOT/tests/run.sh")"
+rc=0; cx_patch '*** Add File: k.py' "+a$(printf '\r')$FAKE_OAI" | (cd "$TMP" && NONNA_HOST=codex "$SS" >/dev/null 2>&1) || rc=$?
+check "codex: secret-scan refuses a key behind a CR in a patch line" 2 "$rc"
+rm -rf "$TMP"
+say E16 "$pass passed, $fail failed"
