@@ -664,6 +664,10 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   above that `claude plugin validate --strict` does not make. Expected: no blocking finding. The
   holds left are its reviewer's: the credential patterns in `secret-scan.sh` and `guard-branch.sh`,
   `/nonna`'s `!` line (pre-approved exactly) and the scripts the hooks run in turn.
+- Hardening from this unit's security review (ADR-0018, defense-in-depth, not a blocker): the hook
+  recompute trusts a host-set `${CLAUDE_PLUGIN_ROOT}` that points at a harness instead of always
+  self-locating; re-assert the full lib set under the resolved root, or keep `${BASH_SOURCE[0]}`
+  authoritative and spell paths from `${CLAUDE_PLUGIN_ROOT}` only for the validator.
 - #49: the bare `!git …` and `!ls …` lines in eight skills probably never run.
 - #50, from this unit's reviews: a repository whose `.claude` is a symlink is taken for a copy-in
   (one that links into the plugin's directory gets the plugin to run its tests and formatters),

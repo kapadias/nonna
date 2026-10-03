@@ -64,9 +64,10 @@ harness — yet the validator still wants every sourced path spelled from `${CLA
    pinned by `tests.sh: no timeout(1)`.
 4. **Inline `awk` and `sed` that only filter stdin stay.** They open no file and cannot reach outside
    the plugin; moving dozens of them into files would bloat the tree and risk behaviour for no gain.
-5. **A harness-lint check mirrors the rule** (`tests/harness_lint.py`): a computed exec/source path or
-   an inline `-c`/`-e` program in a followed hook script fails the build, so this cannot regress — the
-   deterministic gate the directory validator is not, locally.
+5. **A harness-lint check mirrors the rule** (`tests/harness_lint.py`): a computed exec/source path, an
+   interpreter run on a computed file path, or an inline `-c`/`-e` program in a followed hook script
+   fails the build, so this cannot regress — the deterministic gate the directory validator is not,
+   locally.
 
 ## Consequences
 
@@ -76,5 +77,12 @@ harness — yet the validator still wants every sourced path spelled from `${CLA
   this rule), so resubmission is the real oracle. The harness-lint mirror is the local stand-in.
 - The `.awk`, `.py` and `.pl` files run by literal path, and the remaining inline `awk`/`sed` filters,
   may draw a reviewer's eye on submission but are not blockers.
+- The recompute keeps a `${CLAUDE_PLUGIN_ROOT}` that already points at a harness (its `hooks/lib/core.sh`
+  is present) and self-locates only otherwise, so lib sourcing now trusts a host-set value where it once
+  always self-located from `${BASH_SOURCE[0]}`. Within the threat model this is unreachable — a hook runs
+  with the trusted host's environment, prompt injection cannot persist a variable into a later hook, and
+  an attacker who can both set the variable and plant a `core.sh` already has code execution in the
+  hook's context — so the security review recorded it as a hardening follow-up, not a blocker.
 - Not decided here: moving the inline `awk`/`sed` filters into files, should a later validator pass
-  flag them.
+  flag them; and hardening the recompute (re-assert the full lib set under the resolved root, or keep
+  `${BASH_SOURCE[0]}` authoritative and spell paths from `${CLAUDE_PLUGIN_ROOT}` only for the validator).
