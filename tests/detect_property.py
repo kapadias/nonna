@@ -106,7 +106,7 @@ def build(root, files):
             os.makedirs(path, exist_ok=True)
             continue
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w") as fh:
+        with open(path, "w", newline="\n") as fh:  # LF: Windows writes CRLF in text mode
             if name in EXEC:
                 fh.write('#!/bin/sh\necho %s >> "%s"\n' % (name, log))
             elif name == "package.json":
@@ -115,12 +115,20 @@ def build(root, files):
             os.chmod(path, 0o755)
 
 
+# The bash on PATH, as the hooks run in: from Python on Windows a bare "bash" is System32's, WSL's.
+BASH = shutil.which("bash") or "bash"
+# grep, as that bash finds it: a private PATH holds a script that runs it, since Git Bash cannot start a
+# link to one of its programs from another directory (it finds no msys-2.0.dll beside the link: exit 127).
+GREP = subprocess.run(
+    [BASH, "-c", "command -v grep"], stdout=subprocess.PIPE, universal_newlines=True
+).stdout.strip()
+
 base = tempfile.mkdtemp()
 try:
     stubs = os.path.join(base, "stubs")
     os.makedirs(stubs)
     for r in RUNNERS:  # stand-ins: python3 is one that finds pytest, the rest log a run
-        with open(os.path.join(stubs, r), "w") as fh:
+        with open(os.path.join(stubs, r), "w", newline="\n") as fh:
             fh.write(
                 "#!/bin/sh\nexit 0\n"
                 if r == "python3"
@@ -141,7 +149,9 @@ try:
         os.makedirs(repo)
         os.makedirs(bindir)
         build(repo, files)
-        os.symlink(shutil.which("grep"), os.path.join(bindir, "grep"))
+        with open(os.path.join(bindir, "grep"), "w", newline="\n") as fh:
+            fh.write("#!/bin/sh\nexec '%s' \"$@\"\n" % GREP.replace("'", "'\\''"))
+        os.chmod(os.path.join(bindir, "grep"), 0o755)
         for r in runners:
             os.symlink(os.path.join(stubs, r), os.path.join(bindir, r))
         piles.append((files, runners))
@@ -154,7 +164,7 @@ try:
     )
     env = {k: v for k, v in os.environ.items() if k != "JAVA_HOME"}
     run = subprocess.run(
-        ["bash", "-c", script, "_", hooks],
+        [BASH, "-c", script, "_", hooks],
         input="\n".join(lines) + "\n",
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
