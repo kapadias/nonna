@@ -4972,6 +4972,8 @@ FX="$(lint_fixture)"
 mkdir "$FX/$(printf '\305\277kills')"
 out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: blocks a root directory whose name only case-folds to skills" 1 "$?"
 contains "lint: names it" "kills/: Gemini CLI loads skills/" "$out"
+out="$(NONNA_LINT_ROOT="$FX" PYTHONIOENCODING=cp1252 python3 "$LINT" 2>&1)"
+contains "lint: ...where the output has no ſ either (Windows writes a pipe in cp1252)" "kills/: Gemini CLI loads skills/" "$out"
 rm -rf "$FX"
 # A manifest that is a directory, and a context file that is not UTF-8, are named, not a traceback.
 FX="$(lint_fixture)"
