@@ -2189,6 +2189,16 @@ rm -rf "$TMP" "$PD"
 mkdir -p "$W/k"; printf '#!/bin/sh\nexit 0\n' > "$W/k/pre-push"; cp "$W/k/pre-push" "$W/kept"
 bash -c '. "$1/lib/core.sh"; nonna_hook_link /some/target "$2"' _ "$HOOKS" "$W/k/pre-push"; check "wrapper: nonna_hook_link fails where a hook is" 1 "$?"
 cmp -s "$W/k/pre-push" "$W/kept"; check "wrapper: ...and leaves that hook as it was" 0 "$?"
+# ...nor into a directory put there while she wires: it fails, and leaves nothing of hers in it.
+DIRLN="$(mktemp -d)"; printf '#!/bin/sh\ncase "$1" in -s) mkdir "$3"; exit 1 ;; esac\nexec /bin/ln "$@"\n' > "$DIRLN/ln"; chmod +x "$DIRLN/ln"
+mkdir -p "$W/d"; (cd "$W/d" && PATH="$DIRLN:$PATH" bash -c '. "$1/lib/core.sh"; nonna_hook_link /some/target pre-push' _ "$HOOKS"); check "wrapper: a directory put at the hook while she wires fails nonna_hook_link" 1 "$?"
+rc=0; [ -z "$(find "$W/d/pre-push" -mindepth 1)" ] || rc=1; check "wrapper: ...and holds nothing of hers" 0 "$rc"
+rm -rf "$DIRLN"
+# ...nor into her own hooks by a link above them: a data dir that leads into the plugin's own directory.
+R="$(mktemp -d)"; mkdir -p "$R/current"; cp -R "$HOOKS" "$R/current/hooks"; cksum "$R"/current/hooks/*.sh > "$W/rsums"; link "$R" "$W/R.lnk"
+bash -c '. "$1/lib/core.sh"; nonna_hook_wrappers "$2" "$3"' _ "$HOOKS" "$W/R.lnk/current/hooks" "$R/current/hooks"; check "wrapper: nonna_hook_wrappers refuses her own hooks, reached by a link above them" 1 "$?"
+cksum "$R"/current/hooks/*.sh | cmp -s - "$W/rsums"; check "wrapper: ...and leaves her scripts as they were" 0 "$?"
+rm -rf "$R"
 # ...and where a file system has no hard links (FAT) the wrapper still goes in, by mv -n.
 NHL="$(mktemp -d)"; cat > "$NHL/ln" <<'SH'
 #!/bin/sh
