@@ -5127,14 +5127,15 @@ rm -rf "$FX"
 
 # Hook commands quote their root. Claude Code puts the path into a shell command, and an
 # unquoted path with a space splits into words: the script is never found and the gate never runs.
-set_hook_cmd() { # <json file> <event> <command>: rewrite that event's first hook command
-  python3 - "$@" <<'PY'
+set_hook_cmd() { # <json file> <event> <command>: rewrite that event's first hook command. The command
+  # goes on stdin: Git Bash rewrites an argument to a Windows program that looks like a path (/hooks/x.sh).
+  printf '%s' "$3" | python3 -c '
 import json, sys
-path, event, cmd = sys.argv[1:4]
+path, event = sys.argv[1:3]
 cfg = json.load(open(path, encoding="utf-8"))
-cfg["hooks"][event][0]["hooks"][0]["command"] = cmd
+cfg["hooks"][event][0]["hooks"][0]["command"] = sys.stdin.read()
 json.dump(cfg, open(path, "w", encoding="utf-8"), indent=2)
-PY
+' "$1" "$2"
 }
 FX="$(lint_fixture)"
 set_hook_cmd "$FX/.claude/hooks/hooks.json" PostToolUse '${CLAUDE_PLUGIN_ROOT}/hooks/format.sh'
