@@ -691,4 +691,4 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
 - A statusline showing branch and gate state.
 - Optional MCP server examples for the explorer and reviewer agents.
 
-<!-- scratch/45-windows-probe: Windows probes for #45, never merged (round 9: whether a command can switch how Git Bash reads a CR) -->
+<!-- scratch/45-windows-probe: Windows probes for #45, never merged (round 10: a CR as Claude Code hands it to Git Bash) -->
