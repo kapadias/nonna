@@ -201,7 +201,10 @@ nonna_hook_link() {
     ln "$tmp" "$2" 2>/dev/null || mv -n "$tmp" "$2" 2>/dev/null
   fi
   rm -f "$tmp"
-  [ "$(nonna_hook_target "$2" 2>/dev/null)" = "$1" ]
+  [ "$(nonna_hook_target "$2" 2>/dev/null)" = "$1" ] && return 0
+  # A directory put there meanwhile took her wrapper in, under its temp name: she takes it back out.
+  [ ! -d "$2" ] || rm -f "$2/${tmp##*/}"
+  return 1
 }
 
 # nonna_hook_wrappers <directory> <her hooks directory>
