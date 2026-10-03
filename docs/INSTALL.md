@@ -650,10 +650,13 @@ It takes about an hour there, against ten minutes on Linux.
   `git rm --cached -r -q . && git reset --hard`, which discards uncommitted changes. WSL's bash does not
   tolerate CRLF (reproduced on Linux: `/usr/bin/env: 'bash\r': No such file or directory`).
 - **CRs**: Git Bash's bash drops every CR from a command it runs: `echo A <CR>#; echo RAN` prints only `A`,
-  and `\<CR><LF>` continues a line (run 37087877441). Bash on Linux keeps a CR as part of a word. The branch
-  guard read a CR as Linux's bash does, which is not how Git Bash runs `gi<CR>t push --force`; under Git Bash
-  she now reads a command without its CRs, and refuses that, `git pu<CR>sh --force` and
-  `git push origin ma<CR>in` (exit 2; run 37088323470). The runner's jq 1.8.1 is a native Windows build and
+  and `\<CR><LF>` continues a line (run 37087877441). So it does as Claude Code runs a command, through
+  `eval` of it quoted, a CR in quotes or in a heredoc too, and no option changes that: its `igncr` is off,
+  and `set`, `shopt` and `SHELLOPTS` change nothing (runs 37090477431, 37090986099). Bash on Linux keeps
+  a CR as part of a word. The branch guard read a CR as Linux's bash does, which is not how Git Bash runs
+  `gi<CR>t push --force`; she now asks bash how it reads a CR, and under Git Bash reads a command without
+  its CRs, and refuses that, `git pu<CR>sh --force` and `git push origin ma<CR>in` (exit 2;
+  ADR-0017). The runner's jq 1.8.1 is a native Windows build and
   writes CRLF, inside a value too (`x \r \n`, and `x \n` with `--binary`); where awk failed, that let a
   git command split by a backslash-newline through (exit 0; run 37086220119). Git for Windows brings no jq.
 

@@ -71,7 +71,7 @@ never offered to the model, so it is not counted.
   reads Copilot's payloads as Claude Code's, an `apply_patch` a file at a time. The release workflow
   holds both manifests to the tag, and `review-lanes.sh` sends the hooks file to security review.
 - **Docs** — this `STATUS.md`, `INSTALL.md`, `OVERVIEW.md`, `docs/benchmarks/`, `CHANGELOG.md`, the
-  `docs/adr/` index, and ADRs 0001–0016.
+  `docs/adr/` index, and ADRs 0001–0017.
 - **Launch images** — `assets/build.py` builds the scorecard, the social preview and one card per
   trap task from round 3's files, and renders the plugin's icon from the hand-drawn logo;
   `--check` (standard library only) is run by `tests/run.sh`.
@@ -89,8 +89,10 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   In her: where Git Bash's `ln -s` makes a copy, her git hooks are wrappers, scripts that run hers
   (`nonna_hook_wrapper`, `lib/core.sh`, ADR-0016), and a plugin's `current` a directory of them, so
   a staged key is refused without native symlinks; a drive's path (`D:/…`) reads as absolute; the
-  guards read a command's CRs as the platform's bash runs them (Git Bash drops every one, so there
-  `gi<CR>t push --force` is a force push); and the lint names a file in any code page. In the suite: a private PATH holds scripts that run
+  branch guard reads a command's CRs as the bash that runs it does, asked the first time a command
+  holds one (Git Bash drops every one, so there `gi<CR>t push --force` is a force push; a bash whose
+  `igncr` a command can switch has a command with a CR refused; ADR-0017), and every other field, a
+  path or a Codex patch, exactly as the JSON holds it; and the lint names a file in any code page. In the suite: a private PATH holds scripts that run
   the tools, not links Git Bash cannot start (exit 127); the lint and the detection property run Git
   Bash, not WSL's `bash.exe`; and twenty one-offs (CRLF from jq and Python, `pwd -P`, a `#!` for
   what must run and `no_run` for what must not, arguments Git Bash rewrites as paths). The lint's
@@ -650,10 +652,15 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   - #43: `subagent-verdict.sh` may judge the wrong text when a reviewer reports through a handback.
   - #44: one record-to-payload mapping for every host's `apply_patch`.
   - #45: native Windows's measured gaps (below).
+- #54 (HIGH, found measuring #45): Claude Code rewrites a command that holds a `|`, splitting its words
+  on whitespace bash keeps in one (a no-break space and other Unicode spaces), so
+  `git push origin<NBSP>main | cat` pushes to `main` past the branch guard, on every platform.
 - Native Windows (#30; its gaps are #45): the Windows CI legs pass and block, and the docs say to
   use WSL 2 until these are fixed: backslash paths in the guards (`guard-branch.sh`,
   `secret-scan.sh`, `lib/secret-patterns.sh`); the PowerShell tool, which no hook matches;
-  `git.exe` (`guard-branch.sh`, `lib/shell-words.awk`). Then a WSL leg in CI, whether a
+  `git.exe` (`guard-branch.sh`, `lib/shell-words.awk`); and secret-scan's Bash branch, which reads a
+  command's CRs as Linux's bash does, so under Git Bash `cat .e<CR>nv` reads `.env` (LOW, from the
+  security review of #53; the branch guard reads them as Git Bash does). Then a WSL leg in CI, whether a
   PowerShell-only install, where no hook runs, is supported at all, and a faster suite on Windows,
   where it takes about an hour.
 - The rest of the launch plan (#17): deleting the film's branch, `chore/17-demo`, the only finished

@@ -330,13 +330,15 @@ Your AI agent says "done"; Nonna makes it prove it.
 
 ### Fixed
 
-- **The guards read a command's CRs as the platform's bash runs them** (#45). Git Bash's bash drops
-  every CR from a command, so there `gi<CR>t push --force` is a force push, and so are
+- **The branch guard reads a command's CRs as the bash that runs it does** (#45, ADR-0017). Git Bash's
+  bash drops every CR from a command, so there `gi<CR>t push --force` is a force push, and so are
   `git pu<CR>sh --force` and a push to `ma<CR>in`. A native `jq.exe` writes each newline as CRLF,
   including one inside a value, so where awk failed a git command split by a backslash-newline got
-  through. Under Git Bash the guards now read every field without its CRs. Elsewhere every CR stays,
-  as bash keeps it (a CR before `#` starts no comment there), and only the CRLF a jq.exe adds is
-  undone.
+  through. The guard now asks the hooks' bash how it reads a CR, the first time a command holds one:
+  where it drops every one (Git Bash), the command is read without them; where it keeps them (Linux,
+  macOS), every CR stays (a CR before `#` starts no comment there); where a command could switch that
+  (Cygwin's `igncr`), a command that holds a CR is refused. Every other field, a path or a Codex
+  patch, is read exactly as the JSON holds it, and only the CRLF a jq.exe adds is undone.
 - **`subagent-verdict.sh` graded the wrong transcript and blocked the wrong verdicts** (#7). The
   SubagentStop gate read `transcript_path`, which for that event is the _parent_ session's
   transcript — so `check-review.sh` ran against the orchestrator's prose and rejected every

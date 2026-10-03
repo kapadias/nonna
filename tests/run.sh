@@ -84,9 +84,17 @@ link() { # <target> <link>: a symbolic link, as these tests mean one, on every p
   rm -f "$2"
   (cd "$dir" && { ln -s "$1" "$name" 2>/dev/null; [ -L "$name" ] || { rm -rf "$name"; MSYS=winsymlinks:nativestrict ln -s "$1" "$name"; }; })
 }
-# What this platform's bash does with a CR in a command: Linux's and macOS's keep it, part of a word;
-# Git Bash's drops every one. The guards read a command as bash will run it, so their tests ask bash.
-DROPS_CR=no; [ "$(bash -c "printf %s a$(printf '\r')b")" = ab ] && DROPS_CR=yes
+# What this platform's bash does with a CR in a command (CR_MODE): Linux's and macOS's keep it, part of
+# a word (keep); Git Bash's drops every one (drop); one whose igncr a command can switch partway through,
+# as Cygwin's can, cannot be read ahead (unknown). The guard reads a command as bash will run it, so its
+# tests ask bash: in bytes, each answer from a bash of its own, switched with set (lib/json.sh uses shopt).
+cr_bytes() { bash -c "$1
+printf %s a$(printf '\r')b" 2>/dev/null | wc -c | tr -d ' '; }
+case "$(cr_bytes :)$(cr_bytes 'set +o igncr')$(cr_bytes 'set -o igncr')" in
+  333) CR_MODE=keep ;;
+  222) CR_MODE=drop ;;
+  *) CR_MODE=unknown ;;
+esac
 hook_to() { # <git hook>: where it leads, a link's target or her wrapper's (nonna_hook_target, lib/core.sh)
   bash -c '. "$1/lib/core.sh"; nonna_hook_target "$2"' _ "$HOOKS" "$1"
 }
@@ -435,9 +443,10 @@ LNK="$(mktemp -d)"; mkdir -p "$LNK/docs"; printf 'K=1\n' > "$LNK/.env"; link ../
 printf '{"tool_name":"Read","tool_input":{"file_path":"docs/setup.txt"}}' | CLAUDE_PROJECT_DIR="$LNK" "$SS" 2>/dev/null; check "blocks Read of a harmless name that links to .env" 2 "$?"
 printf '{"tool_name":"Read","tool_input":{"file_path":"%s/docs/setup.txt"}}' "$LNK" | CLAUDE_PROJECT_DIR="$LNK" "$SS" 2>/dev/null; check "...by its absolute path too" 2 "$?"
 link .env "$LNK/$(printf 'x\r')"
-# Where Git Bash drops the CR, x is what she checks; and no Windows program opens a name with a CR in it.
+# A path is opened, never run: she checks it as the JSON holds it. But Git Bash's $(...) takes a CR off
+# with the newline it strips, so there she checks x; and no Windows program opens a name with a CR in it.
 printf '%s' '{"tool_name":"Read","tool_input":{"file_path":"x\r"}}' | CLAUDE_PROJECT_DIR="$LNK" "$SS" 2>/dev/null; rc=$?
-want=2; [ "$DROPS_CR" = no ] || want=0; check "...and by a name ending in a CR, where bash keeps it" "$want" "$rc"
+want=2; [ "$(printf 'x\r\n')" = x ] && want=0; check "...and by a name ending in a CR, where \$(...) keeps it" "$want" "$rc"
 link "$LNK/docs/real.txt" "$LNK/docs/alias.txt"
 printf '{"tool_name":"Read","tool_input":{"file_path":"docs/alias.txt"}}' | CLAUDE_PROJECT_DIR="$LNK" "$SS"; check "allows a link to an ordinary file" 0 "$?"
 rm -rf "$LNK"
@@ -769,11 +778,12 @@ check "a failing awk: a command without git passes" 0 "$(gbp "$BADAWK:$PATH" 'ls
 # A native jq.exe writes each newline as CRLF, one inside the command too, unless -b. A CR left at a
 # line's end hid what the line says (--force<CR> is not --force; a backslash before a CR continues no
 # line). Two jqs stand in for jq.exe: one that writes LF with -b (1.7 and later), and one that knows no -b.
-# A CR the command holds is read as this platform's bash reads it (DROPS_CR): where bash keeps it, part
+# A CR the command holds is read as this platform's bash reads it (CR_MODE): where bash keeps it, part
 # of a word, " <CR>#" is no comment, "\<CR><LF>" no continued line and gi<CR>t not git; where Git Bash
-# drops it, each reads as it does without one.
+# drops it, each reads as it does without one; where it cannot be read ahead, the command is refused.
 crv() { # <name> <want where bash keeps a CR> <want where it drops them> <PATH> <command>
-  local want="$2"; [ "$DROPS_CR" = no ] || want="$3"
+  local want="$2"
+  case "$CR_MODE" in drop) want="$3" ;; unknown) want=2 ;; esac
   check "$1" "$want" "$(gbp "$4" "$5")"
 }
 CRJQ="$(mktemp -d)"; NOBJQ="$(mktemp -d)"; JQ_REAL="$(command -v jq)"; AWK_REAL="$(command -v awk)" # by path: a test below fails awk
@@ -808,9 +818,67 @@ crv "...her /nonna scripts too" 2 0 "$PATH" "$(printf ': \\\r\nbash .claude/skil
 crv "a CR inside a word, as bash reads it: gi<CR>t is git where Git Bash drops it" 0 2 "$PATH" "$(printf 'gi\rt push --force origin feature/x')"
 crv "...pu<CR>sh is push" 0 2 "$PATH" "$(printf 'git pu\rsh --force origin feature/x')"
 crv "...and ma<CR>in is main" 0 2 "$PATH" "$(printf 'git push origin ma\rin')"
-# The two ways a field is read, on any platform: without its CRs where bash drops them, with them elsewhere.
-check "json: where bash drops every CR, so does a field" "a#b" "$(printf '%s' '{"c":"a\r#b"}' | bash -c '. "$1/lib/json.sh"; _nonna_cr_drop=1; nonna_json_field .c' _ "$HOOKS")"
-check "json: ...and where it keeps them, the field keeps them" "$(printf 'a\r#b')" "$(printf '%s' '{"c":"a\r#b"}' | bash -c '. "$1/lib/json.sh"; _nonna_cr_drop=; nonna_json_field .c' _ "$HOOKS")"
+# A command is read as this platform's bash will run it (nonna_json_command), asked of that bash the first
+# time a command holds a CR: the lengths of a<CR>b and of an a<CR> that ends a line, as it starts, then
+# with igncr off, then on. A fake bash gives each answer.
+FB="$(mktemp -d)"; printf '#!/bin/sh\n: > "%s/asked"\nprintf %%s "$FAKE_CR"\n' "$FB" > "$FB/bash"; chmod +x "$FB/bash"
+as_bash() { # <the fake bash's answer> <JSON> <reader>: the field .c, read where bash answers so
+  printf '%s' "$2" | FAKE_CR="$1" bash -c '. "$1/lib/json.sh"; BASH="$2"; "$3" .c' _ "$HOOKS" "$FB/bash" "$3"
+}
+check "json: where bash drops every CR, igncr off or on, so does a command" "a#b" "$(as_bash '21 21 21 ' '{"c":"a\r#b"}' nonna_json_command)"
+check "json: ...where it keeps every one, the command keeps them" "$(printf 'a\r#b')" "$(as_bash '32 32 32 ' '{"c":"a\r#b"}' nonna_json_command)"
+check "json: ...where a command can switch igncr, as Cygwin's can, one that holds a CR reads as nothing, which the guard refuses" "" "$(as_bash '21 32 21 ' '{"c":"gi\rt push"}' nonna_json_command)"
+check "json: ...so it does where bash drops a CR only at a line's end" "" "$(as_bash '31 31 31 ' '{"c":"gi\rt push"}' nonna_json_command)"
+check "json: ...or gives no answer" "" "$(as_bash '' '{"c":"gi\rt push"}' nonna_json_command)"
+rm -f "$FB/asked"
+check "json: a command without a CR reads as it is, and bash is not asked" "git push, not asked" "$(as_bash '' '{"c":"git push"}' nonna_json_command), $([ -e "$FB/asked" ] && echo asked || echo not asked)"
+check "json: any other field reads as the JSON holds it, wherever bash drops CRs: a path is opened, not run" "$(printf 'a\r#b')" "$(as_bash '21 21 21 ' '{"c":"a\r#b"}' nonna_json_field)"
+# Cygwin's bash, whose igncr a command can switch: a stand-in that drops the CRs of the script given to -c
+# while igncr is on, and writes each other CR as an X, which any bash keeps, before this bash runs it.
+# Whether igncr is on as it starts (Cygwin's default is off; SHELLOPTS can turn it on), the probe finds
+# the switch.
+cat > "$FB/cygbash" <<SH
+#!/bin/sh
+printf '%s' "\$2" | python3 -c 'import os, sys
+on = os.environ["IGNCR"] == "on"
+for line in sys.stdin.buffer.read().decode().split("\n"):
+    sys.stdout.buffer.write((line.replace("\r", "") if on else line.replace("\r", "X")).encode() + b"\n")
+    on = {"shopt -uo igncr": False, "shopt -so igncr": True}.get(line[:15], on)' | "$(command -v bash)"
+SH
+chmod +x "$FB/cygbash"
+cyg_cr() { IGNCR="$1" bash -c '. "$1/lib/json.sh"; BASH="$2"; _nonna_cr_mode' _ "$HOOKS" "$FB/cygbash"; }
+check "json: a bash whose igncr a command can switch is found out, igncr off as it starts" unknown "$(cyg_cr off)"
+check "json: ...or on" unknown "$(cyg_cr on)"
+rm -rf "$FB"
+# This platform's bash, asked, answers as the suite measured it, and nothing the environment sets decides
+# it (bash keeps an inherited OSTYPE).
+cr_mode() { bash -c '. "$1/lib/json.sh"; _nonna_cr_mode' _ "$HOOKS"; }
+check "json: this platform's bash reads a CR as the suite measured ($CR_MODE)" "$CR_MODE" "$(cr_mode)"
+check "json: ...whatever OSTYPE the environment sets" "$CR_MODE $CR_MODE" "$(OSTYPE=msys cr_mode) $(OSTYPE=linux-gnu cr_mode)"
+check "json: ...or _nonna_cr" "$CR_MODE" "$(printf '%s' '{"c":"a\r#b"}' | _nonna_cr=bogus bash -c '. "$1/lib/json.sh"; nonna_json_command .c >/dev/null; printf %s "$_nonna_cr"' _ "$HOOKS")"
+# Property: 48 generated commands (seeded) of CRs, newlines, quotes, backslashes, %s, # and non-ASCII,
+# each read in every mode: as the JSON holds it (keep), without its CRs (drop), and as nothing where it
+# holds a CR, else as it is (unknown). Trailing newlines aside, which a caller's $(...) drops.
+IFS= read -r -d '' CR_PROP <<'PY' || : # never inside "$(...)", which bash 3.2 ends at a ) in a heredoc
+import json, random, sys
+r = random.Random(45)
+alphabet = ["a", " ", "#", "\r", "\n", "\r\n", "\\", '"', "'", "%s", "\t", "\u00e9", "$"]
+cases = ["".join(r.choice(alphabet) for _ in range(r.randrange(16))) for _ in range(48)]
+if sys.argv[1] == "gen":
+    sys.stdout.buffer.write(b"".join(json.dumps({"c": s}).encode() + b"\0" for s in cases))
+    sys.exit(0)
+got = sys.stdin.buffer.read().split(b"\0")
+bad = 0
+for i, s in enumerate(cases):
+    want = (s, s.replace("\r", ""), "" if "\r" in s else s)
+    for j in range(3):
+        bad += got[3 * i + j].rstrip(b"\n") != want[j].encode().rstrip(b"\n")
+print(bad)
+PY
+check "json property: 48 generated commands, each read as each mode says" 0 "$(python3 -c "$CR_PROP" gen | bash -c '. "$1/lib/json.sh"
+while IFS= read -r -d "" js; do
+  for m in keep drop unknown; do _nonna_cr=$m; printf %s "$js" | nonna_json_command .c; printf "\0"; done
+done' _ "$HOOKS" | python3 -c "$CR_PROP" check)"
 BADEXP="$(mktemp -d)"; printf '#!/bin/sh\ncase "$*" in *expand.awk*) exit 2 ;; esac\nexec %s "$@"\n' "$(command -v awk)" > "$BADEXP/awk"; chmod +x "$BADEXP/awk"
 check "a failing brace and glob reader: a brace list is refused, not guessed at" 2 "$(gbp "$BADEXP:$PATH" 'echo {a,b}')"
 BADJQ="$(mktemp -d)"; printf '#!/bin/sh\nexit 1\n' > "$BADJQ/jq"; chmod +x "$BADJQ/jq"
@@ -3976,6 +4044,11 @@ cx_gate() { # <PATH> <gate script> <payload>: that gate alone, as Codex runs it,
 check "codex: a patch that adds a key is refused" 2 "$(cx_run PreToolUse '^apply_patch$' "$(cx_patch '*** Add File: config.py' "+aws_id = \"$FAKE_AWS\"")")"
 check "codex: a patch that edits .git/config is refused" 2 "$(cx_run PreToolUse '^apply_patch$' "$(cx_patch '*** Update File: .git/config' '@@' ' [core]' '+editor = vi')")"
 check "codex: a clean patch passes" 0 "$(cx_run PreToolUse '^apply_patch$' "$(cx_patch '*** Update File: app.py' '@@' '-x = 1' '+x = 2')")"
+# Codex parses a patch itself and keeps a CR inside a line, so the patch is read exactly, even where bash
+# drops CRs: a CR taken out of "a<CR>sk-proj-..." would glue the key to the a before it, past the scan.
+check "codex: a key behind a CR in a patch line is refused" 2 "$(cx_run PreToolUse '^apply_patch$' "$(cx_patch '*** Add File: k.py' "+a$(printf '\r')$FAKE_OAI")")"
+out="$(cx_patch '*** Add File: k.py' "+a$(printf '\r')$FAKE_OAI" | bash -c '. "$1/lib/core.sh"; . "$1/lib/host-codex.sh"; _nonna_cr=drop; _nonna_codex_files' _ "$HOOKS")"
+contains "codex: ...where bash drops CRs too: the patch keeps its CR" 'a\u000dsk-proj-' "$out"
 out="$(cx_patch '*** Add File: config.py' "+aws_id = \"$FAKE_AWS\"" | (cd "$CXR" && NONNA_HOST=codex "$HOOKS/secret-scan.sh" 2>&1))"
 contains "codex: the refusal says what it found, in her voice" "looks like an AWS access key id" "$out"
 check "codex: a key in the second file of a patch is refused" 2 "$(cx_run PreToolUse '^apply_patch$' "$(cx_patch '*** Update File: app.py' '@@' '-x = 1' '+x = 2' '*** Add File: settings.py' "+aws_id = \"$FAKE_AWS\"")")"
