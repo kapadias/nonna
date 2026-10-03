@@ -61,8 +61,13 @@ kitchen_door() { # <technical reason>: the git hooks are the gate
 # escape, or a run inside her /nonna directory. While she is off, only such a command is refused
 # for being unreadable; she keeps her settings then, and nothing else.
 could_be_hers() { # <raw text>
-  local bsnl=$'\\\n' # a continued line: the shell joins g\<newline>it into git
-  [ "${in_hers:-0}" = 1 ] || printf '%s' "${1//"$bsnl"/}" | grep -qiE "g[\\'\"]*i[\\'\"]*t|n[\\'\"]*o[\\'\"]*n[\\'\"]*n[\\'\"]*a|\\$'"
+  local bsnl=$'\\\n' t # a continued line: the shell joins g\<newline>it into git
+  [ "${in_hers:-0}" = 1 ] && return 0
+  # Nor does a CR's escape, in a payload no reader read (Git Bash runs gi<CR>t as git; a command that
+  # was read holds its CRs as its bash reads them). Taken out as a stream, since bash's own ${t//}
+  # takes seconds on a long command; a pipe that fails leaves it could be hers.
+  t="$(printf '%s' "$1" | LC_ALL=C sed -e 's/\\r//g' -e 's/\\u000[dD]//g')" || return 0
+  printf '%s' "${t//"$bsnl"/}" | grep -qiE "g[\\'\"]*i[\\'\"]*t|n[\\'\"]*o[\\'\"]*n[\\'\"]*n[\\'\"]*a|\\$'"
 }
 unread() { # <what could not be read>: fail closed, never guess
   [ "$off" = 0 ] || could_be_hers "${cmd:-$payload}" || exit 0

@@ -92,7 +92,8 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   branch guard reads a command's CRs as the bash that runs it does, asked the first time a command
   holds one (Git Bash drops every one, so there `gi<CR>t push --force` is a force push; a bash whose
   `igncr` a command can switch has a command with a CR refused; ADR-0017), and every other field, a
-  path or a Codex patch, exactly as the JSON holds it; and the lint names a file in any code page. In the suite: a private PATH holds scripts that run
+  path or a Codex patch, exactly as the JSON holds it (while she is off, her check of a command she
+  could not read reads past a CR's JSON escape); and the lint names a file in any code page. In the suite: a private PATH holds scripts that run
   the tools, not links Git Bash cannot start (exit 127); the lint and the detection property run Git
   Bash, not WSL's `bash.exe`; and twenty one-offs (CRLF from jq and Python, `pwd -P`, a `#!` for
   what must run and `no_run` for what must not, arguments Git Bash rewrites as paths). The lint's

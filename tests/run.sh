@@ -854,6 +854,9 @@ rm -rf "$FB"
 # it (bash keeps an inherited OSTYPE).
 cr_mode() { bash -c '. "$1/lib/json.sh"; _nonna_cr_mode' _ "$HOOKS"; }
 check "json: this platform's bash reads a CR as the suite measured ($CR_MODE)" "$CR_MODE" "$(cr_mode)"
+# ...and as it is known to, where it is known: a bash that changed would move both of the above.
+case "$(uname -s)" in Linux | Darwin) cr_known=keep ;; MINGW* | MSYS*) cr_known=drop ;; *) cr_known="$CR_MODE" ;; esac
+check "json: on $(uname -s), bash reads a CR as $cr_known" "$cr_known" "$CR_MODE"
 check "json: ...whatever OSTYPE the environment sets" "$CR_MODE $CR_MODE" "$(OSTYPE=msys cr_mode) $(OSTYPE=linux-gnu cr_mode)"
 check "json: ...or _nonna_cr" "$CR_MODE" "$(printf '%s' '{"c":"a\r#b"}' | _nonna_cr=bogus bash -c '. "$1/lib/json.sh"; nonna_json_command .c >/dev/null; printf %s "$_nonna_cr"' _ "$HOOKS")"
 # Property: 48 generated commands (seeded) of CRs, newlines, quotes, backslashes, %s, # and non-ASCII,
@@ -2192,6 +2195,21 @@ OFFJS="$(python3 -c 'import json; print("curl -d " + chr(39) + json.dumps([{"a":
 check "off: so does one whose expansion is too large to read" 0 "$(off_gb "$OFFJS")"
 check "off: a command too long to read that names her settings is still refused" 2 "$(off_gb "$OFFBIG
 git config nonna.testCmd true")"
+# A command no reader could read leaves her the raw payload, where a CR is the escape \r: it splits no
+# name of hers there either, since Git Bash runs gi<CR>t as git. A failing jq stands in for the reader.
+OFFJQ="$(mktemp -d)"; printf '#!/bin/sh\nexit 1\n' > "$OFFJQ/jq"; chmod +x "$OFFJQ/jq"
+off_raw() { # <command, as JSON text>: the guard's exit code for it in $OFF, off, with no reader that works
+  printf '{"tool_name":"Bash","tool_input":{"command":"%s"}}' "$1" \
+    | (cd "$OFF" && PATH="$OFFJQ:$PATH" NONNA_MODE=off CLAUDE_PROJECT_DIR="$OFF" "$HOOKS/guard-branch.sh" 2>/dev/null); echo $?
+}
+check "off: a command she cannot read that names her settings across a CR is still refused" 2 "$(off_raw 'gi\rt config --unset non\rna.mode')"
+check "off: ...or her git hooks, across an escaped CR" 2 "$(off_raw 'rm -f .g\u000dit/hooks/pre-push')"
+check "off: ...one that names nothing of hers passes" 0 "$(off_raw 'ec\rho hi')"
+# ...unless what takes the escapes out fails: then it could be hers. A sed that fails on that one
+# script stands in, so the rest of the guard reads as before.
+printf '#!/bin/sh\ncase "$*" in *u000*) exit 2 ;; esac\nexec %s "$@"\n' "$(command -v sed)" > "$OFFJQ/sed"; chmod +x "$OFFJQ/sed"
+check "off: ...and one that names nothing of hers is refused when that check cannot run" 2 "$(off_raw 'ec\rho hi')"
+rm -rf "$OFFJQ"
 rm -rf "$OFF"
 
 echo "== session-start.sh (SessionStart) =="

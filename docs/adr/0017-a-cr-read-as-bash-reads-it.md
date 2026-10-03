@@ -62,6 +62,8 @@ reviews caught it before it shipped.
   each platform's bash measures itself (`CR_MODE` in `tests/run.sh`, asked with `set` where `json.sh`
   asks with `shopt`).
 - Where a command can switch how its bash reads a CR (Cygwin), any command that holds a CR is refused.
+  While she is off, only one that could touch her settings is; that check reads past a CR's escape in
+  a payload no reader read.
 - The hooks' bash stands for the bash that runs the command: on Windows Claude Code requires Git Bash
   for both. A hook run by one bash for commands another runs could misread a CR.
 - Not decided here: Claude Code rewrites a command that holds a `|`, splitting its words on whitespace
