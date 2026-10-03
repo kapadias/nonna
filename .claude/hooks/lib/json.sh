@@ -3,12 +3,25 @@
 # stdin. Why a shared helper: every hook parses the same envelope, and a sed
 # fallback keeps the gates working on minimal machines where jq is absent.
 
-# _nonna_jq_raw: how this jq gives a value back as it is, probed once when a hook sources this. A native
-# jq.exe (Git Bash) writes each newline as CRLF, one inside a value too, unless -b. To bash a CR is part of
-# a word, so only the CRs jq adds may go: one left at a line's end hid a command from the branch guard (a
-# backslash before it continues no line), and one taken from inside a value showed the guard what bash does
-# not run (" <CR>#" is no comment, "\<CR><LF>" no continued line). So -b where jq takes it, a no-op but on
-# Windows; else, where jq writes CRLF and sed is there, one CR off each line's end, which is all jq added.
+# How a hook reads a field, decided once, when it sources this file.
+#
+# _nonna_cr_drop: set where this bash drops every CR from a command it runs, as Git Bash's does. There
+#   " <CR>#" starts a comment, "\<CR><LF>" continues a line and gi<CR>t is git, so a guard reads every
+#   field without its CRs, as bash will run it. Asked of this bash itself, where it could be (MSYS, Cygwin).
+# _nonna_jq_raw: everywhere else every CR stays, since to bash it is part of a word: a guard that dropped
+#   one would read " <CR>#" as a comment and "\<CR><LF>" as a continued line, and miss what bash runs.
+#   But a native jq.exe writes each newline as CRLF, one inside a value too, unless -b: so -b where jq
+#   takes it (a no-op off Windows), else, where it writes CRLF, one CR off each line's end, which is all
+#   it added.
+_nonna_cr_drop=""
+case "${OSTYPE:-}" in
+  msys* | cygwin*)
+    _nonna_cr=$'\r'
+    if [ "$("${BASH:-bash}" -c "printf %s a${_nonna_cr}b" 2>/dev/null)" = ab ] && command -v tr >/dev/null 2>&1; then
+      _nonna_cr_drop=1
+    fi
+    ;;
+esac
 _nonna_jq_raw=""
 if command -v jq >/dev/null 2>&1; then
   if jq -b -n 1 >/dev/null 2>&1; then
@@ -22,7 +35,17 @@ fi
 #   Reads JSON from stdin, prints the field. With jq, any filter works. Without
 #   jq, only simple string-field lookups (e.g. .tool_input.file_path) degrade
 #   gracefully; complex filters return empty (callers must fail safe on empty).
+#   Where bash drops every CR (Git Bash), so does the field: a guard reads what bash will run.
 nonna_json_field() {
+  if [ -n "$_nonna_cr_drop" ]; then
+    _nonna_json_value "$@" | LC_ALL=C tr -d '\r'
+  else
+    _nonna_json_value "$@"
+  fi
+}
+
+# _nonna_json_value <jq_filter>: the field exactly as the JSON holds it.
+_nonna_json_value() {
   local filter="$1" payload
   payload="$(cat 2>/dev/null || true)"
   [ -n "$payload" ] || return 0

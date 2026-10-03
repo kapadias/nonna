@@ -72,6 +72,9 @@ shim() { # <dir> <tool> [<path>]: <dir>/<tool> runs <path>, by default the <tool
   case "$p" in /*) ;; *) return 0 ;; esac
   printf '#!/bin/sh\nexec '\''%s'\'' "$@"\n' "$(printf '%s' "$p" | sed "s/'/'\\\\''/g")" > "$1/$2" && chmod +x "$1/$2"
 }
+# What this platform's bash does with a CR in a command: Linux's and macOS's keep it, part of a word;
+# Git Bash's drops every one. The guards read a command as bash will run it, so their tests ask bash.
+DROPS_CR=no; [ "$(bash -c "printf %s a$(printf '\r')b")" = ab ] && DROPS_CR=yes
 no_run() { # <file>...: files nothing can run: no mode, as a zip loses it, and no #! either, since Git Bash
   # takes a file that starts with #! for a program whatever its mode says
   local f
@@ -432,7 +435,9 @@ LNK="$(mktemp -d)"; mkdir -p "$LNK/docs"; printf 'K=1\n' > "$LNK/.env"; link ../
 printf '{"tool_name":"Read","tool_input":{"file_path":"docs/setup.txt"}}' | CLAUDE_PROJECT_DIR="$LNK" "$SS" 2>/dev/null; check "blocks Read of a harmless name that links to .env" 2 "$?"
 printf '{"tool_name":"Read","tool_input":{"file_path":"%s/docs/setup.txt"}}' "$LNK" | CLAUDE_PROJECT_DIR="$LNK" "$SS" 2>/dev/null; check "...by its absolute path too" 2 "$?"
 link .env "$LNK/$(printf 'x\r')"
-printf '%s' '{"tool_name":"Read","tool_input":{"file_path":"x\r"}}' | CLAUDE_PROJECT_DIR="$LNK" "$SS" 2>/dev/null; check "...and by a name ending in a CR, which is the name Read opens" 2 "$?"
+# Where Git Bash drops the CR, x is what she checks; and no Windows program opens a name with a CR in it.
+printf '%s' '{"tool_name":"Read","tool_input":{"file_path":"x\r"}}' | CLAUDE_PROJECT_DIR="$LNK" "$SS" 2>/dev/null; rc=$?
+want=2; [ "$DROPS_CR" = no ] || want=0; check "...and by a name ending in a CR, where bash keeps it" "$want" "$rc"
 link "$LNK/docs/real.txt" "$LNK/docs/alias.txt"
 printf '{"tool_name":"Read","tool_input":{"file_path":"docs/alias.txt"}}' | CLAUDE_PROJECT_DIR="$LNK" "$SS"; check "allows a link to an ordinary file" 0 "$?"
 rm -rf "$LNK"
@@ -761,39 +766,51 @@ check "a failing awk: a push continued onto a second line is refused" 2 "$(gbp "
 check "a failing awk: any git command is refused" 2 "$(gbp "$BADAWK:$PATH" 'git status')"
 check "a failing awk: git split by a continued line is refused" 2 "$(gbp "$BADAWK:$PATH" "$(printf 'g\\\nit push --force origin feature/x')")"
 check "a failing awk: a command without git passes" 0 "$(gbp "$BADAWK:$PATH" 'ls -la')"
-# A native jq.exe (Git Bash) writes each newline as CRLF, one inside the command too, unless -b. A CR
-# left at a line's end hid what the line says (--force<CR> is not --force; a backslash before a CR
-# continues no line); and to bash a CR is part of a word, so one taken from inside the command shows a
-# guard what bash does not run: " <CR>#" is no comment, and "\<CR><LF>" no continued line. Two jqs stand
-# in for jq.exe: one that writes LF with -b (1.7 and later), and one that knows no -b.
+# A native jq.exe writes each newline as CRLF, one inside the command too, unless -b. A CR left at a
+# line's end hid what the line says (--force<CR> is not --force; a backslash before a CR continues no
+# line). Two jqs stand in for jq.exe: one that writes LF with -b (1.7 and later), and one that knows no -b.
+# A CR the command holds is read as this platform's bash reads it (DROPS_CR): where bash keeps it, part
+# of a word, " <CR>#" is no comment, "\<CR><LF>" no continued line and gi<CR>t not git; where Git Bash
+# drops it, each reads as it does without one.
+crv() { # <name> <want where bash keeps a CR> <want where it drops them> <PATH> <command>
+  local want="$2"; [ "$DROPS_CR" = no ] || want="$3"
+  check "$1" "$want" "$(gbp "$4" "$5")"
+}
 CRJQ="$(mktemp -d)"; NOBJQ="$(mktemp -d)"; JQ_REAL="$(command -v jq)"; AWK_REAL="$(command -v awk)" # by path: a test below fails awk
+JQ_B=""; "$JQ_REAL" -b -n 1 >/dev/null 2>&1 && JQ_B="-b" # the real jq's LF, where it writes CRLF itself (Windows): one CR each
 cat > "$CRJQ/jq" <<SH
 #!/bin/sh
 case " \$* " in *" -b "*) exec "$JQ_REAL" "\$@" ;; esac
-"$JQ_REAL" "\$@" | "$AWK_REAL" '{ printf "%s\\r\\n", \$0 }'
+"$JQ_REAL" $JQ_B "\$@" | "$AWK_REAL" '{ printf "%s\\r\\n", \$0 }'
 SH
 cat > "$NOBJQ/jq" <<SH
 #!/bin/sh
 case " \$* " in *" -b "*) echo "jq: Unknown option: -b" >&2; exit 2 ;; esac
-"$JQ_REAL" "\$@" | "$AWK_REAL" '{ printf "%s\\r\\n", \$0 }'
+"$JQ_REAL" $JQ_B "\$@" | "$AWK_REAL" '{ printf "%s\\r\\n", \$0 }'
 SH
 chmod +x "$CRJQ/jq" "$NOBJQ/jq"
 check "jq writing CRLF, with -b (jq.exe): a force flag that ends a line is still seen" 2 "$(gbp "$CRJQ:$PATH" "$(printf 'git push origin feature/x --force\necho done')")"
 check "jq writing CRLF, with -b (jq.exe): a push continued onto a second line is still seen" 2 "$(gbp "$CRJQ:$PATH" "$(printf 'git push \\\n  --force origin feature/x')")"
 check "jq writing CRLF, with -b (jq.exe): with awk failing, git split by a continued line is refused" 2 "$(gbp "$CRJQ:$BADAWK:$PATH" "$(printf 'g\\\nit push --force origin feature/x')")"
 check "jq writing CRLF, with -b (jq.exe): an ordinary two-line command passes" 0 "$(gbp "$CRJQ:$PATH" "$(printf 'git status\necho done')")"
-check "jq writing CRLF, with -b (jq.exe): a command after a backslash and a CR is still seen" 2 "$(gbp "$CRJQ:$PATH" "$(printf "git commit -m \\\\\r\n'git' push --force origin feature/x")")"
+crv "jq writing CRLF, with -b (jq.exe): a command after a backslash and a CR" 2 0 "$CRJQ:$PATH" "$(printf "git commit -m \\\\\r\n'git' push --force origin feature/x")"
 check "jq writing CRLF, without -b: a force flag that ends a line is still seen" 2 "$(gbp "$NOBJQ:$PATH" "$(printf 'git push origin feature/x --force\necho done')")"
 check "jq writing CRLF, without -b: a push continued onto a second line is still seen" 2 "$(gbp "$NOBJQ:$PATH" "$(printf 'git push \\\n  --force origin feature/x')")"
 check "jq writing CRLF, without -b: with awk failing, git split by a continued line is refused" 2 "$(gbp "$NOBJQ:$BADAWK:$PATH" "$(printf 'g\\\nit push --force origin feature/x')")"
 check "jq writing CRLF, without -b: an ordinary two-line command passes" 0 "$(gbp "$NOBJQ:$PATH" "$(printf 'git status\necho done')")"
-check "jq writing CRLF, without -b: a CR before # starts no comment" 2 "$(gbp "$NOBJQ:$PATH" "$(printf ': \r#; git push --force origin feature/x')")"
-check "jq writing CRLF, without -b: a command after a backslash and a CR is still seen" 2 "$(gbp "$NOBJQ:$PATH" "$(printf "git commit -m \\\\\r\n'git' push --force origin feature/x")")"
+crv "jq writing CRLF, without -b: a CR before #" 2 0 "$NOBJQ:$PATH" "$(printf ': \r#; git push --force origin feature/x')"
+crv "jq writing CRLF, without -b: a command after a backslash and a CR" 2 0 "$NOBJQ:$PATH" "$(printf "git commit -m \\\\\r\n'git' push --force origin feature/x")"
 rm -rf "$CRJQ" "$NOBJQ"
-check "a CR before # starts no comment: what follows it is still seen" 2 "$(gbp "$PATH" "$(printf ': \r#; git push --force origin feature/x')")"
-check "...a push to main too" 2 "$(gbp "$PATH" "$(printf 'echo hi \r#; git push origin main')")"
-check "a backslash before a CR continues no line: the command on the next is still seen" 2 "$(gbp "$PATH" "$(printf "git commit -m \\\\\r\n'git' push --force origin feature/x")")"
-check "...her /nonna scripts too" 2 "$(gbp "$PATH" "$(printf ': \\\r\nbash .claude/skills/nonna/scripts/x.sh off')")"
+crv "a CR before #, as bash reads it: what follows runs where bash keeps the CR" 2 0 "$PATH" "$(printf ': \r#; git push --force origin feature/x')"
+crv "...a push to main too" 2 0 "$PATH" "$(printf 'echo hi \r#; git push origin main')"
+crv "a backslash before a CR, as bash reads it: the next line runs where bash keeps the CR" 2 0 "$PATH" "$(printf "git commit -m \\\\\r\n'git' push --force origin feature/x")"
+crv "...her /nonna scripts too" 2 0 "$PATH" "$(printf ': \\\r\nbash .claude/skills/nonna/scripts/x.sh off')"
+crv "a CR inside a word, as bash reads it: gi<CR>t is git where Git Bash drops it" 0 2 "$PATH" "$(printf 'gi\rt push --force origin feature/x')"
+crv "...pu<CR>sh is push" 0 2 "$PATH" "$(printf 'git pu\rsh --force origin feature/x')"
+crv "...and ma<CR>in is main" 0 2 "$PATH" "$(printf 'git push origin ma\rin')"
+# The two ways a field is read, on any platform: without its CRs where bash drops them, with them elsewhere.
+check "json: where bash drops every CR, so does a field" "a#b" "$(printf '%s' '{"c":"a\r#b"}' | bash -c '. "$1/lib/json.sh"; _nonna_cr_drop=1; nonna_json_field .c' _ "$HOOKS")"
+check "json: ...and where it keeps them, the field keeps them" "$(printf 'a\r#b')" "$(printf '%s' '{"c":"a\r#b"}' | bash -c '. "$1/lib/json.sh"; _nonna_cr_drop=; nonna_json_field .c' _ "$HOOKS")"
 BADEXP="$(mktemp -d)"; printf '#!/bin/sh\ncase "$*" in *expand.awk*) exit 2 ;; esac\nexec %s "$@"\n' "$(command -v awk)" > "$BADEXP/awk"; chmod +x "$BADEXP/awk"
 check "a failing brace and glob reader: a brace list is refused, not guessed at" 2 "$(gbp "$BADEXP:$PATH" 'echo {a,b}')"
 BADJQ="$(mktemp -d)"; printf '#!/bin/sh\nexit 1\n' > "$BADJQ/jq"; chmod +x "$BADJQ/jq"
