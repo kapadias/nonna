@@ -140,14 +140,17 @@ key="AKIA""1234567890ABCDEF" # split, so this file holds no key-shaped literal
 want "secret: Write of a key (backslashes)" 2 secret-scan.sh "$(file_tool Write "$WB\\src\\app.py" ",\"content\":\"k = '$key'\"")"
 want "secret: Write of a key under tests\\ (the fixture exemption)" 0 secret-scan.sh "$(file_tool Write "$WB\\tests\\app.py" ",\"content\":\"k = '$key'\"")"
 
-# 6. The git hooks, wired the way session-start.sh wires a copy-in install: with this shell's ln -s. A staged
-#    key must stop the commit whether the hook is a link or not; a hook that is a copy cannot find its lib/.
+# 6. The git hooks, wired the way session-start.sh wires a copy-in install: with this shell's ln -s, or her
+#    wrapper where it copies. A staged key must stop the commit whether the hook is a link or her wrapper.
 wired="$tmp/wired"
 mkdir -p "$wired/.claude" && cp -R "$ROOT/.claude/hooks" "$wired/.claude/hooks"
 "${G[@]}" -C "$wired" init -q && "${G[@]}" -C "$wired" commit -q --allow-empty -m init
 out="$(printf '{"session_id":"probe"}' | CLAUDE_PROJECT_DIR="$wired" bash "$wired/.claude/hooks/session-start.sh" 2>&1 | tr -d '\n')"
 for h in pre-commit pre-push; do
-  if [ -L "$wired/.git/hooks/$h" ]; then r="a symlink"; elif [ -e "$wired/.git/hooks/$h" ]; then r="a COPY (no lib/ beside it)"; else r="not installed"; fi
+  if [ -L "$wired/.git/hooks/$h" ]; then r="a symlink"
+  elif t="$(bash -c '. "$1/lib/core.sh"; nonna_hook_target "$2"' _ "$wired/.claude/hooks" "$wired/.git/hooks/$h")"; then r="her wrapper, to $t"
+  elif [ -e "$wired/.git/hooks/$h" ]; then r="a COPY (no lib/ beside it)"
+  else r="not installed"; fi
   say "git hook $h after session-start" "$r"
 done
 say "session-start says" "$(printf '%s' "$out" | grep -o '"systemMessage":"[^"]*"' | cut -c1-200)"
@@ -166,7 +169,12 @@ proot="$ROOT/.claude" pdata="$plug/data"
 out="$(printf '{"session_id":"probe"}' | CLAUDE_PROJECT_DIR="$tmp/plugin-project" CLAUDE_PLUGIN_ROOT="$proot" \
   bash "$ROOT/.claude/hooks/session-start.sh" "$pdata" 2>&1 | tr -d '\n')"
 say "plugin session-start (root $proot)" "$(printf '%s' "$out" | grep -o '"systemMessage":"[^"]*"' | cut -c1-260)"
-say "plugin git hooks" "$(for h in pre-push pre-commit; do [ -e "$tmp/plugin-project/.git/hooks/$h" ] && printf '%s ' "$h"; done)"
+say "plugin git hooks" "$(for h in pre-push pre-commit; do
+  f="$tmp/plugin-project/.git/hooks/$h"
+  if [ -L "$f" ]; then printf '%s: a symlink -> %s; ' "$h" "$(readlink "$f")"
+  elif t="$(bash -c '. "$1/lib/core.sh"; nonna_hook_target "$2"' _ "$ROOT/.claude/hooks" "$f")"; then printf '%s: her wrapper, to %s; ' "$h" "$t"
+  elif [ -e "$f" ]; then printf '%s: a file; ' "$h"; fi
+done)"
 
 # 8. What one gate costs here: a hook started by Bash on every tool call.
 t="$( { TIMEFORMAT=%R; time hook guard-branch.sh "$(bash_cmd Bash 'git status')" >/dev/null; } 2>&1 )"

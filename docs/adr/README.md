@@ -21,6 +21,8 @@ rather than edit.
 | 0013 | [Codex runs Nonna's hooks through a payload adapter](0013-codex-hooks-through-a-payload-adapter.md) | Accepted                                     | 2026-09-30 |
 | 0014 | [A test command per directory](0014-a-test-command-per-directory.md)                                | Accepted                                     | 2026-09-30 |
 | 0015 | [A Copilot CLI plugin runs her gates in Copilot's hooks](0015-copilot-cli-plugin.md)                | Accepted                                     | 2026-09-30 |
+| 0016 | [Where `ln -s` copies, her git hooks are wrappers](0016-git-hooks-are-wrappers-where-ln-copies.md)  | Accepted                                     | 2026-10-02 |
+| 0017 | [A command is read as the bash that runs it reads a CR](0017-a-cr-read-as-bash-reads-it.md)         | Accepted                                     | 2026-10-03 |
 
 New ADRs are added with the **`/adr`** skill, which scaffolds the next number from the Nonna template
 and updates this index.
