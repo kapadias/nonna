@@ -759,6 +759,20 @@ check "a failing brace and glob reader: a brace list is refused, not guessed at"
 BADJQ="$(mktemp -d)"; printf '#!/bin/sh\nexit 1\n' > "$BADJQ/jq"; chmod +x "$BADJQ/jq"
 check "a failing jq: a force push is refused" 2 "$(gbp "$BADJQ:$PATH" 'git push --force origin feature/x')"
 got="$(printf '%s' '{"a":1,"tool_input":{"command":"a \"b\" c\\d\ne\u0041\/"}}' | PATH="$NJ" bash -c '. "$0"; nonna_json_field .tool_input.command' "$HOOKS/lib/json.sh")"
+# A native jq.exe (Git Bash) writes each newline as CRLF, one inside the command too, and a CR at the
+# end of a line hid what the line says: --force<CR> is not --force, and a backslash before a CR
+# continues no line. A jq that writes CRLF stands in for it here.
+CRJQ="$(mktemp -d)"; JQ_REAL="$(command -v jq)"; AWK_REAL="$(command -v awk)" # by path: a test below fails awk
+cat > "$CRJQ/jq" <<SH
+#!/bin/sh
+"$JQ_REAL" "\$@" | "$AWK_REAL" '{ printf "%s\\r\\n", \$0 }'
+SH
+chmod +x "$CRJQ/jq"
+check "jq writing CRLF (jq.exe): a force flag that ends a line is still seen" 2 "$(gbp "$CRJQ:$PATH" "$(printf 'git push origin feature/x --force\necho done')")"
+check "jq writing CRLF (jq.exe): a push continued onto a second line is still seen" 2 "$(gbp "$CRJQ:$PATH" "$(printf 'git push \\\n  --force origin feature/x')")"
+check "jq writing CRLF (jq.exe): with awk failing, git split by a continued line is refused" 2 "$(gbp "$CRJQ:$BADAWK:$PATH" "$(printf 'g\\\nit push --force origin feature/x')")"
+check "jq writing CRLF (jq.exe): an ordinary two-line command passes" 0 "$(gbp "$CRJQ:$PATH" "$(printf 'git status\necho done')")"
+rm -rf "$CRJQ"
 check "json.sh without jq: a string is decoded in full (quotes, backslash, newline, \\u, \\/)" "$(printf 'a "b" c\\d\neA/')" "$got"
 rm -rf "$NJ" "$BADAWK" "$BADJQ" "$BADEXP"
 # The guard answers in time: a hook that outruns Claude Code's timeout does not block, so the command
@@ -2358,6 +2372,12 @@ TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; git -C "$TMP" config core.hoo
 out="$(CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$ROOT/.claude" "$HOOKS/session-start.sh")"
 if [ -e "$TMP/.husky/pre-push" ] || [ -e "$TMP/.git/hooks/pre-push" ]; then rc=1; else rc=0; fi
 check "plugin: a hook manager's directory is not written" 0 "$rc"
+# ...and where ln -s copies, so the data dir holds her wrappers: the copy is her script's, not a wrapper's.
+CL="$(copying_ln)"; TMP="$(mktemp -d)"; "${GIT[@]}" -C "$TMP" init -q; PD="$(mktemp -d)"
+cp "$ROOT/.claude/hooks/require-status-sync.sh" "$TMP/.git/hooks/pre-push"
+out="$(PATH="$CL:$PATH" CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$ROOT/.claude" "$HOOKS/session-start.sh" "$PD/data")"
+contains "plugin, where ln -s copies: a copy of her pre-push script is named too" ".git/hooks/pre-push is a copy of her require-status-sync.sh, not a link" "$out"
+rm -rf "$TMP" "$PD" "$CL"
 contains "plugin: says where the hook manager should point" "require-status-sync.sh" "$out"
 rm -rf "$TMP"
 # A hook manager under a copy-in is told where her scripts are, as under a plugin, by a path that exists: a path
