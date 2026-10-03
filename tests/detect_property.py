@@ -106,7 +106,7 @@ def build(root, files):
             os.makedirs(path, exist_ok=True)
             continue
         os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "w") as fh:
+        with open(path, "w", newline="\n") as fh:  # LF: Windows writes CRLF in text mode
             if name in EXEC:
                 fh.write('#!/bin/sh\necho %s >> "%s"\n' % (name, log))
             elif name == "package.json":
@@ -115,12 +115,30 @@ def build(root, files):
             os.chmod(path, 0o755)
 
 
+# The bash on PATH, as the hooks run in: from Python on Windows a bare "bash" is System32's, WSL's.
+BASH = shutil.which("bash") or "bash"
+# grep, as that bash finds it: a private PATH holds a script that runs it, since Git Bash cannot start a
+# link to one of its programs from another directory (it finds no msys-2.0.dll beside the link: exit 127).
+GREP = subprocess.run(
+    [BASH, "-c", "command -v grep"], stdout=subprocess.PIPE, universal_newlines=True
+).stdout.strip()
+
+
+
+def sh_path(p):
+    """A path as Git Bash reads it: on Windows C:\\a\\b is /c/a/b, since a PATH splits at the drive's colon."""
+    if os.name != "nt":
+        return p
+    drive, rest = os.path.splitdrive(p)
+    return "/" + drive.rstrip(":").lower() + rest.replace("\\", "/")
+
+
 base = tempfile.mkdtemp()
 try:
     stubs = os.path.join(base, "stubs")
     os.makedirs(stubs)
     for r in RUNNERS:  # stand-ins: python3 is one that finds pytest, the rest log a run
-        with open(os.path.join(stubs, r), "w") as fh:
+        with open(os.path.join(stubs, r), "w", newline="\n") as fh:
             fh.write(
                 "#!/bin/sh\nexit 0\n"
                 if r == "python3"
@@ -141,11 +159,13 @@ try:
         os.makedirs(repo)
         os.makedirs(bindir)
         build(repo, files)
-        os.symlink(shutil.which("grep"), os.path.join(bindir, "grep"))
+        with open(os.path.join(bindir, "grep"), "w", newline="\n") as fh:
+            fh.write("#!/bin/sh\nexec '%s' \"$@\"\n" % GREP.replace("'", "'\\''"))
+        os.chmod(os.path.join(bindir, "grep"), 0o755)
         for r in runners:
             os.symlink(os.path.join(stubs, r), os.path.join(bindir, r))
         piles.append((files, runners))
-        lines.append("%s|%s" % (repo, bindir))
+        lines.append("%s|%s" % (sh_path(repo), sh_path(bindir)))
 
     # One bash, the library sourced once; each pile is detected in a subshell with PATH its own and nothing else.
     script = (
@@ -153,18 +173,19 @@ try:
         '( cd "$repo" && PATH="$bin" nonna_detect_test_cmd ) </dev/null; printf "\\n"; done'
     )
     env = {k: v for k, v in os.environ.items() if k != "JAVA_HOME"}
+    # Bytes both ways: in text mode, Windows would end each line bash reads with a CR, and every PATH too.
     run = subprocess.run(
-        ["bash", "-c", script, "_", hooks],
-        input="\n".join(lines) + "\n",
+        [BASH, "-c", script, "_", hooks],
+        input=("\n".join(lines) + "\n").encode(),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        universal_newlines=True,
         env=env,
     )
+    err = run.stderr.decode(errors="replace")
     if run.returncode:
-        print("bash rc=%d: %s" % (run.returncode, (run.stderr.splitlines() or [""])[0]))
+        print("bash rc=%d: %s" % (run.returncode, (err.splitlines() or [""])[0]))
         sys.exit(1)
-    got = run.stdout.split("\n")[:-1]
+    got = run.stdout.decode(errors="replace").split("\n")[:-1]
 
     seen, bad, less = set(), [], 0
     for n, (files, runners) in enumerate(piles):
