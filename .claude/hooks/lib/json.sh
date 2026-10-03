@@ -3,18 +3,61 @@
 # stdin. Why a shared helper: every hook parses the same envelope, and a sed
 # fallback keeps the gates working on minimal machines where jq is absent.
 
+# How a hook reads a field, decided once, when it sources this file.
+#
+# _nonna_cr_drop: set where this bash drops every CR from a command it runs, as Git Bash's does. There
+#   " <CR>#" starts a comment, "\<CR><LF>" continues a line and gi<CR>t is git, so a guard reads every
+#   field without its CRs, as bash will run it. Asked of this bash itself, where it could be (MSYS, Cygwin).
+# _nonna_jq_raw: everywhere else every CR stays, since to bash it is part of a word: a guard that dropped
+#   one would read " <CR>#" as a comment and "\<CR><LF>" as a continued line, and miss what bash runs.
+#   But a native jq.exe writes each newline as CRLF, one inside a value too, unless -b: so -b where jq
+#   takes it (a no-op off Windows), else, where it writes CRLF, one CR off each line's end, which is all
+#   it added.
+_nonna_cr_drop=""
+case "${OSTYPE:-}" in
+  msys* | cygwin*)
+    _nonna_cr=$'\r'
+    if [ "$("${BASH:-bash}" -c "printf %s a${_nonna_cr}b" 2>/dev/null)" = ab ] && command -v tr >/dev/null 2>&1; then
+      _nonna_cr_drop=1
+    fi
+    ;;
+esac
+_nonna_jq_raw=""
+if command -v jq >/dev/null 2>&1; then
+  if jq -b -n 1 >/dev/null 2>&1; then
+    _nonna_jq_raw="-b"
+  elif [ "$(jq -rn '"a"' 2>/dev/null)" = "a"$'\r' ] && command -v sed >/dev/null 2>&1; then
+    _nonna_jq_raw="crlf"
+  fi
+fi
+
 # nonna_json_field <jq_filter>
 #   Reads JSON from stdin, prints the field. With jq, any filter works. Without
 #   jq, only simple string-field lookups (e.g. .tool_input.file_path) degrade
 #   gracefully; complex filters return empty (callers must fail safe on empty).
+#   Where bash drops every CR (Git Bash), so does the field: a guard reads what bash will run.
 nonna_json_field() {
+  if [ -n "$_nonna_cr_drop" ]; then
+    _nonna_json_value "$@" | LC_ALL=C tr -d '\r'
+  else
+    _nonna_json_value "$@"
+  fi
+}
+
+# _nonna_json_value <jq_filter>: the field exactly as the JSON holds it.
+_nonna_json_value() {
   local filter="$1" payload
   payload="$(cat 2>/dev/null || true)"
   [ -n "$payload" ] || return 0
 
   if command -v jq >/dev/null 2>&1; then
-    # // empty so a missing/null field prints nothing, not the literal "null".
-    printf '%s' "$payload" | jq -r "$filter // empty" 2>/dev/null || true
+    # // empty so a missing/null field prints nothing, not the literal "null". Streamed, never held in a
+    # variable, which would drop a NUL its caller translates.
+    case "$_nonna_jq_raw" in
+      -b) printf '%s' "$payload" | jq -b -r "$filter // empty" 2>/dev/null || true ;;
+      crlf) printf '%s' "$payload" | jq -r "$filter // empty" 2>/dev/null | sed $'s/\r$//' || true ;;
+      *) printf '%s' "$payload" | jq -r "$filter // empty" 2>/dev/null || true ;;
+    esac
     return 0
   fi
 

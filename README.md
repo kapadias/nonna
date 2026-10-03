@@ -272,7 +272,7 @@ the plugin.
 ## Development
 
 ```bash
-bash tests/run.sh              # every gate proven to block and to allow (1871 golden tests)
+bash tests/run.sh              # every gate proven to block and to allow (1884 golden tests)
 python3 tests/harness_lint.py  # word budgets, host files in sync, hook wiring, README numbers
 ```
 
