@@ -3,6 +3,21 @@
 # stdin. Why a shared helper: every hook parses the same envelope, and a sed
 # fallback keeps the gates working on minimal machines where jq is absent.
 
+# _nonna_jq_raw: how this jq gives a value back as it is, probed once when a hook sources this. A native
+# jq.exe (Git Bash) writes each newline as CRLF, one inside a value too, unless -b. To bash a CR is part of
+# a word, so only the CRs jq adds may go: one left at a line's end hid a command from the branch guard (a
+# backslash before it continues no line), and one taken from inside a value showed the guard what bash does
+# not run (" <CR>#" is no comment, "\<CR><LF>" no continued line). So -b where jq takes it, a no-op but on
+# Windows; else, where jq writes CRLF and sed is there, one CR off each line's end, which is all jq added.
+_nonna_jq_raw=""
+if command -v jq >/dev/null 2>&1; then
+  if jq -b -n 1 >/dev/null 2>&1; then
+    _nonna_jq_raw="-b"
+  elif [ "$(jq -rn '"a"' 2>/dev/null)" = "a"$'\r' ] && command -v sed >/dev/null 2>&1; then
+    _nonna_jq_raw="crlf"
+  fi
+fi
+
 # nonna_json_field <jq_filter>
 #   Reads JSON from stdin, prints the field. With jq, any filter works. Without
 #   jq, only simple string-field lookups (e.g. .tool_input.file_path) degrade
@@ -13,17 +28,13 @@ nonna_json_field() {
   [ -n "$payload" ] || return 0
 
   if command -v jq >/dev/null 2>&1; then
-    # // empty so a missing/null field prints nothing, not the literal "null". A native jq.exe (Git Bash)
-    # writes each newline as CRLF, one inside the value too, and a CR left at a line's end hides what the
-    # line says to a guard: --force<CR> is not --force, and a backslash before a CR continues no line.
-    # So every CR goes: bash splits no word at one, so a guard sees no less than bash runs. Streamed, not
-    # held in a variable, which would drop a NUL its caller translates; and through tr only where there
-    # is one, since a field that reads as nothing would let a guard wave a command through.
-    if command -v tr >/dev/null 2>&1; then
-      printf '%s' "$payload" | jq -r "$filter // empty" 2>/dev/null | LC_ALL=C tr -d '\r' || true
-    else
-      printf '%s' "$payload" | jq -r "$filter // empty" 2>/dev/null || true
-    fi
+    # // empty so a missing/null field prints nothing, not the literal "null". Streamed, never held in a
+    # variable, which would drop a NUL its caller translates.
+    case "$_nonna_jq_raw" in
+      -b) printf '%s' "$payload" | jq -b -r "$filter // empty" 2>/dev/null || true ;;
+      crlf) printf '%s' "$payload" | jq -r "$filter // empty" 2>/dev/null | sed $'s/\r$//' || true ;;
+      *) printf '%s' "$payload" | jq -r "$filter // empty" 2>/dev/null || true ;;
+    esac
     return 0
   fi
 

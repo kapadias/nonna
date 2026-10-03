@@ -33,7 +33,10 @@ Exercises each deterministic gate with fixed inputs and asserts the exit code:
   synced push.
 - **session-start**: emits context, auto-installs the pre-push hook, and warns
   instead of overwriting a foreign one. When `ln -s` only copies the script (Git Bash), it
-  removes the copy and says the gate is not enforced; `install.sh` does the same and exits 1. A
+  writes her wrapper in its place, a script that runs hers, and a staged key is refused through it,
+  in a copy-in and through both of a plugin's wrappers; `install.sh` does the same. Her wrapper is
+  hers byte for byte, never in place of a hook that is there, and one whose script is gone is
+  repaired, as a dangling link of hers is (ADR-0016). A
   byte copy of her script already in `.git/hooks` is named as a copy (session start warns,
   `install.sh` exits 1, `/nonna status` gives it no check mark, `/nonna uninstall` says to delete
   it) and never deleted, and is not taken for a hook that chains hers: only a line of code that
@@ -207,7 +210,8 @@ Both run in CI on every push and pull request (`.github/workflows/ci.yml`),
 alongside `shellcheck` over every script and `claude plugin validate --strict` on both
 manifests. `run.sh` also runs on a macOS runner under `/bin/bash` 3.2 with only Apple's tools on
 the PATH (no Homebrew), because the guards parse shell in bash and awk and those differ from
-Linux's. It runs a third time under Git Bash on Windows, in three legs, and there it only
-reports: 112 of 1279 checks fail there without native symlinks and 50 with them (run 36771120623), and
-[`docs/INSTALL.md`](../docs/INSTALL.md#windows) says which gates that costs. Adopters wire their own
+Linux's. It runs a third time under Git Bash on Windows, in three legs, where every check passes
+too and the job blocks a merge; [`docs/INSTALL.md`](../docs/INSTALL.md#windows) says what Windows still
+lets through. There its tests about links make real ones, which needs the right to make symlinks
+(Developer Mode, or an administrator's, as GitHub's runners have). Adopters wire their own
 lint/type/test/coverage gate as additional jobs — see [`stacks/`](../stacks/).
