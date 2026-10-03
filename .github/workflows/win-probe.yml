@@ -27,5 +27,7 @@ jobs:
           MSYS_MODE: ${{ matrix.msys }}
         run: if [ -n "$MSYS_MODE" ]; then echo "MSYS=$MSYS_MODE" >> "$GITHUB_ENV"; fi
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          fetch-depth: 0 # the probe compares with 1b07932's files
       - name: Probe
         run: bash tests/win-experiments.sh

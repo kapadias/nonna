@@ -1,93 +1,104 @@
 #!/usr/bin/env bash
-# Scratch probes for #45 (never merged): facts about Git Bash, printed, never asserted.
+# Scratch (#45, never merged): the Windows legs' last failures, and each fix for them, measured on Git Bash.
 set -u
-say() { printf 'X %s\n' "$*"; }
-flat() { tr '\r\n' '~|' | cut -c1-"${1:-400}"; }
-ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-HOOKS="$ROOT/.claude/hooks"
+exec </dev/null
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"; HOOKS="$ROOT/.claude/hooks"
+say() { printf 'probe %s: %s\n' "$1" "$2"; }
+ms() { date +%s%N | cut -c1-13; }
+say env "$(uname -s) bash $BASH_VERSION MSYS=${MSYS:-} jq=$(command -v jq) $(jq --version 2>&1) python3=$(python3 --version 2>&1)"
 
-say "0 uname=$(uname -sr) MSYS=[${MSYS:-}] bash=$BASH_VERSION"
-say "0 /tmp: pwd=[$(cd /tmp && pwd)] pwd-P=[$(cd /tmp && pwd -P)] TMPDIR=[${TMPDIR:-}] TMP=[${TMP:-}]"
-say "0 mktemp -d: [$(mktemp -d)] | cygpath: [$(command -v cygpath)]"
-say "0 ldd bash: $(ldd /usr/bin/bash 2>&1 | flat 500)"
-say "0 bash files: $(ls -l /usr/bin/bash* /usr/bin/msys-2.0.dll 2>&1 | flat 500)"
-
-# --- A. the suite's private tool directory: links (or copies) vs shim scripts -------------------------
-D="$(mktemp -d)"; ln -s "$(command -v bash)" "$D/bash" 2>/dev/null; ln -s "$(command -v grep)" "$D/grep" 2>/dev/null
-say "A0 ln -s into a dir: bash is-link=$([ -L "$D/bash" ] && echo y || echo n) size=$(wc -c < "$D/bash" 2>/dev/null)"
-o="$(PATH="$D" bash -c 'echo ok' 2>&1)"; say "A1 PATH=links bash -c: rc=$? [$(printf '%s' "$o" | flat)]"
-o="$(PATH="$D" /usr/bin/bash -c 'echo ok; grep -c x <<< x' 2>&1)"; say "A2 real bash, PATH=links, grep via PATH: rc=$? [$(printf '%s' "$o" | flat)]"
-o="$(PATH="$D:/usr/bin" bash -c 'echo ok' 2>&1)"; say "A3 PATH=links:/usr/bin: rc=$? [$(printf '%s' "$o" | flat)]"
-N="$(mktemp -d)"; MSYS=winsymlinks:nativestrict ln -s "$(command -v bash)" "$N/bash" 2>&1 | flat
-say "A4 native link: is-link=$([ -L "$N/bash" ] && echo y || echo n) -> [$(readlink "$N/bash")]"
-o="$(PATH="$N" bash -c 'echo ok' 2>&1)"; say "A5 PATH=native links: rc=$? [$(printf '%s' "$o" | flat)]"
-S="$(mktemp -d)"
-for b in bash sh env cat grep sed awk tr dirname git; do
-  p="$(command -v "$b")" || continue
-  printf '#!/bin/sh\nexec "%s" "$@"\n' "$p" > "$S/$b"; chmod +x "$S/$b"
-done
-o="$(PATH="$S" bash -c 'echo ok; grep -c x <<< x; echo y | sed s/y/z/; echo 1 | awk "{print \$1+1}"; command -v jq || echo no-jq' 2>&1)"
-say "A6 PATH=shims: rc=$? [$(printf '%s' "$o" | flat)]"
-printf '#!/usr/bin/env bash\necho "envbash ${BASH_VERSION} src=${BASH_SOURCE[0]}"\n' > "$S/t.sh"; chmod +x "$S/t.sh"
-o="$(PATH="$S" "$S/t.sh" 2>&1)"; say "A7 #!/usr/bin/env bash script, PATH=shims: rc=$? [$(printf '%s' "$o" | flat)]"
-o="$(printf '{}' | PATH="$S" bash "$HOOKS/check-review.sh" 2>&1)"; say "A8 check-review.sh with PATH=shims (no jq): rc=$? [$(printf '%s' "$o" | flat 200)]"
-t0=$(date +%s%N); for _ in 1 2 3 4 5 6 7 8 9 10; do PATH="$S" bash -c 'grep -c x <<< x' >/dev/null; done; t1=$(date +%s%N)
-for _ in 1 2 3 4 5 6 7 8 9 10; do bash -c 'grep -c x <<< x' >/dev/null; done; t2=$(date +%s%N)
-say "A9 10 runs: shims $(( (t1 - t0) / 1000000 ))ms, plain $(( (t2 - t1) / 1000000 ))ms"
-
-# --- B. readlink of native links, and what ln -s does with a missing target ----------------------------
-B="$(mktemp -d)"; mkdir -p "$B/.git/hooks" "$B/.claude/hooks"; : > "$B/.claude/hooks/x.sh"
-( cd "$B/.git/hooks" && MSYS=winsymlinks:nativestrict ln -s ../../.claude/hooks/x.sh rel 2>&1 | flat;
-  MSYS=winsymlinks:nativestrict ln -s "$B/.claude/hooks/x.sh" abs 2>&1 | flat;
-  MSYS=winsymlinks:nativestrict ln -s /gone/x.sh dangling 2>&1 | flat )
-say "B1 native readlink: rel=[$(readlink "$B/.git/hooks/rel")] abs=[$(readlink "$B/.git/hooks/abs")] dangling=[$(readlink "$B/.git/hooks/dangling")] B=[$B]"
-( cd "$B/.git/hooks" && ln -s ../../.claude/hooks/x.sh crel 2>&1 | flat; ln -s /gone/x.sh cgone 2>&1 | flat )
-say "B2 default ln -s: crel is-link=$([ -L "$B/.git/hooks/crel" ] && echo y || echo n) exists=$([ -e "$B/.git/hooks/crel" ] && echo y || echo n); to a missing target: exists=$([ -e "$B/.git/hooks/cgone" ] || [ -L "$B/.git/hooks/cgone" ] && echo y || echo n)"
-L="$(mktemp -d)"; ln -s x "$L/l" 2>/dev/null; say "B3 ln -s to a missing name: rc-made=$([ -L "$L/l" ] && echo link || { [ -e "$L/l" ] && echo file || echo nothing; })"
-
-# --- C. how paths are spelled --------------------------------------------------------------------------
-R="$(mktemp -d)"; git init -q "$R"; mkdir -p "$R/sub/deep"
-( cd "$R/sub/deep" && say "C1 R=[$R] pwd=[$(pwd)] pwd-P=[$(pwd -P)] top=[$(git rev-parse --show-toplevel)] prefix=[$(git rev-parse --show-prefix)] cdup=[$(git rev-parse --show-cdup)] hooks=[$(git rev-parse --git-path hooks)] gitdir=[$(git rev-parse --git-dir)] cygpath-u-top=[$(cygpath -u "$(git rev-parse --show-toplevel)" 2>&1)]" )
-( cd "$R" && say "C2 at top: hooks=[$(git rev-parse --git-path hooks)] nonna-path=[$(git rev-parse --git-path nonna)]" )
-
-# --- D. a git hook that is a wrapper script ------------------------------------------------------------
-W="$(mktemp -d)/with space"; mkdir -p "$W"; git -C "$W" init -q; mkdir -p "$W/.claude/hooks/lib"
-printf '#!/usr/bin/env bash\necho "real hook ran: src=${BASH_SOURCE[0]} lib=$(ls "$(dirname "${BASH_SOURCE[0]}")/lib" | tr -d "\\n") args=$# pwd=$(pwd)" >&2\nexit 1\n' > "$W/.claude/hooks/pre-commit.sh"
-: > "$W/.claude/hooks/lib/core.sh"
-printf '#!/bin/sh\n# nonna: ../../.claude/hooks/pre-commit.sh\nexec bash "$(dirname "$0")"/'"'"'../../.claude/hooks/pre-commit.sh'"'"' "$@"\n' > "$W/.git/hooks/pre-commit"; chmod +x "$W/.git/hooks/pre-commit"
-printf '#!/bin/sh\necho "dollar0=[$0]" >&2\n' > "$W/.git/hooks/probe0"
-( cd "$W" && echo a > a && git add a && o="$(git -c user.email=a@b -c user.name=n commit -qm x 2>&1)"; say "D1 commit through a relative wrapper: rc=$? [$(printf '%s' "$o" | flat)]" )
-printf '#!/bin/sh\n# nonna: %s\nexec bash '"'"'%s'"'"' "$@"\n' "$W/.claude/hooks/pre-commit.sh" "$W/.claude/hooks/pre-commit.sh" > "$W/.git/hooks/pre-commit"
-( cd "$W" && o="$(git -c user.email=a@b -c user.name=n commit -qm x 2>&1)"; say "D2 commit through an absolute wrapper (a space in the path): rc=$? [$(printf '%s' "$o" | flat)]" )
-( cd "$W/.claude" && o="$(git -c user.email=a@b -c user.name=n commit -qm x 2>&1)"; say "D3 commit from a subdirectory, absolute wrapper: rc=$? [$(printf '%s' "$o" | flat)]" )
-printf '#!/bin/sh\necho "dollar0=[$0] pwd=[$(pwd)]" >&2\nexit 1\n' > "$W/.git/hooks/pre-commit"
-( cd "$W/.claude" && o="$(git -c user.email=a@b -c user.name=n commit -qm x 2>&1)"; say "D4 what git passes as \$0, from a subdirectory: [$(printf '%s' "$o" | flat)]" )
-
-# --- E. the lint's secret-scan cross-check, from native Python ------------------------------------------
-python3 - "$ROOT" <<'PY'
-import json, os, shutil, subprocess, sys
-root = sys.argv[1]
-win_root = os.path.dirname(os.path.dirname(os.path.abspath(os.path.join(root, "tests", "x"))))
-print("X E0 python sees root as", repr(os.path.abspath(".")), "| which bash:", shutil.which("bash"))
-r = subprocess.run(["bash", "-c", "echo $BASH_VERSION; uname -s"], capture_output=True, text=True)
-print("X E1 bash -c from python:", r.returncode, repr(r.stdout), repr(r.stderr[:200]))
-here = os.path.abspath(".")
-for label, envroot in (("python root", here), ("posix root", root)):
-    payload = json.dumps({"tool_name": "Read", "tool_input": {"file_path": "./x/.env"}})
-    r = subprocess.run(["bash", os.path.join(here, ".claude/hooks/secret-scan.sh")], input=payload,
-                       capture_output=True, text=True, env={**os.environ, "NONNA_MODE": "full", "CLAUDE_PROJECT_DIR": envroot})
-    print("X E2", label, repr(envroot), "rc=", r.returncode, "err=", repr(r.stderr[:300]))
+# E1. A tailed hooks.json command: what python gets for it, and what the lint prints.
+FX="$(mktemp -d)"
+cp -R "$ROOT/.claude" "$ROOT/docs" "$ROOT/tests" "$ROOT/stacks" "$ROOT/.github" "$ROOT/.claude-plugin" "$ROOT/hosts" \
+  "$ROOT/bench" "$ROOT/examples" "$ROOT/assets" "$ROOT/hooks" "$FX/" 2>/dev/null
+cp "$ROOT"/*.md "$ROOT"/LICENSE "$ROOT/gemini-extension.json" "$FX/" 2>/dev/null
+python3 - "$FX/.claude/hooks/hooks.json" PreToolUse '"${CLAUDE_PLUGIN_ROOT}"/hooks/guard-branch.sh || true' <<'PY'
+import json, sys
+path, event, cmd = sys.argv[1:4]
+print("probe E1: python got", repr(cmd))
+cfg = json.load(open(path, encoding="utf-8"))
+cfg["hooks"][event][0]["hooks"][0]["command"] = cmd
+json.dump(cfg, open(path, "w", encoding="utf-8"), indent=2)
 PY
-o="$(printf '%s' '{"tool_name":"Read","tool_input":{"file_path":"./x/.env"}}' | NONNA_MODE=full CLAUDE_PROJECT_DIR="$ROOT" bash "$HOOKS/secret-scan.sh" 2>&1)"; say "E3 the same from Git Bash: rc=$? [$(printf '%s' "$o" | flat 200)]"
-o="$(printf '%s' '{"tool_name":"Read","tool_input":{"file_path":"./x/.env"}}' | NONNA_MODE=full CLAUDE_PROJECT_DIR="$(cygpath -w "$ROOT")" bash "$HOOKS/secret-scan.sh" 2>&1)"; say "E4 ...with a Windows-style project dir: rc=$? [$(printf '%s' "$o" | flat 200)]"
-o="$(cd "$ROOT" && python3 tests/harness_lint.py 2>&1 | head -3)"; say "E5 lint head: [$(printf '%s' "$o" | flat 300)]"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$ROOT/tests/harness_lint.py" 2>&1)"; say E1 "lint exit $?"
+printf '%s\n' "$out" | head -12 | cut -c1-260 | sed 's/^/probe E1 | /'
+python3 - "$FX/.claude/settings.json" PreToolUse '"$CLAUDE_PROJECT_DIR"/.claude/hooks/guard-branch.sh; exit 0' <<'PY'
+import sys
+print("probe E1: and the settings.json one, python got", repr(sys.argv[3]))
+PY
+rm -rf "$FX"
 
-# --- F. the assets tests ---------------------------------------------------------------------------------
-o="$(cd "$ROOT" && python3 -m unittest tests/test_assets.py 2>&1 | tail -40)"; say "F1 test_assets: [$(printf '%s' "$o" | flat 3000)]"
+# E2. What makes a file one that cannot run: chmod -x, and a file without its #!.
+d="$(mktemp -d)"; printf '#!/bin/sh\nexit 0\n' > "$d/f"; chmod +x "$d/f"
+a=no; [ -x "$d/f" ] && a=yes; chmod -x "$d/f"; b=no; [ -x "$d/f" ] && b=yes
+sed -i '1{/^#!/d;}' "$d/f"; c=no; [ -x "$d/f" ] && c=yes
+say E2 "with #! and +x, -x says $a; after chmod -x, $b; without its #! too, $c"
+rm -rf "$d"
 
-# --- G. session start in a copy-in, and the root it announces ---------------------------------------------
-T="$(mktemp -d)"; git init -q "$T"; mkdir -p "$T/.claude/hooks" && cp -R "$HOOKS/." "$T/.claude/hooks/"
-o="$(printf '{}' | CLAUDE_PROJECT_DIR="$T" "$T/.claude/hooks/session-start.sh" 2>&1)"
-say "G1 T=[$T] announced: [$(printf '%s' "$o" | grep -o 'Harness root: [^ ]*' | head -1)]"
-say "G2 git hooks after it: $(ls -la "$T/.git/hooks" 2>&1 | grep -E 'pre-(push|commit)$' | flat 300)"
-say "done"
+# E3. The detection property, with Git Bash's bash and a grep script on the private PATH.
+L="$(mktemp)"; t0=$(ms)
+say E3 "$(python3 "$ROOT/tests/detect_property.py" "$HOOKS" "$L" 2>&1 | tr '\n' ' ' | cut -c1-400) ($(( $(ms) - t0 )) ms)"
+B="$(mktemp -d)"; mkdir "$B/lib"; printf 'echo boom >&2\nreturn 7\n' > "$B/lib/tests.sh"
+say E3 "a broken source: $(python3 "$ROOT/tests/detect_property.py" "$B" "$L" 2>&1 | head -n 1)"
+rm -rf "$B" "$L"
+
+# E4. The branch guard and multi-line commands, through this jq: before the fix (json.sh at 1b07932) and after.
+TMP="$(mktemp -d)"; git -C "$TMP" init -q; git -C "$TMP" checkout -qb feature/x
+OLD="$(mktemp -d)"; cp -R "$ROOT/.claude" "$OLD/"; git -C "$ROOT" show 1b07932:.claude/hooks/lib/json.sh > "$OLD/.claude/hooks/lib/json.sh"
+BADAWK="$(mktemp -d)"; printf '#!/bin/sh\nexit 1\n' > "$BADAWK/awk"; chmod +x "$BADAWK/awk"
+gbp() { printf '{"tool_name":"Bash","tool_input":{"command":%s}}' "$(printf '%s' "$3" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')" | PATH="$2" CLAUDE_PROJECT_DIR="$TMP" "$1/guard-branch.sh" 2>/dev/null; echo $?; }
+printf 'probe E4: jq -r of "a\\nb" writes: '; printf '"a\\nb"' | jq -r . | od -c | head -n 1
+for v in "before:$OLD/.claude/hooks" "after:$HOOKS"; do
+  h="${v#*:}"
+  say E4 "${v%%:*}: a force flag ending a line $(gbp "$h" "$PATH" "$(printf 'git push origin feature/x --force\necho done')"), a push continued $(gbp "$h" "$PATH" "$(printf 'git push \\\n  --force origin feature/x')"), git split with awk failing $(gbp "$h" "$BADAWK:$PATH" "$(printf 'g\\\nit push --force origin feature/x')"), an ordinary two lines $(gbp "$h" "$PATH" "$(printf 'git status\necho done')") (want 2 2 2 0)"
+done
+rm -rf "$TMP" "$OLD" "$BADAWK"
+
+# E5. One lint run: the cross-check in turn (1b07932) and side by side (now).
+git -C "$ROOT" show 1b07932:tests/harness_lint.py > "$ROOT/tests/lint-before.py"
+t0=$(ms); NONNA_LINT_ROOT="$ROOT" python3 "$ROOT/tests/lint-before.py" >/dev/null 2>&1; t1=$(ms)
+python3 "$ROOT/tests/harness_lint.py" >/dev/null 2>&1; t2=$(ms)
+say E5 "lint in turn $(( t1 - t0 )) ms, side by side $(( t2 - t1 )) ms, $(nproc 2>/dev/null) processors"
+rm -f "$ROOT/tests/lint-before.py"
+
+# E6. --render through a .cmd that runs the Python stand-in for Chromium.
+AX="$(mktemp -d)"; mkdir -p "$AX/bench/tasks" "$AX/bench/results" "$AX/.claude/.claude-plugin"
+cp -R "$ROOT/assets" "$AX/"; cp -R "$ROOT/bench/tasks/traps" "$AX/bench/tasks/"; cp -R "$ROOT/bench/results/round3" "$AX/bench/results/"
+cp "$ROOT/.claude/.claude-plugin/icon.png" "$AX/.claude/.claude-plugin/"; rm "$AX"/assets/*.png "$AX"/assets/cards/*.png "$AX/.claude/.claude-plugin/icon.png"
+cat > "$AX/fake-chromium" <<'PY'
+#!/usr/bin/env python3
+import os, re, struct, sys, zlib
+args = " ".join(sys.argv[1:])
+if os.environ.get("FAKE_FAIL"):
+    sys.exit("fake browser: no display")
+w, h = map(int, re.search(r"--window-size=(\d+),(\d+)", args).groups())
+k = int(re.search(r"--force-device-scale-factor=(\d+)", args).group(1))
+out = re.search(r"--screenshot=(\S+)", args).group(1)
+w, h = w * k, h * k + int(os.environ.get("FAKE_EXTRA_ROWS", "0"))
+def chunk(kind, body): return struct.pack(">I", len(body)) + kind + body + struct.pack(">I", zlib.crc32(kind + body))
+raw = b"".join(b"\x00" + b"\xff\xff\xff" * w for _ in range(h))
+png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 2, 0, 0, 0))
+open(out, "wb").write(png + chunk(b"IDAT", zlib.compress(raw)) + chunk(b"IEND", b""))
+PY
+printf '@"%s" "%%~dp0fake-chromium" %%*\r\n' "$(python3 -c 'import sys; sys.stdout.write(sys.executable)')" > "$AX/fake-chromium.cmd"
+say E6 "the .cmd: $(tr -d '\r' < "$AX/fake-chromium.cmd")"
+FAKE_FAIL=1 CHROMIUM="$AX/fake-chromium.cmd" NONNA_ASSETS_ROOT="$AX" python3 -I -S "$ROOT/assets/build.py" --render >/dev/null 2>"$AX/err"
+say E6 "a browser that fails: exit $? | $(tr '\n' ' ' < "$AX/err" | cut -c1-200)"
+CHROMIUM="$AX/fake-chromium.cmd" NONNA_ASSETS_ROOT="$AX" python3 -I -S "$ROOT/assets/build.py" --render >/dev/null 2>"$AX/err"
+say E6 "--render: exit $? | $(tr '\n' ' ' < "$AX/err" | cut -c1-200)"
+NONNA_ASSETS_ROOT="$AX" python3 -I -S "$ROOT/assets/build.py" --check >/dev/null 2>"$AX/err"; say E6 "--check: exit $? | $(tr '\n' ' ' < "$AX/err" | cut -c1-200)"
+say E6 "test_assets.py: $(python3 "$ROOT/tests/test_assets.py" 2>&1 | tail -n 3 | tr '\n' ' ')"
+rm -rf "$AX"
+
+# E7. A copy of her pre-push script, under a plugin, where the data dir holds what this ln makes.
+TMP="$(mktemp -d)"; git -C "$TMP" init -q; PD="$(mktemp -d)"
+cp "$HOOKS/require-status-sync.sh" "$TMP/.git/hooks/pre-push"
+out="$(CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$ROOT/.claude" "$HOOKS/session-start.sh" "$PD/data")"
+say E7 "data dir current: $([ -L "$PD/data/current" ] && echo link || echo directory); says: $(printf '%s' "$out" | grep -o 'pre-push is[^;]*' | head -n 1 | cut -c1-120)"
+rm -rf "$TMP" "$PD"
+
+# E8. The root a copy-in session start announces, and pwd -P.
+TMP="$(mktemp -d)"; git -C "$TMP" init -q; cp -R "$ROOT/.claude" "$TMP/"
+out="$(CLAUDE_PROJECT_DIR="$TMP" "$TMP/.claude/hooks/session-start.sh")"
+say E8 "pwd -P $(cd "$TMP" && pwd -P); announces $(printf '%s' "$out" | grep -o 'Harness root: [^ ]*' | head -n 1)"
+rm -rf "$TMP"
