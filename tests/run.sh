@@ -818,6 +818,28 @@ crv "...her /nonna scripts too" 2 0 "$PATH" "$(printf ': \\\r\nbash .claude/skil
 crv "a CR inside a word, as bash reads it: gi<CR>t is git where Git Bash drops it" 0 2 "$PATH" "$(printf 'gi\rt push --force origin feature/x')"
 crv "...pu<CR>sh is push" 0 2 "$PATH" "$(printf 'git pu\rsh --force origin feature/x')"
 crv "...and ma<CR>in is main" 0 2 "$PATH" "$(printf 'git push origin ma\rin')"
+# A Unicode space (U+00A0 and kin) is one bash keeps inside a word, but Claude Code splits a piped
+# command on it before bash runs it (shell-quote), so "git push origin<U+00A0>main | cat" reaches bash
+# as a push to main (#54). C-locale [[:space:]] already covers CR, VT and FF; these do not. The guard
+# reads the command again with each turned into a space. Generated with printf so the file stays ASCII.
+NBSP="$(printf '\302\240')"; EMSP="$(printf '\342\200\203')"; IDSP="$(printf '\343\200\200')"; ZWNB="$(printf '\357\273\277')"
+check "a no-break space splits a word as Claude Code's pipe rewrite does: a push to main past it is refused" 2 "$(gbp "$PATH" "git push origin${NBSP}main | cat")"
+check "...an em space too" 2 "$(gbp "$PATH" "git push origin${EMSP}main | cat")"
+check "...an ideographic space too" 2 "$(gbp "$PATH" "git push origin${IDSP}main | cat")"
+check "...a zero-width no-break space too" 2 "$(gbp "$PATH" "git push origin${ZWNB}main | cat")"
+check "...and with no pipe, where Claude Code does not rewrite, it is still refused (only ever more)" 2 "$(gbp "$PATH" "git push origin${NBSP}main")"
+check "a no-break space before an assignment to her settings is refused" 2 "$(gbp "$PATH" "x${NBSP}NONNA_MODE=off git status | cat")"
+check "a no-break space before --force is refused" 2 "$(gbp "$PATH" "git push${NBSP}--force origin feature/x | cat")"
+check "a no-break space before a brace list that holds main is refused" 2 "$(gbp "$PATH" "git push origin${NBSP}{main,x} | cat")"
+check "a no-break space before a main: refspec is refused" 2 "$(gbp "$PATH" "git push origin${NBSP}HEAD:main | cat")"
+check "a no-break space before a brace list of feature branches still passes" 0 "$(gbp "$PATH" "git push origin${NBSP}{foo,bar} | cat")"
+# A glob behind the Unicode space: Claude Code re-serializes it unquoted, bash expands it at run time.
+# The normalized reading goes through the glob expander too, so a glob that could name main is refused.
+check "a no-break space before a glob that could match main is refused" 2 "$(gbp "$PATH" "git push origin${NBSP}mai? | cat")"
+check "...a run of ? that could match main too" 2 "$(gbp "$PATH" "git push origin${NBSP}???? | cat")"
+check "a no-break space before a glob that names no protected ref still passes" 0 "$(gbp "$PATH" "git push origin${NBSP}featur? | cat")"
+check "a Unicode space inside quotes sets nothing and is allowed" 0 "$(gbp "$PATH" "echo \"x${NBSP}NONNA_MODE=off\" | cat")"
+check "an ordinary push to a feature branch, no Unicode space, still passes" 0 "$(gbp "$PATH" "git push origin feature/x | cat")"
 # A command is read as this platform's bash will run it (nonna_json_command), asked of that bash the first
 # time a command holds a CR: the lengths of a<CR>b and of an a<CR> that ends a line, as it starts, then
 # with igncr off, then on. A fake bash gives each answer.

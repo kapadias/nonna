@@ -330,6 +330,13 @@ Your AI agent says "done"; Nonna makes it prove it.
 
 ### Fixed
 
+- **The branch guard reads a Unicode space as the word boundary Claude Code makes of it** (#54).
+  Claude Code rewrites a command that holds a pipe through shell-quote, which splits a word on every
+  character JavaScript's `\s` matches — including Unicode spaces (`U+00A0` and kin) that bash keeps
+  inside a word and that `[[:space:]]` in the C locale does not cover. So `git push origin<U+00A0>main
+  | cat` reached bash as a push to `main`, past the guard. The guard now reads the command again with
+  each such space turned into an ASCII one, so the boundary it makes is seen. CR, VT and FF were
+  already covered.
 - **The branch guard reads a command's CRs as the bash that runs it does** (#45, ADR-0017). Git Bash's
   bash drops every CR from a command, so there `gi<CR>t push --force` is a force push, and so are
   `git pu<CR>sh --force` and a push to `ma<CR>in`. A native `jq.exe` writes each newline as CRLF,
