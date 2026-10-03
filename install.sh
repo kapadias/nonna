@@ -262,15 +262,16 @@ link_hook() { # <git hook name> <script under .claude/hooks>
     # counts only in a .git/hooks, where ../../ leads back to a repository root; from a hook
     # manager's directory (.husky) it leads elsewhere, so it is judged like any other hook, which
     # runs hers only when it names her script's path, not a file that merely shares its name.
-    link="$(readlink "$dest" 2>/dev/null)"
+    link="$(nonna_hook_target "$dest" 2>/dev/null)" # a link, or her wrapper where ln -s copies
     if [ "$link" = "../../.claude/hooks/$2" ]; then
       case "$hooks_dir" in .git/hooks | */.git/hooks) hers=1 ;; esac
     elif nonna_hook_is_hers "$link" "$2"; then
       hers=1
     fi
     if [ -n "$hers" ]; then
-      # Git skips, in silence, a hook that points at nothing or at a file it cannot run: that gate is off.
-      if [ ! -x "$dest" ]; then
+      # Git skips, in silence, a hook that points at nothing or at a file it cannot run, and her wrapper of a
+      # script that is gone runs nothing: that gate is off.
+      if nonna_hook_dangles "$dest" || [ ! -x "$dest" ]; then
         warn_msgs+=("$1: $dest points at nothing git can run, so this gate is not running")
         failed=1
       fi
@@ -279,7 +280,7 @@ link_hook() { # <git hook name> <script under .claude/hooks>
     # A byte copy of her script (an older install, under Git Bash, made one and said it had linked it) finds no
     # lib/ beside itself, so it enforces nothing. Named and never deleted: it was there before me.
     if nonna_hook_is_copy "$dest" ".claude/hooks/$2"; then
-      warn_msgs+=("$1: $dest is a copy of .claude/hooks/$2, not a link, and a copy cannot find its lib/ (unless you copied its lib/ beside it), so this gate is not running: delete it and run me again (Git Bash: turn on Developer Mode and set MSYS=winsymlinks:nativestrict first, or use WSL)")
+      warn_msgs+=("$1: $dest is a copy of .claude/hooks/$2, not a link, and a copy cannot find its lib/ (unless you copied its lib/ beside it), so this gate is not running: delete it and run me again (where ln -s copies, I write a wrapper that runs it)")
       failed=1
       return 0
     fi
@@ -291,18 +292,13 @@ link_hook() { # <git hook name> <script under .claude/hooks>
   fi
   # A gate that is not wired is off, and for hosts other than Claude Code the git hooks are all there is.
   if [ "$hooks_dir" = ".git/hooks" ]; then
-    { mkdir -p "$hooks_dir" && ln -s "../../.claude/hooks/$2" "$dest"; } || {
+    # A link, or where ln -s copies (Git Bash) her wrapper: a copy of her script would find no lib/ beside
+    # it, and git would run it and it would wave everything through.
+    nonna_hook_link "../../.claude/hooks/$2" "$dest" || {
       warn_msgs+=("$1: could not link $dest, so this gate is not running")
       failed=1
       return 0
     }
-    # Git Bash's ln -s makes a copy, which cannot find the lib/ beside her script: git would run it, and it would wave everything through.
-    if [ ! -L "$dest" ]; then
-      rm -f "$dest"
-      warn_msgs+=("$1: ln -s made a copy of .claude/hooks/$2, not a link, and a copy cannot find its lib/, so this gate is not running: turn on Developer Mode and set MSYS=winsymlinks:nativestrict, or use WSL")
-      failed=1
-      return 0
-    fi
   else
     warn_msgs+=("$1: git hooks live in '$hooks_dir', not .git/hooks (a hook manager, or a linked worktree), so this gate is not running: point its $1 at .claude/hooks/$2")
     failed=1

@@ -13,8 +13,17 @@ nonna_json_field() {
   [ -n "$payload" ] || return 0
 
   if command -v jq >/dev/null 2>&1; then
-    # // empty so a missing/null field prints nothing, not the literal "null".
-    printf '%s' "$payload" | jq -r "$filter // empty" 2>/dev/null || true
+    # // empty so a missing/null field prints nothing, not the literal "null". A native jq.exe (Git Bash)
+    # writes each newline as CRLF, one inside the value too, and a CR left at a line's end hides what the
+    # line says to a guard: --force<CR> is not --force, and a backslash before a CR continues no line.
+    # So every CR goes: bash splits no word at one, so a guard sees no less than bash runs. Streamed, not
+    # held in a variable, which would drop a NUL its caller translates; and through tr only where there
+    # is one, since a field that reads as nothing would let a guard wave a command through.
+    if command -v tr >/dev/null 2>&1; then
+      printf '%s' "$payload" | jq -r "$filter // empty" 2>/dev/null | LC_ALL=C tr -d '\r' || true
+    else
+      printf '%s' "$payload" | jq -r "$filter // empty" 2>/dev/null || true
+    fi
     return 0
   fi
 

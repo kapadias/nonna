@@ -31,7 +31,9 @@ hook_state() { # <git hook> <her script>: a check mark, or what is wrong
   d="$dir/$1"
   if [ -L "$d" ] && [ ! -e "$d" ]; then printf 'points at nothing'
   elif [ ! -e "$d" ]; then printf 'missing'
-  elif nonna_hook_is_hers "$(readlink "$d" 2>/dev/null)" "$2" "$root/hooks/$2"; then printf '✓'
+  elif nonna_hook_is_hers "$(nonna_hook_target "$d" 2>/dev/null)" "$2" "$root/hooks/$2"; then
+    # Her link, or where ln -s copies her wrapper, which runs nothing once its script is gone.
+    if nonna_hook_dangles "$d"; then printf 'points at nothing'; else printf '✓'; fi
   elif nonna_hook_is_copy "$d" "$root/hooks/$2"; then printf 'a copy, not a link: not enforced (unless you copied its lib/ beside it)'
   elif nonna_hook_chains_hers "$d" "$2" "$root/hooks/$2"; then printf '✓'
   else printf 'not hers'; fi

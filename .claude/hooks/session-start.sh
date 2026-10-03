@@ -43,7 +43,9 @@ fi
 #    .claude/hooks (in the subdirectory the session runs in), which survives a repo move. A plugin
 #    install links through ${CLAUDE_PLUGIN_DATA}/current, a link to the running plugin version
 #    refreshed every session: the versioned cache directory is removed after an update, and git
-#    silently skips a dangling hook. A foreign hook is never overwritten, a hook manager's directory
+#    silently skips a dangling hook. Where ln -s makes a copy (Git Bash without native symlinks), each
+#    link is her wrapper instead, a script that runs her script (nonna_hook_wrapper, lib/core.sh), and
+#    current is a directory of wrappers. A foreign hook is never overwritten, a hook manager's directory
 #    never written: both are reported, because a gate that is off without saying so is what ADR-0004
 #    exists to prevent.
 data="${1:-${CLAUDE_PLUGIN_DATA:-}}"
@@ -56,39 +58,43 @@ if nonna_copy_in; then # the repo's own harness: its own scripts, relative to th
     || hooks_src="$(cd .claude && pwd -P)/hooks"
 elif [ -n "$nonna_root" ]; then # a plugin: its own scripts, never ones the repo ships
   hooks_src="$nonna_root/hooks"
-  if [ -n "$data" ] && mkdir -p "$data" 2>/dev/null && ln -sfn "$nonna_root" "$data/current" 2>/dev/null; then
-    hooks_src="$data/current/hooks"
+  if [ -n "$data" ] && mkdir -p "$data" 2>/dev/null; then
+    if { [ -L "$data/current" ] || [ ! -e "$data/current" ]; } && nonna_links "$data"; then
+      ln -sfn "$nonna_root" "$data/current" 2>/dev/null && hooks_src="$data/current/hooks"
+    # Where ln -s copies (Git Bash), current is a directory of her wrappers, written again every session. A
+    # link left from when links worked goes first: written through, it would write into her.
+    elif { [ ! -L "$data/current" ] || rm -f "$data/current"; } && nonna_hook_wrappers "$data/current/hooks" "$nonna_root/hooks"; then
+      hooks_src="$data/current/hooks"
+    fi
   fi
 fi
 wired=()
 hook_warns=()
 wire_hook() { # <git hook name> <script name>
   local dest="$hooks_dir/$1" target="$hooks_src/$2" real
-  case "$target" in /*) real="$target" ;; *) real="$hooks_dir/$target" ;; esac # where her script is, from here
-  if [ -L "$dest" ] && [ ! -e "$dest" ] && nonna_hook_is_hers "$(readlink "$dest")" "$2" "$target"; then
-    rm -f "$dest" # dangling and hers: repaired below
+  real="$target"
+  nonna_abs "$target" || real="$hooks_dir/$target" # where her script is, from here
+  if nonna_hook_is_hers "$(nonna_hook_target "$dest" 2>/dev/null)" "$2" "$target" && nonna_hook_dangles "$dest"; then
+    rm -f "$dest" # hers, and leading to nothing: repaired below
   fi
   if [ ! -e "$dest" ] && [ ! -L "$dest" ]; then
-    # Never create a dangling link: git would skip it without a word.
-    case "$target" in /*) ;; *) [ -e "$hooks_dir/$target" ] || { hook_warns+=("$2 is missing from the harness, so the $1 gate is NOT enforced"); return 0; } ;; esac
-    [ -e "$target" ] || [ "${target#/}" = "$target" ] || { hook_warns+=("$2 is missing from the harness, so the $1 gate is NOT enforced"); return 0; }
-    if mkdir -p "$hooks_dir" 2>/dev/null && ln -s "$target" "$dest" 2>/dev/null; then
-      if [ -L "$dest" ]; then
-        wired+=("$1")
-      else # Git Bash's ln -s makes a copy, which cannot find the lib/ beside her script: git would run it, and it would wave everything through
-        rm -f "$dest"
-        hook_warns+=("ln -s made a copy of $2, not a link, and a copy cannot find its lib/, so the $1 gate is NOT enforced (Git Bash: turn on Developer Mode and set MSYS=winsymlinks:nativestrict, or use WSL)")
-        return 0
-      fi
+    # Never wire a hook to nothing: git would skip a link to it without a word.
+    [ -e "$real" ] || { hook_warns+=("$2 is missing from the harness, so the $1 gate is NOT enforced"); return 0; }
+    # A link, or where ln -s copies (Git Bash) her wrapper: a copy of her script would find no lib/ beside
+    # it, and git would run it and it would wave everything through.
+    if nonna_hook_link "$target" "$dest"; then
+      wired+=("$1")
+    else
+      hook_warns+=("could not install $dest, so that gate is NOT enforced")
     fi
-    [ -e "$dest" ] || hook_warns+=("could not install $dest, so that gate is NOT enforced")
   else
-    if nonna_hook_is_hers "$(readlink "$dest" 2>/dev/null)" "$2" "$target"; then
-      # Hers, but git skips a link that points at nothing without a word.
-      [ -e "$dest" ] || hook_warns+=("$dest points at nothing, so her $1 gate is NOT enforced")
-    elif nonna_hook_is_copy "$dest" "$real"; then
+    if nonna_hook_is_hers "$(nonna_hook_target "$dest" 2>/dev/null)" "$2" "$target"; then
+      # Hers, but git skips a link that points at nothing without a word, and her wrapper runs nothing.
+      ! nonna_hook_dangles "$dest" || hook_warns+=("$dest points at nothing, so her $1 gate is NOT enforced")
+    elif nonna_hook_is_copy "$dest" "$real" || { [ -n "$nonna_root" ] && nonna_hook_is_copy "$dest" "$nonna_root/hooks/$2"; }; then
       # What an older session start left where ln -s copies (Git Bash): it runs, finds no lib/ beside itself
-      # and enforces nothing. Named and never deleted: it was there before me.
+      # and enforces nothing. Named and never deleted: it was there before me. Compared with her script itself,
+      # since where ln -s copies a plugin's data dir holds her wrapper of it.
       hook_warns+=("$dest is a copy of her $2, not a link, and a copy cannot find its lib/ (unless you copied its lib/ beside it), so her $1 gate is NOT enforced; delete it")
     else # the user's own, even when it shares her script's name, unless it chains hers
       nonna_hook_chains_hers "$dest" "$2" "$target" \
