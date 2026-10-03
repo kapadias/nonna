@@ -71,12 +71,12 @@ never offered to the model, so it is not counted.
   reads Copilot's payloads as Claude Code's, an `apply_patch` a file at a time. The release workflow
   holds both manifests to the tag, and `review-lanes.sh` sends the hooks file to security review.
 - **Docs** — this `STATUS.md`, `INSTALL.md`, `OVERVIEW.md`, `docs/benchmarks/`, `CHANGELOG.md`, the
-  `docs/adr/` index, and ADRs 0001–0015.
+  `docs/adr/` index, and ADRs 0001–0016.
 - **Launch images** — `assets/build.py` builds the scorecard, the social preview and one card per
   trap task from round 3's files, and renders the plugin's icon from the hand-drawn logo;
   `--check` (standard library only) is run by `tests/run.sh`.
 - **CI** — `.github/workflows/ci.yml`: shellcheck (all scripts) + harness-lint + gate self-tests
-  (on Linux, again on a stock Mac, and under Git Bash on Windows, where it only reports) + plugin
+  (on Linux, again on a stock Mac, and under Git Bash on Windows in three legs, all blocking) + plugin
   manifest (`claude plugin validate --strict`, pinned CLI). Every action is pinned to a commit SHA, the token is read-only by default, and only the
   release job can write.
 
@@ -84,13 +84,18 @@ never offered to the model, so it is not counted.
 
 History lives in `CHANGELOG.md` and `git log`. Entries here describe the current unit of work.
 
-- **2026-10-02** — Native Windows: the CI legs' 240 failures traced, on a Windows runner, to five
-  causes (#45), and fixed in progress on `fix/45-windows-green`. Where Git Bash's `ln -s` makes a
-  copy, her git hooks are now wrappers, scripts that run hers (`nonna_hook_wrapper`, `lib/core.sh`),
-  and a plugin's `current` is a directory of them, so a staged key is refused without native
-  symlinks; a drive's path (`D:/…`) reads as absolute. The suite hides a tool behind scripts that run
-  the others, not links Git Bash cannot start (exit 127), and the lint names paths with `/` and runs
-  Git Bash, not WSL's `bash.exe`, for its cross-check. The Windows legs block once they pass.
+- **2026-10-03** — Native Windows: CI's three Windows legs pass every check, and block (#45). Each
+  leg failed 240, 240 and 169 checks, traced on a Windows runner to causes in her and in the suite.
+  In her: where Git Bash's `ln -s` makes a copy, her git hooks are wrappers, scripts that run hers
+  (`nonna_hook_wrapper`, `lib/core.sh`, ADR-0016), and a plugin's `current` a directory of them, so
+  a staged key is refused without native symlinks; a drive's path (`D:/…`) reads as absolute; the
+  guards read a command's CRs as the platform's bash runs them (Git Bash drops every one, so there
+  `gi<CR>t push --force` is a force push); and the lint names a file in any code page. In the suite: a private PATH holds scripts that run
+  the tools, not links Git Bash cannot start (exit 127); the lint and the detection property run Git
+  Bash, not WSL's `bash.exe`; and twenty one-offs (CRLF from jq and Python, `pwd -P`, a `#!` for
+  what must run and `no_run` for what must not, arguments Git Bash rewrites as paths). The lint's
+  secret-scan cross-check runs side by side (19 s to 9 s a run there), and the job's timeout is two
+  hours: the suite takes about an hour on Windows.
 - **2026-10-01** — The plugin meets the claude.ai plugin directory's validator, which held it on
   four blocking findings and four warnings (part of #17). The `mode` option is free text, since
   the directory refuses `options`, and every hook reads anything but `lite`, `off` included, as
@@ -645,13 +650,12 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   - #43: `subagent-verdict.sh` may judge the wrong text when a reviewer reports through a handback.
   - #44: one record-to-payload mapping for every host's `apply_patch`.
   - #45: native Windows's measured gaps (below).
-- Native Windows (#30; its gaps are #45): the Windows CI job reports and does not block, and the
-  docs say to use WSL 2, until these are fixed: backslash paths in the guards (`guard-branch.sh`,
+- Native Windows (#30; its gaps are #45): the Windows CI legs pass and block, and the docs say to
+  use WSL 2 until these are fixed: backslash paths in the guards (`guard-branch.sh`,
   `secret-scan.sh`, `lib/secret-patterns.sh`); the PowerShell tool, which no hook matches;
-  `git.exe` (`guard-branch.sh`, `lib/shell-words.awk`); the Stop gate's `timeout` and perl
-  fallback on Windows (`lib/tests.sh`). Then git hooks as copies (a wrapper where `ln -s` cannot
-  link), the test suite's own POSIX assumptions, a WSL leg in CI, and whether a PowerShell-only
-  install, where no hook runs, is supported at all. Then drop `continue-on-error`.
+  `git.exe` (`guard-branch.sh`, `lib/shell-words.awk`). Then a WSL leg in CI, whether a
+  PowerShell-only install, where no hook runs, is supported at all, and a faster suite on Windows,
+  where it takes about an hour.
 - The rest of the launch plan (#17): deleting the film's branch, `chore/17-demo`, the only finished
   branch left; the v2.0.0 release as an ordinary merge of `develop` into `main`; and the go/no-go
   checks. `/nonna` ran headless in default and auto mode during the smoke runs; an interactive
