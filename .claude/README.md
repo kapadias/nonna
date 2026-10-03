@@ -50,9 +50,10 @@ discipline is **enforced by code, not prose**. Start with [`../CLAUDE.md`](../CL
   `require-status-sync.sh` (pre-push: the test suite, a strict secret scan — no fixture exemption at
   push time; use placeholder-classed values — and in full mode the Definition-of-Done),
   `pre-commit.sh` (git pre-commit: no commit on a protected branch, no staged secret),
-  `session-start.sh` (installs both git hooks — through the plugin's data directory under a plugin
-  install, so they survive updates; warns instead of overwriting a foreign one, and names a copy of
-  hers that is not a link — records the plugin's
+  `session-start.sh` (installs both git hooks — links, or her wrappers where `ln -s` copies
+  (ADR-0016), through the plugin's data directory under a plugin install, so they survive updates;
+  warns instead of overwriting a foreign one, and names a copy of hers that is not a link — records
+  the plugin's
   test command and mode in git config, carries the mode's rules into plugin installs, and tells the
   user once what it did), `stop-dod.sh` (**Stop** — code changed since the session began: runs the
   suite, or in a monorepo each changed directory's own command (ADR-0014), asks "where's the test?",
@@ -64,7 +65,7 @@ discipline is **enforced by code, not prose**. Start with [`../CLAUDE.md`](../CL
   not installed (a plugin, a lite copy-in), since `SessionStart` context never reaches them; silent
   where the rules load natively). Shared logic in
   `lib/` (`json.sh`, `secret-patterns.sh`, `core.sh` — harness root, the mode, the carrier, the
-  context emitter; `shell-words.awk` — how the shell will read a command, for the branch guard;
+  context emitter, the git hooks' links and wrappers; `shell-words.awk` — how the shell will read a command, for the branch guard;
   `expand.awk` — its brace lists and globs, as the shell expands them;
   `tests.sh` — the test command and each directory's own, runner and failure digest; `lite.md` — lite's house
   rules; `ladder.sh` — whether another plugin already states the ladder; `patch.sh` — the

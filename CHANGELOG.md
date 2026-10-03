@@ -168,13 +168,12 @@ Your AI agent says "done"; Nonna makes it prove it.
   link targets and inline code spans. A number, a command or a link changed in `README.md` fails
   the lint until every translation follows. Each keeps the
   credit; none repeats the golden-test count, and one left behind is checked like `README.md`'s.
-- **Native Windows is measured, and it is not safe yet: use WSL 2** (#30). CI runs the gate tests
-  under Git Bash on `windows-latest` in three legs (`core.autocrlf` true, false, and false with
-  native symlinks), and `tests/windows-probe.sh` prints what Windows does to the hooks. The job reports and
-  does not block. On the latest run 1167 of the 1279 checks passed without native symlinks and 1229 with them; the rest are the suite's own
-  POSIX assumptions and the gaps below. `docs/INSTALL.md` says which hooks run, which let a blocked
-  action through and which never start, with versions. The gaps: a backslash path passes the
-  file-tool guards, the PowerShell tool and `git.exe` pass the branch guard, and with no Git for
+- **Native Windows is measured, and it is not safe yet: use WSL 2** (#30, #45). CI runs the gate
+  tests under Git Bash on `windows-latest` in three legs (`core.autocrlf` true, false, and false with
+  native symlinks), and `tests/windows-probe.sh` prints what Windows does to the hooks. Every check
+  passes in each leg, and the job blocks a merge. `docs/INSTALL.md` says which hooks run, which let
+  a blocked action through and which never start, with versions. The gaps: a backslash path passes
+  the file-tool guards, the PowerShell tool and `git.exe` pass the branch guard, and with no Git for
   Windows PowerShell cannot parse a hook's command, so none of them runs.
 - **A Codex plugin** (#25, ADR-0013). Codex reads the same marketplace and installs the same
   `.claude/`; `.codex-plugin/plugin.json` points it at `hooks/codex-hooks.json`, which runs her
@@ -221,13 +220,17 @@ Your AI agent says "done"; Nonna makes it prove it.
   is not a terminal. A pack an earlier `install.sh` wrote is kept: delete it and run again.
 - **`install.sh` exits non-zero when a git hook is not wired**: a foreign hook that does not run
   hers, a hook manager's directory, or a link it could not make.
-- **Text checks out as LF whatever `core.autocrlf` says** (`.gitattributes`), and **a git hook that
-  `ln -s` copied is refused, and one already there is named.** Git for Windows sets
+- **Text checks out as LF whatever `core.autocrlf` says** (`.gitattributes`), and **where `ln -s`
+  copies, her git hooks are wrappers that run hers** (ADR-0016). Git for Windows sets
   `core.autocrlf=true`: a CRLF checkout failed two data checks, and WSL's bash cannot start a CRLF
   script. Git Bash's `ln -s` makes a copy of the hook, which cannot find the `lib/` beside her
-  script and lets a staged key through. `session-start.sh` and `install.sh` now remove the copy
-  they just made and say the gate is not enforced, where they had said they added it. A copy
-  already in `.git/hooks`, which the old session start left, is named and left for you to delete:
+  script and lets a staged key through. `session-start.sh` and `install.sh` now write her wrapper
+  in its place, a short script that runs her script, so a staged key is refused without native
+  symlinks. A plugin's `current` is a directory of wrappers, not a stale copy of the plugin, and a
+  plugin root that arrives as `D:/…` reads as absolute. A wrapper is hers only byte for byte, never
+  goes in place of a hook that is there, and one whose script is gone is repaired as a dangling
+  link of hers is. A copy already in `.git/hooks`, which an old session start left, is named and
+  left for you to delete:
   session start warns, `install.sh` exits 1, `/nonna status` shows no check mark, and
   `/nonna uninstall` names it. Her pre-push script names its own path in a comment, which had made
   a copy of it count as a hook that chains hers, so a comment no longer counts as a chain, on any
@@ -327,6 +330,10 @@ Your AI agent says "done"; Nonna makes it prove it.
 
 ### Fixed
 
+- **Under Git Bash, a multi-line command reached the branch guard with a CR at each line's end**
+  (#45). A native `jq.exe` writes each newline as CRLF, including one inside a value. Where awk
+  failed, a git command split by a backslash-newline then got through, since a backslash before a
+  CR continues no line. Every CR jq writes is now dropped before a guard reads the field.
 - **`subagent-verdict.sh` graded the wrong transcript and blocked the wrong verdicts** (#7). The
   SubagentStop gate read `transcript_path`, which for that event is the _parent_ session's
   transcript — so `check-review.sh` ran against the orchestrator's prose and rejected every
