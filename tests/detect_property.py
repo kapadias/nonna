@@ -173,18 +173,19 @@ try:
         '( cd "$repo" && PATH="$bin" nonna_detect_test_cmd ) </dev/null; printf "\\n"; done'
     )
     env = {k: v for k, v in os.environ.items() if k != "JAVA_HOME"}
+    # Bytes both ways: in text mode, Windows would end each line bash reads with a CR, and every PATH too.
     run = subprocess.run(
         [BASH, "-c", script, "_", hooks],
-        input="\n".join(lines) + "\n",
+        input=("\n".join(lines) + "\n").encode(),
         stdout=subprocess.PIPE,
         stderr=subprocess.PIPE,
-        universal_newlines=True,
         env=env,
     )
+    err = run.stderr.decode(errors="replace")
     if run.returncode:
-        print("bash rc=%d: %s" % (run.returncode, (run.stderr.splitlines() or [""])[0]))
+        print("bash rc=%d: %s" % (run.returncode, (err.splitlines() or [""])[0]))
         sys.exit(1)
-    got = run.stdout.split("\n")[:-1]
+    got = run.stdout.decode(errors="replace").split("\n")[:-1]
 
     seen, bad, less = set(), [], 0
     for n, (files, runners) in enumerate(piles):
