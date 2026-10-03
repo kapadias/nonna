@@ -33,6 +33,7 @@ with no failing-case test is an unverified gate. CI never sets it.
 
 from __future__ import annotations
 
+import concurrent.futures
 import glob
 import html
 import json
@@ -42,6 +43,12 @@ import shutil
 import subprocess
 import sys
 from collections import Counter
+
+# Windows writes a pipe in its ANSI code page (cp1252), which has no ſ: a file name outside it ended the
+# report in a UnicodeEncodeError, before the offender was named. Such a character is written as its escape.
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(errors="backslashreplace")
 
 ROOT = os.environ.get("NONNA_LINT_ROOT") or os.path.dirname(
     os.path.dirname(os.path.abspath(__file__))
@@ -1120,6 +1127,7 @@ BASH = shutil.which("bash") or "bash"
 # A plugin install cannot carry permissions.deny: the hook is all it has. Each deny glob becomes a
 # sample path, and secret-scan.sh must refuse to Read it, and to Grep it (Claude Code applies Read
 # denies to Grep).
+denied = []
 for rule in (settings.get("permissions") or {}).get("deny", []):
     m = re.fullmatch(r"Read\((.+)\)", rule)
     if not m:
@@ -1129,18 +1137,29 @@ for rule in (settings.get("permissions") or {}).get("deny", []):
         ("Read", {"file_path": sample}),
         ("Grep", {"pattern": ".", "path": sample}),
     ):
-        payload = json.dumps({"tool_name": tool, "tool_input": tool_input})
-        rc = subprocess.run(
-            [BASH, os.path.join(ROOT, ".claude/hooks/secret-scan.sh")],
-            input=payload,
-            capture_output=True,
-            text=True,
-            env={**os.environ, "NONNA_MODE": "full", "CLAUDE_PROJECT_DIR": ROOT},
-        ).returncode
-        if rc != 2:
-            bad(
-                f".claude/hooks/secret-scan.sh lets the agent {tool} {sample}, which settings.json denies ({rule}); a plugin install has only the hook"
-            )
+        denied.append((rule, sample, tool, tool_input))
+
+
+def secret_scan_rc(case: tuple) -> int:
+    payload = json.dumps({"tool_name": case[2], "tool_input": case[3]})
+    return subprocess.run(
+        [BASH, os.path.join(ROOT, ".claude/hooks/secret-scan.sh")],
+        input=payload,
+        capture_output=True,
+        text=True,
+        env={**os.environ, "NONNA_MODE": "full", "CLAUDE_PROJECT_DIR": ROOT},
+    ).returncode
+
+
+# Thirty runs of the hook are most of the lint's time, and on Windows, where every fork is slow, nearly
+# all of it: they run side by side, and their verdicts come back in order.
+with concurrent.futures.ThreadPoolExecutor(max_workers=os.cpu_count() or 4) as pool:
+    rcs = list(pool.map(secret_scan_rc, denied))
+for (rule, sample, tool, _), rc in zip(denied, rcs):
+    if rc != 2:
+        bad(
+            f".claude/hooks/secret-scan.sh lets the agent {tool} {sample}, which settings.json denies ({rule}); a plugin install has only the hook"
+        )
 
 # --- every number the README marks comes from round 3's rows ---
 # README.md marks each benchmark number with an HTML comment right after it, e.g.
