@@ -687,4 +687,4 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
 - A statusline showing branch and gate state.
 - Optional MCP server examples for the explorer and reviewer agents.
 
-<!-- scratch/45-windows-probe: Windows probes for #45, never merged (round 3: set_hook_cmd, detect_property) -->
+<!-- scratch/45-windows-probe: Windows probes for #45, never merged (round 4: detect_property in bytes) -->
