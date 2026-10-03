@@ -362,12 +362,16 @@ COMPUTED_PATH = [
         "runs an awk program file by a computed path",
     ),
     (
-        re.compile(rf'\b(?:bash|sh)\s+"(?!{_PR})\$'),
+        re.compile(rf'(?:\b(?:bash|sh)|"\$BASH")\s+"(?!{_PR})\$'),
         "runs a shell file by a computed path",
     ),
     (
         re.compile(r"\b(?:python3?|perl|node|ruby)\s+-(?:c|e)\b"),
         "runs an inline interpreter program",
+    ),
+    (
+        re.compile(rf'\b(?:python3?|perl|node|ruby)\s+"(?!{_PR})\$'),
+        "runs an interpreter on a computed file path",
     ),
 ]
 for path in FOLLOWED_SH:

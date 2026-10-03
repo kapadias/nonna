@@ -95,7 +95,8 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   or git hook leaves it unset — and sources every lib, every `awk -f` program and every re-run gate by a
   literal path; the `python3 -c` pytest probe and the `perl -e` process-group timeout moved to
   `lib/has-pytest.py` and `lib/timeout.pl`, run by literal path. `harness_lint.py` now fails a computed
-  exec/source path or an inline `-c`/`-e` program in a followed hook script, so this cannot regress.
+  exec/source path, an interpreter run on a computed file path, or an inline `-c`/`-e` program in a
+  followed hook script, so this cannot regress.
   Behaviour is unchanged across the plugin, copy-in and git-hook installs; inline `awk`/`sed` filters,
   which open no file, stay.
 - **2026-10-03** — Hardened the no-`timeout(1)` test so a slow Windows runner cannot flake it. The perl
