@@ -8,27 +8,33 @@
 # Fails SAFE on an empty payload; with jq absent it scans the RAW payload and
 # fails CLOSED rather than trusting a lossy parse (see below).
 set -uo pipefail
-here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# ADR-0018: source libs by a literal ${CLAUDE_PLUGIN_ROOT} path. Claude Code sets it to this plugin's
+# root; a copy-in leaves it unset, Codex points PLUGIN_ROOT here (so this is unset), and Copilot sets it
+# to the repo with the harness under .claude/ — so when it does not point at the harness, resolve it
+# from this script's own location (its hooks/ dir's parent).
+if [ -z "${CLAUDE_PLUGIN_ROOT:-}" ] || [ ! -e "${CLAUDE_PLUGIN_ROOT}/hooks/lib/core.sh" ]; then
+  CLAUDE_PLUGIN_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
+fi
 # shellcheck source=/dev/null
-. "$here/lib/secret-patterns.sh"
+. "${CLAUDE_PLUGIN_ROOT}/hooks/lib/secret-patterns.sh"
 # shellcheck source=/dev/null
-. "$here/lib/core.sh"
+. "${CLAUDE_PLUGIN_ROOT}/hooks/lib/core.sh"
 [ "$(cd "${CLAUDE_PROJECT_DIR:-.}" 2>/dev/null && nonna_mode)" = off ] && exit 0 # off means off
 
 payload="$(cat 2>/dev/null || true)"
 # Codex's apply_patch, read a file at a time (lib/host-codex.sh; codex-hooks.json sets NONNA_HOST).
 if [ "${NONNA_HOST:-}" = codex ]; then
   # shellcheck source=/dev/null
-  . "$here/lib/host-codex.sh"
-  payload="$(printf '%s' "$payload" | nonna_codex_payload "$here/secret-scan.sh")" || exit 2
+  . "${CLAUDE_PLUGIN_ROOT}/hooks/lib/host-codex.sh"
+  payload="$(printf '%s' "$payload" | nonna_codex_payload secret-scan)" || exit 2
 fi
 [ -n "$payload" ] || exit 0
 if [ "${NONNA_HOST:-}" = copilot ]; then # Copilot CLI: its payload and its reply (ADR-0015)
   # shellcheck source=/dev/null
-  . "$here/lib/host-copilot.sh"
+  . "${CLAUDE_PLUGIN_ROOT}/hooks/lib/host-copilot.sh"
   nonna_copilot_reply
   payload="$(printf '%s' "$payload" | nonna_copilot_payload)" || exit 2
-  nonna_copilot_each "$here/${BASH_SOURCE[0]##*/}" "$payload" # several targets: each judged alone
+  nonna_copilot_each secret-scan "$payload" # several targets: each judged alone
 fi
 
 # Read and Grep branch: the same secret files settings.json's permissions.deny refuses (Claude Code
@@ -41,7 +47,7 @@ fi
 # here, for Read and for Grep.
 if printf '%s' "$payload" | grep -qE '"tool_name"[[:space:]]*:[[:space:]]*"(Read|Grep)"'; then
   # shellcheck source=/dev/null
-  . "$here/lib/json.sh"
+  . "${CLAUDE_PLUGIN_ROOT}/hooks/lib/json.sh"
   secret_file() { # <path>: 0 when the path names a file the Read deny list covers
     local p
     p="$(printf '%s' "$1" | tr '[:upper:]' '[:lower:]')"

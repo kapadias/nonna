@@ -340,6 +340,51 @@ for dirpath, _dirnames, filenames in os.walk(f"{ROOT}/.claude"):
                         "(compute it, as nonna_copy_in_hooks does)"
                     )
 
+# --- ADR-0018: the plugin loader runs only literal ${CLAUDE_PLUGIN_ROOT} paths ---
+# The plugin directory validator refuses a plugin whose loader-run commands execute or source a file by
+# a path the shell computes — a variable other than ${CLAUDE_PLUGIN_ROOT}, a command substitution, a
+# glob, or an inline -c/-e program. It follows the hook entry scripts and the libs they source. The two
+# git-hook entry points (pre-commit.sh, require-status-sync.sh) are not loader-run, so they are not
+# followed and may self-locate. Inline awk/sed filters open no file, so they are left (ADR-0018).
+FOLLOWED_SH = [
+    p
+    for p in sorted(glob.glob(f"{ROOT}/.claude/hooks/*.sh"))
+    if os.path.basename(p) not in ("pre-commit.sh", "require-status-sync.sh")
+] + sorted(glob.glob(f"{ROOT}/.claude/hooks/lib/*.sh"))
+_PR = r"\$\{CLAUDE_PLUGIN_ROOT\}"  # the only variable allowed in a run or sourced path
+COMPUTED_PATH = [
+    (
+        re.compile(rf'(?:^|[;&|{{(]|\s)(?:\.|source)\s+"(?!{_PR})\$'),
+        "sources a computed path",
+    ),
+    (
+        re.compile(rf'\bawk\b.*-f\s+"(?!{_PR})\$'),
+        "runs an awk program file by a computed path",
+    ),
+    (
+        re.compile(rf'\b(?:bash|sh)\s+"(?!{_PR})\$'),
+        "runs a shell file by a computed path",
+    ),
+    (
+        re.compile(r"\b(?:python3?|perl|node|ruby)\s+-(?:c|e)\b"),
+        "runs an inline interpreter program",
+    ),
+]
+for path in FOLLOWED_SH:
+    with open(path, encoding="utf-8", errors="replace") as fh:
+        for n, line in enumerate(fh, 1):
+            code = line.split("#", 1)[0]  # a trailing comment is not a command
+            for rx, why in COMPUTED_PATH:
+                m = rx.search(code)
+                # A match inside a single-quoted string is text the script emits (e.g. the git-hook
+                # wrapper nonna_hook_wrapper writes), not a command it runs.
+                if m and code[: m.start()].count("'") % 2 == 0:
+                    bad(
+                        f"{rel_path(path)}:{n}: {why} — the plugin directory validator needs a literal "
+                        '"${CLAUDE_PLUGIN_ROOT}/hooks/..." path here (ADR-0018)'
+                    )
+                    break
+
 # --- cross-links: intra-repo markdown links must resolve ---
 LINK = re.compile(r"\]\(([^)]+)\)")
 FILE_EXT = re.compile(r"\.(md|sh|json|py|ts|go|ya?ml|txt)$")
@@ -545,9 +590,7 @@ for md in sorted(glob.glob(f"{ROOT}/.claude/**/*.md", recursive=True)):
         for n, line in enumerate(fh, 1):
             for ref in SLASH.findall(line):
                 if ref[1:] not in invocable:
-                    bad(
-                        f"{rel_path(md)}:{n}: `{ref}` is not a command or skill"
-                    )
+                    bad(f"{rel_path(md)}:{n}: `{ref}` is not a command or skill")
 
 # --- domain leak: a domain-agnostic harness names no single domain ---
 DENY = re.compile(r"\b(trading|brokerage)\b", re.IGNORECASE)
@@ -671,9 +714,7 @@ if BENCH_PROMPTS:
     for p in BENCH_PROMPTS:
         with open(p, encoding="utf-8") as fh:
             if fh.read().strip() not in BENCH_README:
-                bad(
-                    f"{rel_path(p)}: not quoted word for word in bench/README.md (D4)"
-                )
+                bad(f"{rel_path(p)}: not quoted word for word in bench/README.md (D4)")
 
 # --- the ladder: one ruleset, two copies (always-on rungs; on-demand depth) ---
 # The seven rungs are pinned by keyword because the copies differ in depth by design.

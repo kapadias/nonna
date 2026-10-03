@@ -8,15 +8,21 @@
 #      test command.
 # Best-effort: always exits 0; a SessionStart failure must never wedge a session.
 set -uo pipefail
-here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# ADR-0018: source libs by a literal ${CLAUDE_PLUGIN_ROOT} path. Claude Code sets it to this plugin's
+# root; a copy-in leaves it unset, Codex points PLUGIN_ROOT here (so this is unset), and Copilot sets it
+# to the repo with the harness under .claude/ — so when it does not point at the harness, resolve it
+# from this script's own location (its hooks/ dir's parent).
+if [ -z "${CLAUDE_PLUGIN_ROOT:-}" ] || [ ! -e "${CLAUDE_PLUGIN_ROOT}/hooks/lib/core.sh" ]; then
+  CLAUDE_PLUGIN_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
+fi
 # shellcheck source=/dev/null
-. "$here/lib/core.sh"
+. "${CLAUDE_PLUGIN_ROOT}/hooks/lib/core.sh"
 root="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 cd "$root" 2>/dev/null || exit 0
 [ "$(nonna_mode)" = off ] && exit 0 # off means off: nothing enforced, nothing said
 if [ "${NONNA_HOST:-}" = copilot ]; then # Copilot CLI: its reply (ADR-0015)
   # shellcheck source=/dev/null
-  . "$here/lib/host-copilot.sh"
+  . "${CLAUDE_PLUGIN_ROOT}/hooks/lib/host-copilot.sh"
   nonna_copilot_reply
 fi
 
@@ -30,7 +36,7 @@ nonna_root="$(nonna_harness_root)"
 # 0. Where this session began. Stop tests everything changed since, committed or not, so work
 #    committed during a session cannot dodge the gate. One file per session, kept a week.
 # shellcheck source=/dev/null
-. "$here/lib/json.sh"
+. "${CLAUDE_PLUGIN_ROOT}/hooks/lib/json.sh"
 sid="$(nonna_json_field '.session_id' <<<"$(cat 2>/dev/null || true)" | tr -cd 'A-Za-z0-9._-')"
 if [ -n "$sid" ] && base_dir="$(git rev-parse --git-path nonna 2>/dev/null)" && mkdir -p "$base_dir" 2>/dev/null; then
   find "$base_dir" \( -name 'base-*' -o -name 'notest-*' \) -mtime +7 -delete 2>/dev/null || true
@@ -133,9 +139,9 @@ if ! nonna_copy_in && [ -n "$nonna_root" ] && git rev-parse --git-dir >/dev/null
   case "${CLAUDE_PLUGIN_OPTION_RUN_TESTS:-true}" in
     false | False | FALSE | 0 | no | off) : ;;
     *)
-      if ! nonna_config nonna.testCmd >/dev/null && [ -f "$here/lib/tests.sh" ]; then
+      if ! nonna_config nonna.testCmd >/dev/null && [ -f "${CLAUDE_PLUGIN_ROOT}/hooks/lib/tests.sh" ]; then
         # shellcheck source=/dev/null
-        . "$here/lib/tests.sh"
+        . "${CLAUDE_PLUGIN_ROOT}/hooks/lib/tests.sh"
         detected="$(nonna_detect_test_cmd)"
         [ -z "$detected" ] || git config nonna.testCmd "$detected" 2>/dev/null || true
       fi
@@ -143,9 +149,9 @@ if ! nonna_copy_in && [ -n "$nonna_root" ] && git rev-parse --git-dir >/dev/null
   esac
 fi
 gate=""
-if [ -f "$here/lib/tests.sh" ]; then # this hook's own library, never one the repo ships
+if [ -f "${CLAUDE_PLUGIN_ROOT}/hooks/lib/tests.sh" ]; then # this hook's own library, never one the repo ships
   # shellcheck source=/dev/null
-  . "$here/lib/tests.sh"
+  . "${CLAUDE_PLUGIN_ROOT}/hooks/lib/tests.sh"
   gate="$(nonna_test_cmd)"
 fi
 

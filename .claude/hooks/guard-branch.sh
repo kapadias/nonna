@@ -15,14 +15,20 @@
 # still gets past it. Branch protection on the server is the wall (ADR-0011). Fails SAFE: if the
 # branch can't be determined, it never blocks on it.
 set -uo pipefail
-here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# ADR-0018: source libs by a literal ${CLAUDE_PLUGIN_ROOT} path. Claude Code sets it to this plugin's
+# root; a copy-in leaves it unset, Codex points PLUGIN_ROOT here (so this is unset), and Copilot sets it
+# to the repo with the harness under .claude/ — so when it does not point at the harness, resolve it
+# from this script's own location (its hooks/ dir's parent).
+if [ -z "${CLAUDE_PLUGIN_ROOT:-}" ] || [ ! -e "${CLAUDE_PLUGIN_ROOT}/hooks/lib/core.sh" ]; then
+  CLAUDE_PLUGIN_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
+fi
 # shellcheck source=/dev/null
-. "$here/lib/json.sh"
+. "${CLAUDE_PLUGIN_ROOT}/hooks/lib/json.sh"
 
 root="${CLAUDE_PROJECT_DIR:-$(pwd)}"
 cd "$root" 2>/dev/null || exit 0
 # shellcheck source=/dev/null
-. "$here/lib/core.sh"
+. "${CLAUDE_PLUGIN_ROOT}/hooks/lib/core.sh"
 # Off means off, but for her settings: the user switched her off, so the agent may still not change
 # what she reads, run her /nonna scripts or touch her git hooks. The user switches her on again, and
 # decides what she runs then (ADR-0011). Nothing else is checked while she is off, and nothing said.
@@ -89,15 +95,15 @@ payload="$(cat 2>/dev/null || true)"
 # Codex's apply_patch, read a file at a time (lib/host-codex.sh; codex-hooks.json sets NONNA_HOST).
 if [ "${NONNA_HOST:-}" = codex ]; then
   # shellcheck source=/dev/null
-  . "$here/lib/host-codex.sh"
-  payload="$(printf '%s' "$payload" | nonna_codex_payload "$here/guard-branch.sh")" || exit 2
+  . "${CLAUDE_PLUGIN_ROOT}/hooks/lib/host-codex.sh"
+  payload="$(printf '%s' "$payload" | nonna_codex_payload guard-branch)" || exit 2
 fi
 if [ "${NONNA_HOST:-}" = copilot ]; then # Copilot CLI: its payload and its reply (ADR-0015)
   # shellcheck source=/dev/null
-  . "$here/lib/host-copilot.sh"
+  . "${CLAUDE_PLUGIN_ROOT}/hooks/lib/host-copilot.sh"
   nonna_copilot_reply
   payload="$(printf '%s' "$payload" | nonna_copilot_payload)" || exit 2
-  nonna_copilot_each "$here/${BASH_SOURCE[0]##*/}" "$payload" # several targets: each judged alone
+  nonna_copilot_each guard-branch "$payload" # several targets: each judged alone
 fi
 tool="$(printf '%s' "$payload" | nonna_json_field '.tool_name')"
 [ -n "$tool" ] || tool="$(raw_tool)" # a parser that failed (jq, awk) leaves the name empty
@@ -156,13 +162,13 @@ case "$tool" in
     # or her settings the benefit of the doubt). could_be_hers and kitchen_door judge the real command.
     read_command() { # <command>
       local c="$1" a lvl code next top xl xw n grown
-      a="$(printf '%s\n' "$c" | LC_ALL=C awk -v out=A -f "$here/lib/shell-words.awk" 2>/dev/null)" || cant_read
-      lvl="$(printf '%s\n' "$c" | LC_ALL=C awk -v out=B -f "$here/lib/shell-words.awk" 2>/dev/null)" || cant_read
+      a="$(printf '%s\n' "$c" | LC_ALL=C awk -v out=A -f "${CLAUDE_PLUGIN_ROOT}/hooks/lib/shell-words.awk" 2>/dev/null)" || cant_read
+      lvl="$(printf '%s\n' "$c" | LC_ALL=C awk -v out=B -f "${CLAUDE_PLUGIN_ROOT}/hooks/lib/shell-words.awk" 2>/dev/null)" || cant_read
       segs="$segs"$'\n'"$a"$'\n'"$lvl"
       code="$lvl" # every opened level, read as the code a nested shell would run
       n=0
       while [ "$n" -lt 6 ] && quoted "$lvl"; do
-        next="$(printf '%s\n' "$lvl" | LC_ALL=C awk -v out=B -v nomask=1 -v relevel=1 -f "$here/lib/shell-words.awk" 2>/dev/null)" || cant_read
+        next="$(printf '%s\n' "$lvl" | LC_ALL=C awk -v out=B -v nomask=1 -v relevel=1 -f "${CLAUDE_PLUGIN_ROOT}/hooks/lib/shell-words.awk" 2>/dev/null)" || cant_read
         [ "$next" = "$lvl" ] && break
         segs="$segs"$'\n'"$next"
         code="$code"$'\n'"$next"
@@ -178,22 +184,22 @@ case "$tool" in
       # command itself is read quote-exact (a quoted brace is text); every opened level as code. A glob
       # group (bash's @(…) under extglob, zsh's (a|b)) is read in readings of its own, when a ( follows
       # a word's character or $'…' could hide one.
-      top="$(printf '%s\n' "$c" | LC_ALL=C awk -v out=A -v qmark=1 -f "$here/lib/shell-words.awk" 2>/dev/null)" || cant_read
+      top="$(printf '%s\n' "$c" | LC_ALL=C awk -v out=A -v qmark=1 -f "${CLAUDE_PLUGIN_ROOT}/hooks/lib/shell-words.awk" 2>/dev/null)" || cant_read
       if printf '%s' "$c" | grep -qE "[^[:space:]\$();&|<>\`]\(|\\$'"; then
-        xw="$(printf '%s\n' "$c" | LC_ALL=C awk -v out=A -v qmark=1 -v xglob=1 -f "$here/lib/shell-words.awk" 2>/dev/null)" || cant_read
+        xw="$(printf '%s\n' "$c" | LC_ALL=C awk -v out=A -v qmark=1 -v xglob=1 -f "${CLAUDE_PLUGIN_ROOT}/hooks/lib/shell-words.awk" 2>/dev/null)" || cant_read
         top="$top"$'\n'"$xw"
-        xl="$(printf '%s\n' "$c" | LC_ALL=C awk -v out=B -v xglob=1 -f "$here/lib/shell-words.awk" 2>/dev/null)" || cant_read
+        xl="$(printf '%s\n' "$c" | LC_ALL=C awk -v out=B -v xglob=1 -f "${CLAUDE_PLUGIN_ROOT}/hooks/lib/shell-words.awk" 2>/dev/null)" || cant_read
         code="$code"$'\n'"$xl"
         n=0
         while [ "$n" -lt 6 ] && quoted "$xl"; do
-          xw="$(printf '%s\n' "$xl" | LC_ALL=C awk -v out=B -v nomask=1 -v relevel=1 -v xglob=1 -f "$here/lib/shell-words.awk" 2>/dev/null)" || cant_read
+          xw="$(printf '%s\n' "$xl" | LC_ALL=C awk -v out=B -v nomask=1 -v relevel=1 -v xglob=1 -f "${CLAUDE_PLUGIN_ROOT}/hooks/lib/shell-words.awk" 2>/dev/null)" || cant_read
           [ "$xw" = "$xl" ] && break
           code="$code"$'\n'"$xw"
           xl="$xw"
           n=$((n + 1))
         done
       fi
-      grown="$(printf '%s\n%s\n' "$top" "${code//$'\016'/?}" | LC_ALL=C awk -f "$here/lib/expand.awk" 2>/dev/null)"
+      grown="$(printf '%s\n%s\n' "$top" "${code//$'\016'/?}" | LC_ALL=C awk -f "${CLAUDE_PLUGIN_ROOT}/hooks/lib/expand.awk" 2>/dev/null)"
       case $? in
         0) segs="$segs"$'\n'"$grown" ;;
         3) too_long "a brace list or a glob expands to more than it can read before the hook times out." ;;

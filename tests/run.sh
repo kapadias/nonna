@@ -3233,7 +3233,7 @@ rm -rf "$TMP"
 # the ceiling so the two are never confused; a prompt kill still returns in about two seconds, because it
 # kills the child long before its own sleep ends.
 NOTO="$(mktemp -d)"
-for b in bash sh perl tail sleep cat rm mktemp; do shim "$NOTO" "$b"; done
+for b in bash sh perl tail sleep cat rm mktemp dirname; do shim "$NOTO" "$b"; done
 start=$SECONDS
 # shellcheck disable=SC2030  # PATH is meant to change only inside the subshell
 ( PATH="$NOTO"; . "$HOOKS/lib/tests.sh"; NONNA_TEST_TIMEOUT=1 nonna_run_tests 'sh -c "sleep 30"' ); rc=$?
@@ -3755,14 +3755,14 @@ out="$(printf '{}' | PATH="$NOJQ" NONNA_MODE=full CLAUDE_PROJECT_DIR="$TMP" CLAU
 check "subagent-start: no-jq, no-awk emits nothing instead of an empty carrier" "" "$out"
 # Backslashes and quotes in the carrier must survive the awk escaper on any awk.
 shim "$NOJQ" awk
-BQ="$(mktemp -d)"; mkdir -p "$BQ/hooks" "$BQ/rules"; cp "$HOOKS/require-status-sync.sh" "$BQ/hooks/"
+BQ="$(mktemp -d)"; mkdir -p "$BQ/hooks" "$BQ/rules"; cp "$HOOKS/require-status-sync.sh" "$BQ/hooks/"; cp -R "$HOOKS/lib" "$BQ/hooks/"  # a complete harness root (ADR-0018: else self-location recomputes away from it)
 printf '# Core\nsay "hi" and C:\\path\\ end\\\n' > "$BQ/rules/00-core.md"
 out="$(printf '{}' | PATH="$NOJQ" NONNA_MODE=full CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$BQ" "$SA")"
 dec="$(printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["hookSpecificOutput"]["additionalContext"])' 2>/dev/null)"; check "subagent-start: no-jq fallback with backslashes and quotes is valid JSON" 0 "$?"
 contains "subagent-start: no-jq fallback round-trips a backslash and a quote" "say \"hi\" and C:\\path\\ end\\" "$dec"
 rm -rf "$BQ"
 # A control character in the carrier must not break the JSON.
-CTL="$(mktemp -d)"; mkdir -p "$CTL/hooks" "$CTL/rules"; cp "$HOOKS/require-status-sync.sh" "$CTL/hooks/"
+CTL="$(mktemp -d)"; mkdir -p "$CTL/hooks" "$CTL/rules"; cp "$HOOKS/require-status-sync.sh" "$CTL/hooks/"; cp -R "$HOOKS/lib" "$CTL/hooks/"  # a complete harness root (ADR-0018)
 printf '# Core\x01 with\x1b control\n' > "$CTL/rules/00-core.md"; shim "$NOJQ" awk
 out="$(printf '{}' | PATH="$NOJQ" NONNA_MODE=full CLAUDE_PROJECT_DIR="$TMP" CLAUDE_PLUGIN_ROOT="$CTL" "$SA")"
 printf '%s' "$out" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null; check "subagent-start: no-jq fallback survives control characters" 0 "$?"
@@ -3877,8 +3877,13 @@ sv_allows "never grades the parent transcript" "$out"
 out="$(sv_payload "" '{"agent_transcript_path":"/nonexistent/x.jsonl"}' | sv_run)"; check "unreadable agent transcript: exit 0" 0 "$?"
 sv_allows "unreadable agent transcript: fails open" "$out"
 printf '{}' | sv_run >/dev/null; check "empty object: fails open" 0 "$?"
-out="$(sv_payload "$SV_PROSE" | CLAUDE_PLUGIN_ROOT='' CLAUDE_PROJECT_DIR="$SVT" "$SV")"; check "checker not locatable: exit 0" 0 "$?"
+# A harness whose checker is missing (a partial install): the hook loads core.sh from it, finds no
+# check-review.sh, and fails open. An empty CLAUDE_PLUGIN_ROOT would self-locate the real harness (whose
+# checker is present, ADR-0018), so point it at a harness that genuinely lacks the checker.
+NOSK="$(mktemp -d)"; mkdir -p "$NOSK/hooks/lib"; cp "$HOOKS/lib/core.sh" "$NOSK/hooks/lib/"
+out="$(sv_payload "$SV_PROSE" | CLAUDE_PLUGIN_ROOT="$NOSK" CLAUDE_PROJECT_DIR="$SVT" "$SV")"; check "checker not locatable: exit 0" 0 "$?"
 sv_allows "checker not locatable: fails open" "$out"
+rm -rf "$NOSK"
 # Sent back once already this turn: do not loop forever.
 out="$(sv_payload "$SV_PROSE" '{"stop_hook_active":true}' | sv_run)"; check "stop_hook_active with malformed output: exit 0" 0 "$?"
 sv_allows "stop_hook_active: does not block a second time" "$out"
@@ -4113,13 +4118,16 @@ check "codex: a space-led Update File line is context, so the key after it is th
 check "codex: a move to .git/config with a trailing space is refused by the branch guard" 2 "$(cx_patch '*** Update File: app.txt' '*** Move to: .git/config ' '@@' '-a' '+x' | (cd "$CXR" && NONNA_HOST=codex "$HOOKS/guard-branch.sh" >/dev/null 2>&1); printf '%s' "$?")"
 check "codex: a move to .git/config with a trailing no-break space is refused by the branch guard" 2 "$(cx_patch '*** Update File: app.txt' "$(printf '*** Move to: .git/config\302\240')" '@@' '-a' '+x' | (cd "$CXR" && NONNA_HOST=codex "$HOOKS/guard-branch.sh" >/dev/null 2>&1); printf '%s' "$?")"
 check "codex: an Add File path led by a tab is refused by the branch guard" 2 "$(cx_patch "$(printf '*** Add File: \t.git/hooks/pre-push')" '+x' | (cd "$CXR" && NONNA_HOST=codex "$HOOKS/guard-branch.sh" >/dev/null 2>&1); printf '%s' "$?")"
-# What the gates read, exactly: a Write of each file the patch adds and an Edit of each it updates, with the
-# lines it adds; an Edit with nothing added of each file it deletes or moves away. A stand-in gate records them.
-REC="$(mktemp -d)"; printf 'cat >> "%s/seen"; echo >> "%s/seen"\n' "$REC" "$REC" > "$REC/gate.sh"
+# What the gates read, exactly: a Write of each file the patch adds and an Edit of each it updates, with
+# the lines it adds; an Edit with nothing added of each file it deletes or moves away. _nonna_codex_files
+# produces exactly the payloads nonna_codex_payload feeds the gate, one a line; the re-run to the real
+# gates is covered by the refusal tests above (ADR-0018 made that re-run a literal ${CLAUDE_PLUGIN_ROOT}
+# path, so a stand-in gate can no longer stand in).
+SEEN="$(mktemp)"
 cx_patch '*** Add File: a.py' '+k = 1' '+m = "q\tt" # café' "$(printf '+t = 1\t# a tab')" '*** Update File: b.py' '@@ def f():' ' ctx' '-old' '+new' \
   '*** Update File: c.py' '*** Move to: d.py' '@@' '+z' '*** Delete File: e.py' \
-  | (cd "$CXR" && bash -c '. "$1"; nonna_codex_payload "$2"' _ "$HOOKS/lib/host-codex.sh" "$REC/gate.sh" >/dev/null 2>&1)
-got="$(python3 - "$REC/seen" <<'PY'
+  | (cd "$CXR" && bash -c '. "$1"; _nonna_codex_files' _ "$HOOKS/lib/host-codex.sh") > "$SEEN"
+got="$(python3 - "$SEEN" <<'PY'
 import json, sys
 seen = [json.loads(l) for l in open(sys.argv[1], encoding="utf-8") if l.strip()]
 want = [
@@ -4133,7 +4141,7 @@ print("same" if seen == want else json.dumps(seen))
 PY
 )"
 check "codex: a patch reaches the gates as Claude Code's Write and Edit, a file each, with the lines it adds" same "$got"
-rm -rf "$REC"
+rm -f "$SEEN"
 WP='{"tool_name":"Write","tool_input":{"file_path":"config.py","content":"k = 1"}}'
 check "codex: a payload that is not an apply_patch passes through unchanged" "$WP" "$(printf '%s' "$WP" | bash -c '. "$1"; nonna_codex_payload "$2"' _ "$HOOKS/lib/host-codex.sh" "$HOOKS/secret-scan.sh")"
 # Shell commands: Codex's Bash call already has Claude Code's shape, and both guards read it as it is.

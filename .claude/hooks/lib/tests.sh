@@ -45,8 +45,10 @@
 #                  secret replaced, because this text is shown to the agent and to the user.
 # shellcheck shell=bash
 
+# ADR-0018: literal plugin paths; fallback covers copy-in/git-hook and standalone sourcing.
+: "${CLAUDE_PLUGIN_ROOT:=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)}"
 # shellcheck source=/dev/null
-command -v nonna_config >/dev/null 2>&1 || . "$(dirname "${BASH_SOURCE[0]}")/core.sh"
+command -v nonna_config >/dev/null 2>&1 || . "${CLAUDE_PLUGIN_ROOT}/hooks/lib/core.sh"
 
 nonna_test_cmd() { # [git-hook]: a git hook takes nothing from the environment (lib/core.sh)
   if [ "${1:-}" != git-hook ] && [ "${NONNA_TEST_CMD+set}" = set ]; then
@@ -78,7 +80,7 @@ nonna_detect_test_cmd() {
   if [ -f pytest.ini ] || [ -f tox.ini ] || [ -f conftest.py ] || [ "$has_py_tests" = 1 ]; then
     # Only when pytest is there: "No module named pytest" is not a red suite. Found, not imported,
     # and never from the repository's own directory: a pytest.py it ships must not run.
-    python3 -c 'import sys; sys.path[:] = [p for p in sys.path if p not in ("", ".")]; import importlib.util; sys.exit(importlib.util.find_spec("pytest") is None)' >/dev/null 2>&1 \
+    python3 "${CLAUDE_PLUGIN_ROOT}/hooks/lib/has-pytest.py" >/dev/null 2>&1 \
       && printf 'python3 -m pytest -q'
   # The back ends come before package.json, which in a Rails, Laravel or Phoenix app serves the front
   # end. A row whose runner is missing is skipped, not claimed: the search goes on below it, so a
@@ -191,12 +193,7 @@ nonna_run_tests() { # <command> [<directory, from the repository's top>]
     if command -v timeout >/dev/null 2>&1; then # GNU timeout signals the whole process group
       timeout "$secs" bash -c "$1"
     elif command -v perl >/dev/null 2>&1; then # macOS: own process group, killed whole on the alarm
-      perl -e '
-        my $secs = shift; my $pid = fork; die "fork: $!" unless defined $pid;
-        if (!$pid) { setpgrp(0, 0); exec @ARGV or exit 127 }
-        $SIG{ALRM} = sub { kill "TERM", -$pid; sleep 1; kill "KILL", -$pid; exit 124 };
-        alarm $secs; waitpid($pid, 0);
-        exit($? & 127 ? 128 + ($? & 127) : $? >> 8)' "$secs" bash -c "$1"
+      perl "${CLAUDE_PLUGIN_ROOT}/hooks/lib/timeout.pl" "$secs" bash -c "$1"
     else
       bash -c "$1"
     fi
@@ -262,7 +259,7 @@ nonna_green_key() {
 # nonna_shown_cmd <command>  the command as a message may show it: never one that carries a secret.
 nonna_shown_cmd() {
   # shellcheck source=/dev/null
-  . "$(dirname "${BASH_SOURCE[0]}")/secret-patterns.sh" 2>/dev/null || { printf 'your test command'; return 0; }
+  . "${CLAUDE_PLUGIN_ROOT}/hooks/lib/secret-patterns.sh" 2>/dev/null || { printf 'your test command'; return 0; }
   if printf '%s' "$1" | nonna_scan_secrets >/dev/null; then printf 'your test command'; else printf '%s' "$1"; fi
 }
 
@@ -281,7 +278,7 @@ $last" ;; esac
     out="$(printf '%s\n' "$clean" | tail -n 8)"
   fi
   # shellcheck source=/dev/null
-  . "$(dirname "${BASH_SOURCE[0]}")/secret-patterns.sh" 2>/dev/null || { printf '%s\n' "$out"; return 0; }
+  . "${CLAUDE_PLUGIN_ROOT}/hooks/lib/secret-patterns.sh" 2>/dev/null || { printf '%s\n' "$out"; return 0; }
   while IFS= read -r line; do
     if class="$(printf '%s' "$line" | nonna_scan_secrets)"; then
       printf '[a line that looks like a %s was hidden]\n' "$class"

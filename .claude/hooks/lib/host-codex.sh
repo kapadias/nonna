@@ -7,14 +7,16 @@
 # whose patch (in tool_input.command) can add, update, move and delete several files, where the
 # gates read one file a call, as Claude Code's Write and Edit send it.
 
+# ADR-0018: literal plugin paths; fallback covers copy-in/git-hook and standalone sourcing.
+: "${CLAUDE_PLUGIN_ROOT:=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)}"
 # shellcheck source=/dev/null
-. "$(dirname "${BASH_SOURCE[0]}")/json.sh"
+. "${CLAUDE_PLUGIN_ROOT}/hooks/lib/json.sh"
 # shellcheck source=/dev/null
-. "$(dirname "${BASH_SOURCE[0]}")/patch.sh"
+. "${CLAUDE_PLUGIN_ROOT}/hooks/lib/patch.sh"
 
-# nonna_codex_payload <gate>
-#   Reads a hook payload on stdin. A Codex apply_patch is checked a file at a time: <gate>, the
-#   script that called this, runs once for each file the patch touches, on that file as Claude Code's
+# nonna_codex_payload <hook-name>
+#   Reads a hook payload on stdin. A Codex apply_patch is checked a file at a time: the named hook
+#   (guard-branch or secret-scan) runs once for each file the patch touches, on that file as Claude Code's
 #   file tools would send it: a Write of a file the patch adds, the lines it adds as the content; an
 #   Edit of a file it updates or moves a file to, the lines it adds as the new text; an Edit with no
 #   new text of a file it deletes or moves away. The first refusal stands: it returns non-zero, the
@@ -44,10 +46,15 @@ nonna_codex_payload() {
     return 2
   fi
   # Each file's check is the gate's own, NONNA_HOST cleared so it reads the payload as it is; what the
-  # gate prints goes to stderr, never into the payload its caller goes on to read.
+  # gate prints goes to stderr, never into the payload its caller goes on to read. ADR-0018: the gate is
+  # named, not a computed path, so each re-run names a literal ${CLAUDE_PLUGIN_ROOT} script.
   while IFS= read -r f; do
     [ -n "$f" ] || continue
-    printf '%s' "$f" | NONNA_HOST='' "$BASH" "$gate" >&2 || return 2
+    case "$gate" in
+      guard-branch) printf '%s' "$f" | NONNA_HOST='' bash "${CLAUDE_PLUGIN_ROOT}/hooks/guard-branch.sh" >&2 || return 2 ;;
+      secret-scan)  printf '%s' "$f" | NONNA_HOST='' bash "${CLAUDE_PLUGIN_ROOT}/hooks/secret-scan.sh"  >&2 || return 2 ;;
+      *) return 2 ;;
+    esac
   done <<<"$files"
   return 0
 }
