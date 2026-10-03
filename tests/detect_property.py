@@ -123,6 +123,16 @@ GREP = subprocess.run(
     [BASH, "-c", "command -v grep"], stdout=subprocess.PIPE, universal_newlines=True
 ).stdout.strip()
 
+
+
+def sh_path(p):
+    """A path as Git Bash reads it: on Windows C:\\a\\b is /c/a/b, since a PATH splits at the drive's colon."""
+    if os.name != "nt":
+        return p
+    drive, rest = os.path.splitdrive(p)
+    return "/" + drive.rstrip(":").lower() + rest.replace("\\", "/")
+
+
 base = tempfile.mkdtemp()
 try:
     stubs = os.path.join(base, "stubs")
@@ -155,7 +165,7 @@ try:
         for r in runners:
             os.symlink(os.path.join(stubs, r), os.path.join(bindir, r))
         piles.append((files, runners))
-        lines.append("%s|%s" % (repo, bindir))
+        lines.append("%s|%s" % (sh_path(repo), sh_path(bindir)))
 
     # One bash, the library sourced once; each pile is detected in a subshell with PATH its own and nothing else.
     script = (
