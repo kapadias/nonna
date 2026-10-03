@@ -84,6 +84,12 @@ never offered to the model, so it is not counted.
 
 History lives in `CHANGELOG.md` and `git log`. Entries here describe the current unit of work.
 
+- **2026-10-03** — Hardened the no-`timeout(1)` test so a slow Windows runner cannot flake it. The perl
+  fallback kills the process group with a ~2 s floor (a 1 s alarm, then 1 s between TERM and KILL); the
+  test asserted the kill finished under 4 s, ~2 s of slack, which a loaded runner occasionally exceeded
+  (it flaked once on `develop` at `a48b3c7`, green on the identical tree twice). The child now sleeps
+  30 s and the ceiling is 15 s: a prompt kill still returns in ~2 s, far under 15 s, while a kill that
+  waited out the child would reach ~30 s. Test-only; the fallback itself was already correct.
 - **2026-10-03** — The branch guard reads a Unicode space as a word boundary (#54). Claude Code splits
   a piped command on every character JavaScript's `\s` matches, Unicode spaces (`U+00A0` and kin)
   among them, which bash keeps in a word and the C locale's `[[:space:]]` does not cover; so

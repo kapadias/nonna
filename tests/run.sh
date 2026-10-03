@@ -3226,14 +3226,19 @@ contains "stop: plugin install runs the command recorded in git config" "the tes
 out="$(printf '{}' | NONNA_TEST_CMD='' CLAUDE_PROJECT_DIR="$TMP" "$SD")"
 printf '%s' "$out" | grep -q '"decision"'; check "stop: an empty NONNA_TEST_CMD turns the recorded command off" 1 "$?"
 rm -rf "$TMP"
-# Without timeout(1) (macOS), the fallback must kill the whole process group, not wait out a child.
+# Without timeout(1) (macOS, Git Bash), the fallback must kill the whole process group, not wait out a
+# child. The perl fallback has a floor of about two seconds (a one-second alarm, then one second between
+# TERM and KILL), so the margin is generous: a prompt kill lands well under 15 s even on a slow Windows
+# runner, while a kill that waited out the 30 s child would blow past it. The child sleeps far longer than
+# the ceiling so the two are never confused; a prompt kill still returns in about two seconds, because it
+# kills the child long before its own sleep ends.
 NOTO="$(mktemp -d)"
 for b in bash sh perl tail sleep cat rm mktemp; do shim "$NOTO" "$b"; done
 start=$SECONDS
 # shellcheck disable=SC2030  # PATH is meant to change only inside the subshell
-( PATH="$NOTO"; . "$HOOKS/lib/tests.sh"; NONNA_TEST_TIMEOUT=1 nonna_run_tests 'sh -c "sleep 6"' ); rc=$?
+( PATH="$NOTO"; . "$HOOKS/lib/tests.sh"; NONNA_TEST_TIMEOUT=1 nonna_run_tests 'sh -c "sleep 30"' ); rc=$?
 check "tests.sh: no timeout(1): a forking suite is cut off on time (124)" 124 "$rc"
-check "tests.sh: no timeout(1): ...and within the budget, not after the child" 1 "$(( SECONDS - start < 4 ))"
+check "tests.sh: no timeout(1): ...and promptly, well before the child would end" 1 "$(( SECONDS - start < 15 ))"
 rm -rf "$NOTO"
 # Detection claims pytest only when pytest is there; a false red would block every push.
 TMP="$(mktemp -d)"; STUB="$(mktemp -d)"; mkdir -p "$TMP/tests"; copy_in "$TMP"
