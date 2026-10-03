@@ -766,9 +766,10 @@ class PngTest(unittest.TestCase):
             self.assertEqual(build.check(root, [img]), [])
 
     def test_render_command_is_the_headless_screenshot(self):
-        cmd = build.render_command(
-            "/x/chrome", Path("/a/b.svg"), Path("/a/b.png"), 1200, 560, 2
-        )
+        # An absolute path wherever the test runs: /a/b.svg has no drive, so on Windows it is relative.
+        base = Path(Path.cwd().anchor)
+        svg, png = base / "a" / "b.svg", base / "a" / "b.png"
+        cmd = build.render_command("/x/chrome", svg, png, 1200, 560, 2)
         self.assertEqual(
             cmd,
             [
@@ -779,9 +780,9 @@ class PngTest(unittest.TestCase):
                 "--hide-scrollbars",
                 "--default-background-color=00000000",
                 "--force-device-scale-factor=2",
-                "--screenshot=/a/b.png",
+                f"--screenshot={png}",
                 "--window-size=1200,560",
-                "file:///a/b.svg",
+                svg.as_uri(),
             ],
         )
 
