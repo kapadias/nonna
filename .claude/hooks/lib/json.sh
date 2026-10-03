@@ -3,25 +3,34 @@
 # stdin. Why a shared helper: every hook parses the same envelope, and a sed
 # fallback keeps the gates working on minimal machines where jq is absent.
 
-# How a hook reads a field, decided once, when it sources this file.
-#
-# _nonna_cr_drop: set where this bash drops every CR from a command it runs, as Git Bash's does. There
-#   " <CR>#" starts a comment, "\<CR><LF>" continues a line and gi<CR>t is git, so a guard reads every
-#   field without its CRs, as bash will run it. Asked of this bash itself, where it could be (MSYS, Cygwin).
-# _nonna_jq_raw: everywhere else every CR stays, since to bash it is part of a word: a guard that dropped
-#   one would read " <CR>#" as a comment and "\<CR><LF>" as a continued line, and miss what bash runs.
-#   But a native jq.exe writes each newline as CRLF, one inside a value too, unless -b: so -b where jq
-#   takes it (a no-op off Windows), else, where it writes CRLF, one CR off each line's end, which is all
-#   it added.
-_nonna_cr_drop=""
-case "${OSTYPE:-}" in
-  msys* | cygwin*)
-    _nonna_cr=$'\r'
-    if [ "$("${BASH:-bash}" -c "printf %s a${_nonna_cr}b" 2>/dev/null)" = ab ] && command -v tr >/dev/null 2>&1; then
-      _nonna_cr_drop=1
+# How a hook reads a field, decided once, when it sources this file (_nonna_cr):
+#   keep     bash keeps a CR as part of a word (Linux, macOS), so every CR stays: a guard that dropped
+#            one would read " <CR>#" as a comment and "\<CR><LF>" as a continued line, and miss what
+#            bash runs. Only the CRLF a native jq.exe adds is undone (_nonna_jq_raw, below).
+#   drop     bash drops every CR from a command it runs, as Git Bash's does (MSYS2 patches its input
+#            reader): there " <CR>#" starts a comment and gi<CR>t is git, so every field is read without
+#            its CRs. Asked of this bash itself.
+#   unknown  an MSYS bash that does not answer as either, or Cygwin's, whose igncr a command can switch
+#            on partway through: a field that holds a CR reads as nothing, so a guard refuses what it
+#            cannot read as bash will.
+# The platform comes from BASH_VERSINFO, which is read-only, never from OSTYPE, which the environment
+# can set.
+_nonna_cr=keep
+case "${BASH_VERSINFO[5]:-}" in
+  *-msys*)
+    _nonna_cr=unknown
+    if command -v tr >/dev/null 2>&1; then
+      case "$("${BASH:-bash}" -c "printf '<%s>' a"$'\r'"b" 2>/dev/null)" in
+        '<ab>') _nonna_cr=drop ;;
+        "<a"$'\r'"b>") _nonna_cr=keep ;;
+      esac
     fi
     ;;
+  *-cygwin*) _nonna_cr=unknown ;;
 esac
+# _nonna_jq_raw: a native jq.exe writes each newline as CRLF, one inside a value too, unless -b: so -b
+# where jq takes it (a no-op off Windows), else, where it writes CRLF, one CR off each line's end, which
+# is all it added.
 _nonna_jq_raw=""
 if command -v jq >/dev/null 2>&1; then
   if jq -b -n 1 >/dev/null 2>&1; then
@@ -35,13 +44,21 @@ fi
 #   Reads JSON from stdin, prints the field. With jq, any filter works. Without
 #   jq, only simple string-field lookups (e.g. .tool_input.file_path) degrade
 #   gracefully; complex filters return empty (callers must fail safe on empty).
-#   Where bash drops every CR (Git Bash), so does the field: a guard reads what bash will run.
+#   A field is read as bash will run it (_nonna_cr): where bash drops every CR (Git Bash), so does the
+#   field; where it cannot be told, a field that holds a CR reads as nothing. _nonna_json_value reads a
+#   field exactly, for what bash does not run: an apply_patch, which Codex parses itself.
 nonna_json_field() {
-  if [ -n "$_nonna_cr_drop" ]; then
-    _nonna_json_value "$@" | LC_ALL=C tr -d '\r'
-  else
-    _nonna_json_value "$@"
-  fi
+  case "$_nonna_cr" in
+    drop) _nonna_json_value "$@" | LC_ALL=C tr -d '\r' ;;
+    unknown)
+      local v
+      v="$(_nonna_json_value "$@"; printf x)"
+      v="${v%x}"
+      case "$v" in *$'\r'*) return 0 ;; esac
+      printf '%s' "$v"
+      ;;
+    *) _nonna_json_value "$@" ;;
+  esac
 }
 
 # _nonna_json_value <jq_filter>: the field exactly as the JSON holds it.

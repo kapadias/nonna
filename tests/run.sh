@@ -72,9 +72,6 @@ shim() { # <dir> <tool> [<path>]: <dir>/<tool> runs <path>, by default the <tool
   case "$p" in /*) ;; *) return 0 ;; esac
   printf '#!/bin/sh\nexec '\''%s'\'' "$@"\n' "$(printf '%s' "$p" | sed "s/'/'\\\\''/g")" > "$1/$2" && chmod +x "$1/$2"
 }
-# What this platform's bash does with a CR in a command: Linux's and macOS's keep it, part of a word;
-# Git Bash's drops every one. The guards read a command as bash will run it, so their tests ask bash.
-DROPS_CR=no; [ "$(bash -c "printf %s a$(printf '\r')b")" = ab ] && DROPS_CR=yes
 no_run() { # <file>...: files nothing can run: no mode, as a zip loses it, and no #! either, since Git Bash
   # takes a file that starts with #! for a program whatever its mode says
   local f
@@ -87,6 +84,9 @@ link() { # <target> <link>: a symbolic link, as these tests mean one, on every p
   rm -f "$2"
   (cd "$dir" && { ln -s "$1" "$name" 2>/dev/null; [ -L "$name" ] || { rm -rf "$name"; MSYS=winsymlinks:nativestrict ln -s "$1" "$name"; }; })
 }
+# What this platform's bash does with a CR in a command: Linux's and macOS's keep it, part of a word;
+# Git Bash's drops every one. The guards read a command as bash will run it, so their tests ask bash.
+DROPS_CR=no; [ "$(bash -c "printf %s a$(printf '\r')b")" = ab ] && DROPS_CR=yes
 hook_to() { # <git hook>: where it leads, a link's target or her wrapper's (nonna_hook_target, lib/core.sh)
   bash -c '. "$1/lib/core.sh"; nonna_hook_target "$2"' _ "$HOOKS" "$1"
 }
@@ -809,8 +809,15 @@ crv "a CR inside a word, as bash reads it: gi<CR>t is git where Git Bash drops i
 crv "...pu<CR>sh is push" 0 2 "$PATH" "$(printf 'git pu\rsh --force origin feature/x')"
 crv "...and ma<CR>in is main" 0 2 "$PATH" "$(printf 'git push origin ma\rin')"
 # The two ways a field is read, on any platform: without its CRs where bash drops them, with them elsewhere.
-check "json: where bash drops every CR, so does a field" "a#b" "$(printf '%s' '{"c":"a\r#b"}' | bash -c '. "$1/lib/json.sh"; _nonna_cr_drop=1; nonna_json_field .c' _ "$HOOKS")"
-check "json: ...and where it keeps them, the field keeps them" "$(printf 'a\r#b')" "$(printf '%s' '{"c":"a\r#b"}' | bash -c '. "$1/lib/json.sh"; _nonna_cr_drop=; nonna_json_field .c' _ "$HOOKS")"
+check "json: where bash drops every CR, so does a field" "a#b" "$(printf '%s' '{"c":"a\r#b"}' | bash -c '. "$1/lib/json.sh"; _nonna_cr=drop; nonna_json_field .c' _ "$HOOKS")"
+check "json: ...and where it keeps them, the field keeps them" "$(printf 'a\r#b')" "$(printf '%s' '{"c":"a\r#b"}' | bash -c '. "$1/lib/json.sh"; _nonna_cr=keep; nonna_json_field .c' _ "$HOOKS")"
+check "json: ...and where it cannot be told, a field that holds a CR reads as nothing, which a guard refuses" "" "$(printf '%s' '{"c":"gi\rt push"}' | bash -c '. "$1/lib/json.sh"; _nonna_cr=unknown; nonna_json_field .c' _ "$HOOKS")"
+check "json: ...while one without a CR reads as it is" "git push" "$(printf '%s' '{"c":"git push"}' | bash -c '. "$1/lib/json.sh"; _nonna_cr=unknown; nonna_json_field .c' _ "$HOOKS")"
+# How bash reads a CR is asked of bash, on the platform BASH_VERSINFO names: an OSTYPE the environment sets
+# decides nothing (bash keeps an inherited OSTYPE).
+cr_mode() { bash -c '. "$1/lib/json.sh"; printf %s "$_nonna_cr"' _ "$HOOKS"; }
+check "json: an OSTYPE of msys from the environment does not change how a field is read" "$(cr_mode)" "$(OSTYPE=msys cr_mode)"
+check "json: ...nor one of linux-gnu" "$(cr_mode)" "$(OSTYPE=linux-gnu cr_mode)"
 BADEXP="$(mktemp -d)"; printf '#!/bin/sh\ncase "$*" in *expand.awk*) exit 2 ;; esac\nexec %s "$@"\n' "$(command -v awk)" > "$BADEXP/awk"; chmod +x "$BADEXP/awk"
 check "a failing brace and glob reader: a brace list is refused, not guessed at" 2 "$(gbp "$BADEXP:$PATH" 'echo {a,b}')"
 BADJQ="$(mktemp -d)"; printf '#!/bin/sh\nexit 1\n' > "$BADJQ/jq"; chmod +x "$BADJQ/jq"
@@ -3976,6 +3983,11 @@ cx_gate() { # <PATH> <gate script> <payload>: that gate alone, as Codex runs it,
 check "codex: a patch that adds a key is refused" 2 "$(cx_run PreToolUse '^apply_patch$' "$(cx_patch '*** Add File: config.py' "+aws_id = \"$FAKE_AWS\"")")"
 check "codex: a patch that edits .git/config is refused" 2 "$(cx_run PreToolUse '^apply_patch$' "$(cx_patch '*** Update File: .git/config' '@@' ' [core]' '+editor = vi')")"
 check "codex: a clean patch passes" 0 "$(cx_run PreToolUse '^apply_patch$' "$(cx_patch '*** Update File: app.py' '@@' '-x = 1' '+x = 2')")"
+# Codex parses a patch itself and keeps a CR inside a line, so the patch is read exactly, even where bash
+# drops CRs: a CR taken out of "a<CR>sk-proj-..." would glue the key to the a before it, past the scan.
+check "codex: a key behind a CR in a patch line is refused" 2 "$(cx_run PreToolUse '^apply_patch$' "$(cx_patch '*** Add File: k.py' "+a$(printf '\r')$FAKE_OAI")")"
+out="$(cx_patch '*** Add File: k.py' "+a$(printf '\r')$FAKE_OAI" | bash -c '. "$1/lib/core.sh"; . "$1/lib/host-codex.sh"; _nonna_cr=drop; _nonna_codex_files' _ "$HOOKS")"
+contains "codex: ...where bash drops CRs too: the patch keeps its CR" 'a\u000dsk-proj-' "$out"
 out="$(cx_patch '*** Add File: config.py' "+aws_id = \"$FAKE_AWS\"" | (cd "$CXR" && NONNA_HOST=codex "$HOOKS/secret-scan.sh" 2>&1))"
 contains "codex: the refusal says what it found, in her voice" "looks like an AWS access key id" "$out"
 check "codex: a key in the second file of a patch is refused" 2 "$(cx_run PreToolUse '^apply_patch$' "$(cx_patch '*** Update File: app.py' '@@' '-x = 1' '+x = 2' '*** Add File: settings.py' "+aws_id = \"$FAKE_AWS\"")")"
