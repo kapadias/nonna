@@ -11,8 +11,10 @@
 # Edit, is read as Codex's is: lib/patch.sh reads it by its grammar, and lib/host-codex.sh's
 # _nonna_codex_files makes each file it touches Claude Code's Write or Edit.
 
+# ADR-0018: literal plugin paths; fallback covers copy-in/git-hook and standalone sourcing.
+: "${CLAUDE_PLUGIN_ROOT:=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd -P)}"
 # shellcheck source=/dev/null
-. "$(dirname "${BASH_SOURCE[0]}")/host-codex.sh"
+. "${CLAUDE_PLUGIN_ROOT}/hooks/lib/host-codex.sh"
 
 # nonna_copilot_payload
 #   Reads a payload on stdin and prints it in Claude Code's shape, one payload per line. First the
@@ -237,7 +239,7 @@ _nonna_copilot_refuse() { # <too_long|unread> <why>: her refusal, on stderr, as 
   fi
 }
 
-# nonna_copilot_each <script> <payloads>
+# nonna_copilot_each <hook-name> <payloads>
 #   A call that names several targets comes out of nonna_copilot_payload as one payload per line. Then
 #   <script> judges each on its own, with NONNA_HOST cleared, and the gate exits with the first answer
 #   that is not 0, or with 0. With one payload it returns, and the gate reads that one.
@@ -246,7 +248,13 @@ nonna_copilot_each() {
   case "$2" in *$'\n'*) ;; *) return 0 ;; esac
   while IFS= read -r one; do
     [ -n "$one" ] || continue
-    printf '%s' "$one" | NONNA_HOST='' bash "$1"
+    # ADR-0018: the hook is named, not a computed path, so each re-run names a literal
+    # ${CLAUDE_PLUGIN_ROOT} script.
+    case "$1" in
+      guard-branch) printf '%s' "$one" | NONNA_HOST='' bash "${CLAUDE_PLUGIN_ROOT}/hooks/guard-branch.sh" ;;
+      secret-scan)  printf '%s' "$one" | NONNA_HOST='' bash "${CLAUDE_PLUGIN_ROOT}/hooks/secret-scan.sh" ;;
+      *) exit 2 ;;
+    esac
     rc=$?
     [ "$rc" = 0 ] || exit "$rc"
   done <<<"$2"

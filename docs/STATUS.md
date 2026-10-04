@@ -84,6 +84,23 @@ never offered to the model, so it is not counted.
 
 History lives in `CHANGELOG.md` and `git log`. Entries here describe the current unit of work.
 
+- **2026-10-03** — Every path a hook command runs or sources is now a literal `${CLAUDE_PLUGIN_ROOT}/…`
+  (ADR-0018, part of #17). The claude.ai plugin **directory** validator — stricter than
+  `claude plugin validate`, which still passes — refuses a plugin whose loader-run command sources or
+  executes a file by a computed path (a variable other than `${CLAUDE_PLUGIN_ROOT}`, a command
+  substitution, a glob, or an inline `python3 -c`/`perl -e`): `COMMAND_PATH_COMPUTED`. The hooks
+  self-located their libs with `$here` and ran two inline programs. Each entry script now resolves
+  `${CLAUDE_PLUGIN_ROOT}` to its own harness — recomputing from `BASH_SOURCE` whenever the set value is
+  not it, since Codex points `PLUGIN_ROOT` here, Copilot points the variable at the repo, and a copy-in
+  or git hook leaves it unset — and sources every lib, every `awk -f` program and every re-run gate by a
+  literal path; the `python3 -c` pytest probe and the `perl -e` process-group timeout moved to
+  `lib/has-pytest.py` and `lib/timeout.pl`, run by literal path. `harness_lint.py` now fails a computed
+  exec/source path, an interpreter run on a computed file path, or an inline `-c`/`-e` program in a
+  followed hook script, so this cannot regress.
+  Behaviour is unchanged across the plugin, copy-in and git-hook installs; inline `awk`/`sed` filters,
+  which open no file, stay. The recompute resolves the root with `pwd -P`, matching `core.sh`'s own
+  symlink-resolving `_nonna_self`, so the two never disagree where the temp dir is a symlink (macOS
+  `/var` → `/private/var`, caught by the macOS CI leg).
 - **2026-10-03** — Hardened the no-`timeout(1)` test so a slow Windows runner cannot flake it. The perl
   fallback kills the process group with a ~2 s floor (a 1 s alarm, then 1 s between TERM and KILL); the
   test asserted the kill finished under 4 s, ~2 s of slack, which a loaded runner occasionally exceeded
@@ -649,6 +666,10 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   above that `claude plugin validate --strict` does not make. Expected: no blocking finding. The
   holds left are its reviewer's: the credential patterns in `secret-scan.sh` and `guard-branch.sh`,
   `/nonna`'s `!` line (pre-approved exactly) and the scripts the hooks run in turn.
+- Hardening from this unit's security review (ADR-0018, defense-in-depth, not a blocker): the hook
+  recompute trusts a host-set `${CLAUDE_PLUGIN_ROOT}` that points at a harness instead of always
+  self-locating; re-assert the full lib set under the resolved root, or keep `${BASH_SOURCE[0]}`
+  authoritative and spell paths from `${CLAUDE_PLUGIN_ROOT}` only for the validator.
 - #49: the bare `!git …` and `!ls …` lines in eight skills probably never run.
 - #50, from this unit's reviews: a repository whose `.claude` is a symlink is taken for a copy-in
   (one that links into the plugin's directory gets the plugin to run its tests and formatters),

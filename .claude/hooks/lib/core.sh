@@ -325,7 +325,10 @@ nonna_core_carrier() {
     return 0
   fi
   # shellcheck source=/dev/null
-  if . "$root/hooks/lib/ladder.sh" 2>/dev/null && nonna_ladder_elsewhere; then
+  # ADR-0018: a literal ${CLAUDE_PLUGIN_ROOT} source. This is reached only under a plugin install — a
+  # copy-in in full mode has .claude/rules/00-core.md and returned above — where Claude Code always sets
+  # the variable; without it the drop is skipped and the ladder is carried, a harmless degradation.
+  if [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && . "${CLAUDE_PLUGIN_ROOT}/hooks/lib/ladder.sh" 2>/dev/null && nonna_ladder_elsewhere; then
     core="$(printf '%s\n' "$core" | nonna_drop_ladder)"
   fi
   printf '%s\n\n%s\n' \
