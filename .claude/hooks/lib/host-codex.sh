@@ -8,7 +8,7 @@
 # gates read one file a call, as Claude Code's Write and Edit send it.
 
 # ADR-0018: literal plugin paths; fallback covers copy-in/git-hook and standalone sourcing.
-: "${CLAUDE_PLUGIN_ROOT:=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)}"
+: "${CLAUDE_PLUGIN_ROOT:=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd -P)}"
 # shellcheck source=/dev/null
 . "${CLAUDE_PLUGIN_ROOT}/hooks/lib/json.sh"
 # shellcheck source=/dev/null

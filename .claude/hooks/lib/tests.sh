@@ -46,7 +46,7 @@
 # shellcheck shell=bash
 
 # ADR-0018: literal plugin paths; fallback covers copy-in/git-hook and standalone sourcing.
-: "${CLAUDE_PLUGIN_ROOT:=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)}"
+: "${CLAUDE_PLUGIN_ROOT:=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd -P)}"
 # shellcheck source=/dev/null
 command -v nonna_config >/dev/null 2>&1 || . "${CLAUDE_PLUGIN_ROOT}/hooks/lib/core.sh"
 

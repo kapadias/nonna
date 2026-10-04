@@ -98,7 +98,9 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   exec/source path, an interpreter run on a computed file path, or an inline `-c`/`-e` program in a
   followed hook script, so this cannot regress.
   Behaviour is unchanged across the plugin, copy-in and git-hook installs; inline `awk`/`sed` filters,
-  which open no file, stay.
+  which open no file, stay. The recompute resolves the root with `pwd -P`, matching `core.sh`'s own
+  symlink-resolving `_nonna_self`, so the two never disagree where the temp dir is a symlink (macOS
+  `/var` → `/private/var`, caught by the macOS CI leg).
 - **2026-10-03** — Hardened the no-`timeout(1)` test so a slow Windows runner cannot flake it. The perl
   fallback kills the process group with a ~2 s floor (a 1 s alarm, then 1 s between TERM and KILL); the
   test asserted the kill finished under 4 s, ~2 s of slack, which a loaded runner occasionally exceeded

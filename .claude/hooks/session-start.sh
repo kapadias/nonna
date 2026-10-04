@@ -13,7 +13,7 @@ set -uo pipefail
 # to the repo with the harness under .claude/ — so when it does not point at the harness, resolve it
 # from this script's own location (its hooks/ dir's parent).
 if [ -z "${CLAUDE_PLUGIN_ROOT:-}" ] || [ ! -e "${CLAUDE_PLUGIN_ROOT}/hooks/lib/core.sh" ]; then
-  CLAUDE_PLUGIN_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
+  CLAUDE_PLUGIN_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd -P)"
 fi
 # shellcheck source=/dev/null
 . "${CLAUDE_PLUGIN_ROOT}/hooks/lib/core.sh"

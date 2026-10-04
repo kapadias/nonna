@@ -12,7 +12,7 @@
 # _nonna_codex_files makes each file it touches Claude Code's Write or Edit.
 
 # ADR-0018: literal plugin paths; fallback covers copy-in/git-hook and standalone sourcing.
-: "${CLAUDE_PLUGIN_ROOT:=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd)}"
+: "${CLAUDE_PLUGIN_ROOT:=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." 2>/dev/null && pwd -P)}"
 # shellcheck source=/dev/null
 . "${CLAUDE_PLUGIN_ROOT}/hooks/lib/host-codex.sh"
 

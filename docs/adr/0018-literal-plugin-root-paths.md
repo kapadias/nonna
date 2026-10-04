@@ -42,7 +42,7 @@ harness — yet the validator still wants every sourced path spelled from `${CLA
 
    ```sh
    if [ -z "${CLAUDE_PLUGIN_ROOT:-}" ] || [ ! -e "${CLAUDE_PLUGIN_ROOT}/hooks/lib/core.sh" ]; then
-     CLAUDE_PLUGIN_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"
+     CLAUDE_PLUGIN_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd -P)"
    fi
    ```
 
@@ -52,7 +52,10 @@ harness — yet the validator still wants every sourced path spelled from `${CLA
    script at `hooks/<name>.sh` resolves `…/..`; a self-sourcing library at `hooks/lib/<name>.sh` resolves
    `…/../..` and keeps the simpler unset-only `:=`, since it is reached only after an entry script has
    corrected the variable, or stand-alone with it unset. Either is a variable assignment, not the path of
-   a command that runs a file, so the rule does not reach it.
+   a command that runs a file, so the rule does not reach it. The recompute resolves with `pwd -P`, not
+   plain `pwd`: `core.sh`'s own `_nonna_self` resolves symlinks, so a recomputed root must too, or the two
+   disagree on a platform where the temp dir is a symlink (macOS `/var` → `/private/var`) and
+   `nonna_harness_root` reports the wrong path.
 
 2. **Every `.`/`source`, every `awk -f`, and every re-run of a hook names a literal
    `${CLAUDE_PLUGIN_ROOT}/hooks/…` path.** The two helpers that re-ran a hook generically
