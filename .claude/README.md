@@ -67,7 +67,9 @@ discipline is **enforced by code, not prose**. Start with [`../CLAUDE.md`](../CL
   `lib/` (`json.sh`, `secret-patterns.sh`, `core.sh` — harness root, the mode, the carrier, the
   context emitter, the git hooks' links and wrappers; `shell-words.awk` — how the shell will read a command, for the branch guard;
   `expand.awk` — its brace lists and globs, as the shell expands them;
-  `tests.sh` — the test command and each directory's own, runner and failure digest; `lite.md` — lite's house
+  `tests.sh` — the test command and each directory's own, runner and failure digest, with `has-pytest.py`
+  (is pytest importable) and `timeout.pl` (process-group timeout where `timeout(1)` is absent) run by
+  literal path, ADR-0018; `lite.md` — lite's house
   rules; `ladder.sh` — whether another plugin already states the ladder; `patch.sh` — the
   `apply_patch` format read by its grammar, a record a file, for any host's adapter; `host-codex.sh` —
   Codex's payloads read as Claude Code's, an `apply_patch` a file at a time, ADR-0013;

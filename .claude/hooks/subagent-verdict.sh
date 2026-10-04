@@ -17,9 +17,15 @@
 # malformed — by sending the reviewer back once with the contract as its next
 # instruction. Once, not forever: see stop_hook_active below.
 set -uo pipefail
-here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# ADR-0018: source libs by a literal ${CLAUDE_PLUGIN_ROOT} path. Claude Code sets it to this plugin's
+# root; a copy-in leaves it unset, Codex points PLUGIN_ROOT here (so this is unset), and Copilot sets it
+# to the repo with the harness under .claude/ — so when it does not point at the harness, resolve it
+# from this script's own location (its hooks/ dir's parent).
+if [ -z "${CLAUDE_PLUGIN_ROOT:-}" ] || [ ! -e "${CLAUDE_PLUGIN_ROOT}/hooks/lib/core.sh" ]; then
+  CLAUDE_PLUGIN_ROOT="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd -P)"
+fi
 # shellcheck source=/dev/null
-. "$here/lib/core.sh"
+. "${CLAUDE_PLUGIN_ROOT}/hooks/lib/core.sh"
 [ "$(cd "${CLAUDE_PROJECT_DIR:-.}" 2>/dev/null && nonna_mode)" = off ] && exit 0 # off means off
 payload="$(cat 2>/dev/null || true)"
 [ -n "$payload" ] || exit 0
@@ -53,21 +59,15 @@ if [ -z "$last" ]; then
 fi
 [ -n "$last" ] || exit 0
 
-# Locate the decider in either install mode (ADR-0007).
-root="${CLAUDE_PROJECT_DIR:-$(pwd)}"
-checker=""
-for cand in \
-  "${CLAUDE_PLUGIN_ROOT:-}/skills/code-review/scripts/check-review.sh" \
-  "$root/.claude/skills/code-review/scripts/check-review.sh"; do
-  [ -n "$cand" ] && [ -f "$cand" ] && { checker="$cand"; break; }
-done
-[ -n "$checker" ] || exit 0
+# The decider, from the resolved plugin root (ADR-0007, ADR-0018). The fallback above makes this the
+# copy-in path too, so one literal ${CLAUDE_PLUGIN_ROOT} spelling serves both installs.
+[ -f "${CLAUDE_PLUGIN_ROOT}/skills/code-review/scripts/check-review.sh" ] || exit 0
 
 # check-review.sh: 0 = approve; 1 = a well-formed request_changes (or a
 # blocking finding) — the reviewer doing its job, and /review turns that into a
 # red gate; 2 = no verdict, or one that is unparseable or ambiguous. Only 2 is a
 # breach of the contract, and only that is worth sending the reviewer back for.
-out="$(printf '%s' "$last" | bash "$checker" 2>&1)"; rc=$?
+out="$(printf '%s' "$last" | bash "${CLAUDE_PLUGIN_ROOT}/skills/code-review/scripts/check-review.sh" 2>&1)"; rc=$?
 [ "$rc" -eq 2 ] || exit 0
 
 reason="Reviewer verdict rejected by check-review.sh (exit ${rc}): ${out}. ADR-0005: the reviewer must emit exactly one fenced json block with a verdict and findings[]. Re-run the reviewer and have it emit the contract — do not hand-write or paraphrase the verdict."
