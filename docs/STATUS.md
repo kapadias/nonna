@@ -84,6 +84,13 @@ never offered to the model, so it is not counted.
 
 History lives in `CHANGELOG.md` and `git log`. Entries here describe the current unit of work.
 
+- **2026-11-11** — Planned the next two releases in [docs/plans/v2.1.md](plans/v2.1.md), proposed and
+  awaiting the maintainer's decisions (its §7). 2.0.1 ships what `main` gained after `v2.0.0`: a
+  plugin's cache is keyed by its `version`, so existing installs still run the 2.0.0 content without
+  #54's fix. 2.1.0 closes the gates that still fail open (#38, #39, the branch guard's unrunnable
+  checks), then brings in the arena-skill tournament as a user-only `/arena` whose verdicts are
+  schema-checked and whose referee includes the project's test suite, measured by a benchmark round 4
+  before the README claims anything. ADR-0018 is now in the ADR index.
 - **2026-10-03** — Every path a hook command runs or sources is now a literal `${CLAUDE_PLUGIN_ROOT}/…`
   (ADR-0018, part of #17). The claude.ai plugin **directory** validator — stricter than
   `claude plugin validate`, which still passes — refuses a plugin whose loader-run command sources or
@@ -662,6 +669,8 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
 
 ## Next / open
 
+- Decide [the 2.0.1 and 2.1.0 plan](plans/v2.1.md) (its §7), then cut 2.0.1 first: #54's HIGH fix is
+  merged but has reached no existing plugin install.
 - Resubmit the plugin to the claude.ai directory: its validator is the only check of the fixes
   above that `claude plugin validate --strict` does not make. Expected: no blocking finding. The
   holds left are its reviewer's: the credential patterns in `secret-scan.sh` and `guard-branch.sh`,
