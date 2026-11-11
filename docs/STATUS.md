@@ -71,7 +71,7 @@ never offered to the model, so it is not counted.
   reads Copilot's payloads as Claude Code's, an `apply_patch` a file at a time. The release workflow
   holds both manifests to the tag, and `review-lanes.sh` sends the hooks file to security review.
 - **Docs** — this `STATUS.md`, `INSTALL.md`, `OVERVIEW.md`, `docs/benchmarks/`, `CHANGELOG.md`, the
-  `docs/adr/` index, and ADRs 0001–0017.
+  `docs/adr/` index, and ADRs 0001–0018.
 - **Launch images** — `assets/build.py` builds the scorecard, the social preview and one card per
   trap task from round 3's files, and renders the plugin's icon from the hand-drawn logo;
   `--check` (standard library only) is run by `tests/run.sh`.
