@@ -5662,6 +5662,26 @@ out="$(NONNA_LINT_ROOT="$FX" NONNA_LINT_REQUIRE_TAGS=1 python3 "$LINT" 2>&1)"; c
 contains "lint: says there are no version tags to check against" "no version tags" "$out"
 rm -rf "$FX"
 
+# A tag is read as refs/tags/<tag>: a ref outside refs/tags with the same short name shadows it in a
+# plain `git show v2.0.0:…`, and the check would compare against the wrong text (security review).
+FX="$(lint_fixture)"
+{ "${GIT[@]}" -C "$FX" init -q && "${GIT[@]}" -C "$FX" add CHANGELOG.md \
+    && "${GIT[@]}" -C "$FX" commit -qm released && "${GIT[@]}" -C "$FX" tag v2.0.0; } >/dev/null 2>&1
+python3 -c "
+import sys; p = sys.argv[1]; s = open(p, encoding='utf-8').read()
+i = s.index('## [2.0.0]'); j = s.index('\n', i) + 1
+open(p, 'w', encoding='utf-8').write(s[:j] + '\n- not what was released\n' + s[j:])" "$FX/CHANGELOG.md"
+{ "${GIT[@]}" -C "$FX" commit -qam shadow && "${GIT[@]}" -C "$FX" update-ref refs/v2.0.0 HEAD \
+    && "${GIT[@]}" -C "$FX" checkout -q refs/tags/v2.0.0 -- CHANGELOG.md; } >/dev/null 2>&1
+NONNA_LINT_ROOT="$FX" NONNA_LINT_REQUIRE_TAGS=1 python3 "$LINT" >/dev/null 2>&1; check "lint: a ref outside refs/tags does not stand in for a release tag" 0 "$?"
+rm -rf "$FX"
+# A tag that cannot be read as a tree is a failure, not a release that had no CHANGELOG to keep.
+FX="$(lint_fixture)"
+{ "${GIT[@]}" -C "$FX" init -q \
+    && "${GIT[@]}" -C "$FX" tag v9.9.9 "$("${GIT[@]}" -C "$FX" hash-object -w CHANGELOG.md)"; } >/dev/null 2>&1
+out="$(NONNA_LINT_ROOT="$FX" NONNA_LINT_REQUIRE_TAGS=1 python3 "$LINT" 2>&1)"; check "lint: a release tag that is not a tree fails" 1 "$?"
+contains "lint: names the tag it cannot read" "cannot read tag v9.9.9" "$out"
+rm -rf "$FX"
 echo "== bench/examples.py (examples/, round 3's rule-picked runs, word for word) =="
 # examples/ quotes benchmark runs verbatim; a page that no longer matches its sources is a
 # misquote. The bench's own tests cover the builder; this runs its --check on the real tree, in CI.

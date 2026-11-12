@@ -1533,9 +1533,17 @@ else:
         bad(f"CHANGELOG.md: cannot read it ({e})")
         changelog_now = ""
     for tag in release_tags:
-        if git_out("cat-file", "-e", f"{tag}:CHANGELOG.md") is None:
+        # refs/tags/ in full: a ref of the same short name elsewhere (refs/v2.0.0) would win.
+        ref = f"refs/tags/{tag}"
+        listing = git_out("ls-tree", ref, "--", "CHANGELOG.md")
+        if (
+            listing is None
+        ):  # not a tree, a missing object, a git error: unread is not "absent"
+            bad(f"CHANGELOG.md: cannot read tag {tag} to check its released section")
+            continue
+        if not listing.strip():
             continue  # a tag from before the file existed has no section to keep
-        tagged = git_out("show", f"{tag}:CHANGELOG.md")
+        tagged = git_out("show", f"{ref}:CHANGELOG.md")
         if tagged is None:
             bad(f"CHANGELOG.md: cannot read it at {tag}")
             continue
