@@ -5631,6 +5631,78 @@ sed_i '/assets\/scorecard\.svg/d' "$FX/README.md"
 NONNA_LINT_ROOT="$FX" python3 "$LINT" >/dev/null 2>&1; check "lint: a README that does not show the scorecard has no alt text to check" 0 "$?"
 rm -rf "$FX"
 
+# Every ADR is in the ADR index: ADR-0018 went a month unlisted, and nothing checked it.
+FX="$(lint_fixture)"
+printf '# ADR 0099 — A decision nobody indexed\n' > "$FX/docs/adr/0099-a-decision-nobody-indexed.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: an ADR missing from the ADR index fails" 1 "$?"
+contains "lint: names the ADR the index lacks" "0099-a-decision-nobody-indexed.md" "$out"
+rm -rf "$FX"
+
+# A released CHANGELOG section stays as released: 2.0.0's grew for weeks after its tag, so its
+# notes no longer said what shipped. The check reads each v* tag's own CHANGELOG.md.
+FX="$(lint_fixture)"
+{ "${GIT[@]}" -C "$FX" init -q && "${GIT[@]}" -C "$FX" add CHANGELOG.md \
+    && "${GIT[@]}" -C "$FX" commit -qm released && "${GIT[@]}" -C "$FX" tag v2.0.0; } >/dev/null 2>&1
+NONNA_LINT_ROOT="$FX" NONNA_LINT_REQUIRE_TAGS=1 python3 "$LINT" >/dev/null 2>&1; check "lint: a released CHANGELOG section as tagged passes" 0 "$?"
+python3 -c "
+import sys; p = sys.argv[1]; s = open(p, encoding='utf-8').read()
+open(p, 'w', encoding='utf-8').write(s.replace('## [2.0.0]', '## [2.0.1] — x\n\n- a later fix\n\n## [2.0.0]', 1))" "$FX/CHANGELOG.md"
+NONNA_LINT_ROOT="$FX" NONNA_LINT_REQUIRE_TAGS=1 python3 "$LINT" >/dev/null 2>&1; check "lint: a new section above a released one passes" 0 "$?"
+python3 -c "
+import sys; p = sys.argv[1]; s = open(p, encoding='utf-8').read()
+i = s.index('## [2.0.0]'); j = s.index('\n', i) + 1
+open(p, 'w', encoding='utf-8').write(s[:j] + '\n- appended after the release\n' + s[j:])" "$FX/CHANGELOG.md"
+out="$(NONNA_LINT_ROOT="$FX" NONNA_LINT_REQUIRE_TAGS=1 python3 "$LINT" 2>&1)"; check "lint: an edit to a released CHANGELOG section fails" 1 "$?"
+contains "lint: names the released version and its tag" "[2.0.0] section differs from its text at v2.0.0" "$out"
+rm -rf "$FX"
+# Without tags the check cannot run. A copy with none passes where tags are not required (the
+# unmodified-copy case above, a contributor's shallow clone) and fails closed where CI requires them.
+FX="$(lint_fixture)"
+out="$(NONNA_LINT_ROOT="$FX" NONNA_LINT_REQUIRE_TAGS=1 python3 "$LINT" 2>&1)"; check "lint: with tags required, a tree with no version tags fails" 1 "$?"
+contains "lint: says there are no version tags to check against" "no version tags" "$out"
+rm -rf "$FX"
+
+# A tag is read as refs/tags/<tag>: a ref outside refs/tags with the same short name shadows it in a
+# plain `git show v2.0.0:…`, and the check would compare against the wrong text (security review).
+FX="$(lint_fixture)"
+{ "${GIT[@]}" -C "$FX" init -q && "${GIT[@]}" -C "$FX" add CHANGELOG.md \
+    && "${GIT[@]}" -C "$FX" commit -qm released && "${GIT[@]}" -C "$FX" tag v2.0.0; } >/dev/null 2>&1
+python3 -c "
+import sys; p = sys.argv[1]; s = open(p, encoding='utf-8').read()
+i = s.index('## [2.0.0]'); j = s.index('\n', i) + 1
+open(p, 'w', encoding='utf-8').write(s[:j] + '\n- not what was released\n' + s[j:])" "$FX/CHANGELOG.md"
+{ "${GIT[@]}" -C "$FX" commit -qam shadow && "${GIT[@]}" -C "$FX" update-ref refs/v2.0.0 HEAD \
+    && "${GIT[@]}" -C "$FX" checkout -q refs/tags/v2.0.0 -- CHANGELOG.md; } >/dev/null 2>&1
+NONNA_LINT_ROOT="$FX" NONNA_LINT_REQUIRE_TAGS=1 python3 "$LINT" >/dev/null 2>&1; check "lint: a ref outside refs/tags does not stand in for a release tag" 0 "$?"
+rm -rf "$FX"
+# A tag that cannot be read as a tree is a failure, not a release that had no CHANGELOG to keep.
+FX="$(lint_fixture)"
+{ "${GIT[@]}" -C "$FX" init -q \
+    && "${GIT[@]}" -C "$FX" tag v9.9.9 "$("${GIT[@]}" -C "$FX" hash-object -w CHANGELOG.md)"; } >/dev/null 2>&1
+out="$(NONNA_LINT_ROOT="$FX" NONNA_LINT_REQUIRE_TAGS=1 python3 "$LINT" 2>&1)"; check "lint: a release tag that is not a tree fails" 1 "$?"
+contains "lint: names the tag it cannot read" "cannot read tag v9.9.9" "$out"
+rm -rf "$FX"
+# Deleting a released section is an edit too.
+FX="$(lint_fixture)"
+{ "${GIT[@]}" -C "$FX" init -q && "${GIT[@]}" -C "$FX" add CHANGELOG.md \
+    && "${GIT[@]}" -C "$FX" commit -qm released && "${GIT[@]}" -C "$FX" tag v2.0.0; } >/dev/null 2>&1
+python3 -c "
+import sys; p = sys.argv[1]; s = open(p, encoding='utf-8').read()
+i = s.index('## [2.0.0]'); j = s.index('## [', i + 1)
+open(p, 'w', encoding='utf-8').write(s[:i] + s[j:])" "$FX/CHANGELOG.md"
+out="$(NONNA_LINT_ROOT="$FX" NONNA_LINT_REQUIRE_TAGS=1 python3 "$LINT" 2>&1)"; check "lint: deleting a released CHANGELOG section fails" 1 "$?"
+contains "lint: names the deleted release" "[2.0.0] section differs from its text at v2.0.0" "$out"
+rm -rf "$FX"
+# The check reads the tree's own repository only. A copy inside another repository, as a fixture is
+# when one encloses the temp dir, is not held to that repository's tags.
+OUTER="$(mktemp -d)"; mkdir "$OUTER/fx"
+printf '# Changelog\n\n## [2.0.0] — another project\n\n- not ours\n' > "$OUTER/CHANGELOG.md"
+cp "$OUTER/CHANGELOG.md" "$OUTER/fx/CHANGELOG.md"
+{ "${GIT[@]}" -C "$OUTER" init -q && "${GIT[@]}" -C "$OUTER" add CHANGELOG.md fx/CHANGELOG.md \
+    && "${GIT[@]}" -C "$OUTER" commit -qm other && "${GIT[@]}" -C "$OUTER" tag v2.0.0; } >/dev/null 2>&1
+rm -rf "$OUTER/fx"; FX="$(lint_fixture)"; mv "$FX" "$OUTER/fx"; FX="$OUTER/fx"
+NONNA_LINT_ROOT="$FX" python3 "$LINT" >/dev/null 2>&1; check "lint: a copy inside another repository is not held to its tags" 0 "$?"
+rm -rf "$OUTER"
 echo "== bench/examples.py (examples/, round 3's rule-picked runs, word for word) =="
 # examples/ quotes benchmark runs verbatim; a page that no longer matches its sources is a
 # misquote. The bench's own tests cover the builder; this runs its --check on the real tree, in CI.
