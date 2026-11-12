@@ -53,7 +53,7 @@ never offered to the model, so it is not counted.
 - **Tests** — `tests/run.sh` (gate golden tests; the count is derived and drift-linted, never
   hardcoded) + `tests/harness_lint.py` (self-validation).
 - **Stacks** — `stacks/{python,typescript,go,rust}` wiring the test gate.
-- **Plugin** — `.claude/.claude-plugin/plugin.json` (2.0.0, `displayName`, `userConfig`:
+- **Plugin** — `.claude/.claude-plugin/plugin.json` (2.0.1, `displayName`, `userConfig`:
   `run_tests`, and `mode`, free text that fails closed to full) and `icon.png`, the directory
   listing's icon, + `.claude-plugin/marketplace.json`. Both validate with `--strict`, and the lint
   makes the claude.ai directory's checks that `--strict` does not: only the `userConfig` keys it
@@ -84,6 +84,12 @@ never offered to the model, so it is not counted.
 
 History lives in `CHANGELOG.md` and `git log`. Entries here describe the current unit of work.
 
+- **2026-11-12** — 2.0.1 is prepared, for `/release 2.0.1` once it is in `develop` (the plan's §3).
+  The CHANGELOG's `[2.0.0]` reads again as it did at `v2.0.0`, its pre-set date included, and the
+  post-tag work is a `[2.0.1]` section above it, with how each install upgrades: a Claude Code plugin
+  stays at its installed version until it is updated. Every manifest says 2.0.1. The lint now fails
+  an ADR missing from the ADR index and a released CHANGELOG section that differs from its tag; CI's
+  harness-lint job fetches every tag and fails without them. D1 is decided: A, vendor and adapt.
 - **2026-11-11** — Planned the next two releases in [docs/plans/v2.1.md](plans/v2.1.md), proposed and
   awaiting the maintainer's decisions (its §7). 2.0.1 ships what `main` gained after `v2.0.0`: a
   plugin's cache is keyed by its `version`, so existing installs still run the 2.0.0 content without
@@ -670,8 +676,11 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
 
 ## Next / open
 
-- [The 2.0.1 and 2.1.0 plan](plans/v2.1.md): D1 is decided (A, vendor and adapt, 2026-11-12); D2–D6
-  are open. 2.0.1 comes first: #54's HIGH fix is merged but has reached no existing plugin install.
+- Release 2.0.1, which is prepared: once it is in `develop`, `/release 2.0.1` (a human merges
+  `develop` into `main` and tags it), then close #54, finish #17 (delete `chore/17-demo`, run the
+  go/no-go list) and resubmit to the claude.ai directory. #54's HIGH fix has reached no existing
+  plugin install until then. [The plan](plans/v2.1.md): D1 is decided (A, 2026-11-12); D2–D6 are
+  open.
 - Resubmit the plugin to the claude.ai directory: its validator is the only check of the fixes
   above that `claude plugin validate --strict` does not make. Expected: no blocking finding. The
   holds left are its reviewer's: the credential patterns in `secret-scan.sh` and `guard-branch.sh`,
