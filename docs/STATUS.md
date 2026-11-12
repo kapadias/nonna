@@ -90,7 +90,8 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   #54's fix. 2.1.0 closes the gates that still fail open (#38, #39, the branch guard's unrunnable
   checks), then brings in the arena-skill tournament as a user-only `/arena` whose verdicts are
   schema-checked and whose referee includes the project's test suite, measured by a benchmark round 4
-  before the README claims anything. ADR-0018 is now in the ADR index.
+  before the README claims anything. It records one measured wave of upstream's arena reviewing the plan:
+  ten competitors at about 375K tokens and 30 minutes each. ADR-0018 is now in the ADR index.
 - **2026-10-03** — Every path a hook command runs or sources is now a literal `${CLAUDE_PLUGIN_ROOT}/…`
   (ADR-0018, part of #17). The claude.ai plugin **directory** validator — stricter than
   `claude plugin validate`, which still passes — refuses a plugin whose loader-run command sources or
