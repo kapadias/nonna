@@ -5682,6 +5682,27 @@ FX="$(lint_fixture)"
 out="$(NONNA_LINT_ROOT="$FX" NONNA_LINT_REQUIRE_TAGS=1 python3 "$LINT" 2>&1)"; check "lint: a release tag that is not a tree fails" 1 "$?"
 contains "lint: names the tag it cannot read" "cannot read tag v9.9.9" "$out"
 rm -rf "$FX"
+# Deleting a released section is an edit too.
+FX="$(lint_fixture)"
+{ "${GIT[@]}" -C "$FX" init -q && "${GIT[@]}" -C "$FX" add CHANGELOG.md \
+    && "${GIT[@]}" -C "$FX" commit -qm released && "${GIT[@]}" -C "$FX" tag v2.0.0; } >/dev/null 2>&1
+python3 -c "
+import sys; p = sys.argv[1]; s = open(p, encoding='utf-8').read()
+i = s.index('## [2.0.0]'); j = s.index('## [', i + 1)
+open(p, 'w', encoding='utf-8').write(s[:i] + s[j:])" "$FX/CHANGELOG.md"
+out="$(NONNA_LINT_ROOT="$FX" NONNA_LINT_REQUIRE_TAGS=1 python3 "$LINT" 2>&1)"; check "lint: deleting a released CHANGELOG section fails" 1 "$?"
+contains "lint: names the deleted release" "[2.0.0] section differs from its text at v2.0.0" "$out"
+rm -rf "$FX"
+# The check reads the tree's own repository only. A copy inside another repository, as a fixture is
+# when one encloses the temp dir, is not held to that repository's tags.
+OUTER="$(mktemp -d)"; mkdir "$OUTER/fx"
+printf '# Changelog\n\n## [2.0.0] — another project\n\n- not ours\n' > "$OUTER/CHANGELOG.md"
+cp "$OUTER/CHANGELOG.md" "$OUTER/fx/CHANGELOG.md"
+{ "${GIT[@]}" -C "$OUTER" init -q && "${GIT[@]}" -C "$OUTER" add CHANGELOG.md fx/CHANGELOG.md \
+    && "${GIT[@]}" -C "$OUTER" commit -qm other && "${GIT[@]}" -C "$OUTER" tag v2.0.0; } >/dev/null 2>&1
+rm -rf "$OUTER/fx"; FX="$(lint_fixture)"; mv "$FX" "$OUTER/fx"; FX="$OUTER/fx"
+NONNA_LINT_ROOT="$FX" python3 "$LINT" >/dev/null 2>&1; check "lint: a copy inside another repository is not held to its tags" 0 "$?"
+rm -rf "$OUTER"
 echo "== bench/examples.py (examples/, round 3's rule-picked runs, word for word) =="
 # examples/ quotes benchmark runs verbatim; a page that no longer matches its sources is a
 # misquote. The bench's own tests cover the builder; this runs its --check on the real tree, in CI.

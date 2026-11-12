@@ -1508,17 +1508,29 @@ GIT_ENV["GIT_NO_REPLACE_OBJECTS"] = "1"
 
 
 def git_out(*args: str) -> str | None:
-    """git's stdout, or None when git is missing or the command fails."""
+    """git's stdout as UTF-8, or None when git is missing, fails, or writes what UTF-8 cannot read.
+
+    The encoding is explicit: on Windows the locale's is cp1252, which cannot decode the CHANGELOG."""
     try:
         r = subprocess.run(
-            ["git", "-C", ROOT, *args], capture_output=True, text=True, env=GIT_ENV
+            ["git", "-C", ROOT, *args],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            env=GIT_ENV,
         )
-    except OSError:
+    except (OSError, UnicodeDecodeError):
         return None
     return r.stdout if r.returncode == 0 else None
 
 
-tag_list = git_out("tag", "--list", "v[0-9]*")
+# Only the tree's own repository: with no .git of its own, a copy inside another repository (a
+# fixture, when one encloses the temp dir) would otherwise be held to that repository's tags.
+toplevel = git_out("rev-parse", "--show-toplevel")
+own_repository = toplevel is not None and os.path.normcase(
+    os.path.realpath(toplevel.strip())
+) == os.path.normcase(os.path.realpath(ROOT))
+tag_list = git_out("tag", "--list", "v[0-9]*") if own_repository else None
 release_tags = sorted(tag_list.split()) if tag_list else []
 if not release_tags:
     if os.environ.get("NONNA_LINT_REQUIRE_TAGS") == "1":
