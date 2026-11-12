@@ -11,8 +11,9 @@ that changes, so a plugin installed at 2.0.0 has none of them, the branch guard'
 
 ### Upgrading from 2.0.0
 
-- **Claude Code:** in `/plugin`, update the nonna marketplace, which updates the installed plugin
-  too, or turn on its auto-update: a third-party marketplace does not update on its own.
+- **Claude Code:** `claude plugin update nonna@nonna` in a shell, or in `/plugin` open nonna on the
+  Installed tab and select Update now. A third-party marketplace does not update on its own; to have
+  it do so, select it on `/plugin`'s Marketplaces tab and choose Enable auto-update.
 - **Gemini CLI:** `gemini extensions update nonna`.
 - **A copy-in install:** run `install.sh` again from this release.
 - 2.0.0 was published on 2026-10-01. Its heading's date, 2026-10-08, was set before the release
@@ -68,7 +69,10 @@ that changes, so a plugin installed at 2.0.0 has none of them, the branch guard'
   where it drops every one (Git Bash), the command is read without them; where it keeps them (Linux,
   macOS), every CR stays (a CR before `#` starts no comment there); where a command could switch that
   (Cygwin's `igncr`), a command that holds a CR is refused. Every other field, a path or a Codex
-  patch, is read exactly as the JSON holds it, and only the CRLF a jq.exe adds is undone.
+  patch, is read exactly as the JSON holds it, and only the CRLF a jq.exe adds is undone. While she
+  is off, the guard still refuses a command it cannot read that could touch her settings, and a CR's
+  JSON escape no longer splits `git` or `nonna` past that check (`gi<CR>t config --unset
+  non<CR>na.mode` had passed).
 - **The `mode` option takes its values from its description, not from a list.** The plugin
   directory's validator rejects any key in a `userConfig` field but `type`, `title`, `description`,
   `required`, `default`, `sensitive`, `multiple`, `min` and `max`, and `options` is none of them, so

@@ -89,7 +89,10 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
   post-tag work is a `[2.0.1]` section above it, with how each install upgrades: a Claude Code plugin
   stays at its installed version until it is updated. Every manifest says 2.0.1. The lint now fails
   an ADR missing from the ADR index and a released CHANGELOG section that differs from its tag; CI's
-  harness-lint job fetches every tag and fails without them. D1 is decided: A, vendor and adapt.
+  harness-lint job fetches every tag and fails without them. That check reads only the tree's own
+  repository, by `refs/tags/`, decodes git's output as UTF-8 (Windows' cp1252 cannot read the
+  CHANGELOG) and fails on a tag it cannot read; the reviews found each. D1 is decided (A, vendor and
+  adapt), and so is D5 (two releases).
 - **2026-11-11** — Planned the next two releases in [docs/plans/v2.1.md](plans/v2.1.md), proposed and
   awaiting the maintainer's decisions (its §7). 2.0.1 ships what `main` gained after `v2.0.0`: a
   plugin's cache is keyed by its `version`, so existing installs still run the 2.0.0 content without
@@ -679,8 +682,9 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
 - Release 2.0.1, which is prepared: once it is in `develop`, `/release 2.0.1` (a human merges
   `develop` into `main` and tags it), then close #54, finish #17 (delete `chore/17-demo`, run the
   go/no-go list) and resubmit to the claude.ai directory. #54's HIGH fix has reached no existing
-  plugin install until then. [The plan](plans/v2.1.md): D1 is decided (A, 2026-11-12); D2–D6 are
-  open.
+  plugin install until then. [The plan](plans/v2.1.md): D1 (A) and D5 (two releases) are decided;
+  D2–D4 and D6 are open. `/release` has no step that dates the CHANGELOG heading, which a tag then
+  freezes: add one, since a pre-set date is how 2.0.0's heading drifted.
 - Resubmit the plugin to the claude.ai directory: its validator is the only check of the fixes
   above that `claude plugin validate --strict` does not make. Expected: no blocking finding. The
   holds left are its reviewer's: the credential patterns in `secret-scan.sh` and `guard-branch.sh`,
