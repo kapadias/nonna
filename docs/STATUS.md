@@ -670,8 +670,8 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
 
 ## Next / open
 
-- Decide [the 2.0.1 and 2.1.0 plan](plans/v2.1.md) (its §7), then cut 2.0.1 first: #54's HIGH fix is
-  merged but has reached no existing plugin install.
+- [The 2.0.1 and 2.1.0 plan](plans/v2.1.md): D1 is decided (A, vendor and adapt, 2026-11-12); D2–D6
+  are open. 2.0.1 comes first: #54's HIGH fix is merged but has reached no existing plugin install.
 - Resubmit the plugin to the claude.ai directory: its validator is the only check of the fixes
   above that `claude plugin validate --strict` does not make. Expected: no blocking finding. The
   holds left are its reviewer's: the credential patterns in `secret-scan.sh` and `guard-branch.sh`,
