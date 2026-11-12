@@ -25,10 +25,16 @@ Every check below fails the build (boundaries.md: deterministic gates decide):
   - README translations: README.md links each README.<lang>.md, which marks the
     numbers README.md marks and carries its code blocks, link targets and inline
     code, so none goes stale in a language.
+  - release record: every docs/adr/NNNN-*.md is in the ADR index, and each
+    CHANGELOG.md section with a v<version> tag reads as it did at that tag.
 
 NONNA_LINT_ROOT points the linter at a different tree. It exists so tests/run.sh
 can golden-test the linter itself against mutated copies of this repo — a linter
 with no failing-case test is an unverified gate. CI never sets it.
+
+NONNA_LINT_REQUIRE_TAGS=1 makes a tree with no version tags a failure, not a
+skipped check. CI sets it, with every tag fetched: a contributor's shallow clone
+or a test fixture has none, and there the release-section check cannot run.
 """
 
 from __future__ import annotations
@@ -449,15 +455,15 @@ for md in sorted(set(md_files)):
 # `git tag` but no `git push` while its own step 4 said "Push the tag".
 # Only the mechanically provable case is checked: a backticked `git <verb>` in
 # the body of a command that declares allowed-tools but does not grant that verb.
-FRONT = re.compile(r"^---\n(.*?)\n---\n", re.S)
+FRONT = re.compile(r"^---\n(.*?)\n---\n", re.DOTALL)
 GIT_IN_SPAN = re.compile(r"`[^`]*\bgit\s+([a-z-]+)")
-NEGATED = re.compile(r"\b(do not|don't|never|instead of)\b", re.I)
+NEGATED = re.compile(r"\b(do not|don't|never|instead of)\b", re.IGNORECASE)
 for path in sorted(glob.glob(f"{ROOT}/.claude/skills/*/SKILL.md")):
     raw = open(path, encoding="utf-8").read()
     m = FRONT.match(raw)
     if not m:
         continue
-    at = re.search(r"^allowed-tools:\s*(.+)$", m.group(1), re.M)
+    at = re.search(r"^allowed-tools:\s*(.+)$", m.group(1), re.MULTILINE)
     if not at:
         continue  # unrestricted by design — nothing can be under-granted
     granted = set(re.findall(r"Bash\(git\s+([a-z-]+)", at.group(1)))
@@ -479,13 +485,13 @@ for path in sorted(glob.glob(f"{ROOT}/.claude/skills/*/SKILL.md")):
 # the line pre-approves more than the line. So each ! line needs a rule that is
 # exactly it: Bash(<line>), or Bash(<line without its $ARGUMENTS>:*). Claude Code
 # runs two forms, an inline !`…` and a fenced ```! block; both are held to it.
-BANG = re.compile(r"(?:^|\s)!`([^`]+)`|```!\s*\n?([\s\S]*?)\n?```", re.M)
+BANG = re.compile(r"(?:^|\s)!`([^`]+)`|```!\s*\n?([\s\S]*?)\n?```", re.MULTILINE)
 for path in sorted(glob.glob(f"{ROOT}/.claude/skills/*/SKILL.md")):
     raw = open(path, encoding="utf-8").read()
     m = FRONT.match(raw)
     if not m:
         continue
-    at = re.search(r"^allowed-tools:\s*(.+)$", m.group(1), re.M)
+    at = re.search(r"^allowed-tools:\s*(.+)$", m.group(1), re.MULTILINE)
     rules = (
         set(re.findall(r"Bash\(([^()]*(?:\([^()]*\)[^()]*)*)\)", at.group(1)))
         if at
@@ -531,7 +537,7 @@ for path in sorted(glob.glob(f"{ROOT}/.claude/skills/*/SKILL.md")):
     m = FRONT.match(raw)
     if not m:
         continue
-    at = re.search(r"^allowed-tools:\s*(.+)$", m.group(1), re.M)
+    at = re.search(r"^allowed-tools:\s*(.+)$", m.group(1), re.MULTILINE)
     if not at:
         continue
     for g in GRANT.finditer(at.group(1)):
@@ -556,7 +562,7 @@ for path in sorted(glob.glob(f"{ROOT}/.claude/skills/*/SKILL.md")):
     m = FRONT.match(raw)
     if not m:
         continue
-    at = re.search(r"^allowed-tools:\s*(.+)$", m.group(1), re.M)
+    at = re.search(r"^allowed-tools:\s*(.+)$", m.group(1), re.MULTILINE)
     if not at:
         continue
     where = rel_path(path)
@@ -863,7 +869,9 @@ for patt in ("skills/*/SKILL.md", "agents/*.md"):
     for p in glob.glob(f"{ROOT}/.claude/{patt}"):
         if fm_value(frontmatter(p) or [], "disable-model-invocation") == "true":
             continue
-        m = re.search(r"^description:\s*(.+)$", open(p, encoding="utf-8").read(), re.M)
+        m = re.search(
+            r"^description:\s*(.+)$", open(p, encoding="utf-8").read(), re.MULTILINE
+        )
         if m:
             desc_chars += len(m.group(1))
 if desc_chars > MAX_DESCRIPTION_CHARS:
@@ -1354,9 +1362,9 @@ def check_scorecard(rel: str, text: str) -> None:
     # Each place the README shows the scorecard: its offset in the README and its alt text (None: none).
     shown: list[tuple[int, str | None]] = []
     for tag in re.finditer(
-        r'<img\b[^>]*\bsrc="assets/scorecard\.svg"[^>]*>', text, re.I
+        r'<img\b[^>]*\bsrc="assets/scorecard\.svg"[^>]*>', text, re.IGNORECASE
     ):
-        alt = re.search(r'\balt="([^"]*)"', tag.group(0), re.I)
+        alt = re.search(r'\balt="([^"]*)"', tag.group(0), re.IGNORECASE)
         shown.append((tag.start(), alt.group(1) if alt else None))
     for md in re.finditer(r"!\[([^\]]*)\]\(assets/scorecard\.svg[^)]*\)", text):
         shown.append((md.start(), md.group(1)))
@@ -1367,8 +1375,8 @@ def check_scorecard(rel: str, text: str) -> None:
         except FileNotFoundError:
             bad(f"{rel}: shows {SCORECARD}, which is missing")
         else:
-            title = re.search(r"<title[^>]*>(.*?)</title>", svg, re.S)
-            desc = re.search(r"<desc[^>]*>(.*?)</desc>", svg, re.S)
+            title = re.search(r"<title[^>]*>(.*?)</title>", svg, re.DOTALL)
+            desc = re.search(r"<desc[^>]*>(.*?)</desc>", svg, re.DOTALL)
             says = (
                 f"{html.unescape(title.group(1))}. {html.unescape(desc.group(1))}"
                 if title and desc
@@ -1400,13 +1408,13 @@ check_scorecard("README.md", README_TEXT)
 # target and inline code span README.md has, at least as often (it may add its own). So a number, a
 # command, a link or a passage README.md gains fails here until every translation follows; the
 # wording around them is a reviewer's to check. README.md's top line links each.
-FENCE = re.compile(r"^[ \t]*```.*?^[ \t]*```", re.M | re.S)
+FENCE = re.compile(r"^[ \t]*```.*?^[ \t]*```", re.MULTILINE | re.DOTALL)
 SHELL_FENCE = re.compile(r"[ \t]*```(?:bash|sh|shell)\b")
-SHELL_COMMENT = re.compile(r"[ \t]*(?<!\S)#.*$", re.M)
+SHELL_COMMENT = re.compile(r"[ \t]*(?<!\S)#.*$", re.MULTILINE)
 CODE_SPAN = re.compile(r"`([^`]+)`")
 HTML_TARGET = re.compile(r'\b(?:href|src|srcset)="([^"]+)"')
 AUTOLINK = re.compile(r"<(https?://[^>]+)>")
-REF_DEF = re.compile(r"^\s*\[[^\]]+\]:\s*(\S+)", re.M)
+REF_DEF = re.compile(r"^\s*\[[^\]]+\]:\s*(\S+)", re.MULTILINE)
 
 
 def code_blocks(text: str) -> list[str]:
@@ -1462,6 +1470,84 @@ for path in sorted(glob.glob(f"{ROOT}/README.*.md")):
         )
     if f"]({rel})" not in README_TEXT:
         bad(f"README.md: does not link {rel} (its top line links every translation)")
+
+# --- release record: every ADR indexed; a released CHANGELOG section reads as it did at its tag ---
+# ADR-0018 went a month unlisted in the index, and 2.0.0's CHANGELOG section grew for weeks after
+# its tag, so its release notes no longer said what had shipped. Both are records; neither drifts.
+ADR_DIR = os.path.join(ROOT, "docs", "adr")
+ADR_FILE = re.compile(r"\d{4}-.+\.md")
+try:
+    with open(os.path.join(ADR_DIR, "README.md"), encoding="utf-8") as fh:
+        adr_index = fh.read()
+    adr_names = sorted(os.listdir(ADR_DIR))
+except OSError as e:
+    bad(f"docs/adr: cannot read the ADRs or their index ({e})")
+    adr_index, adr_names = "", []
+for name in adr_names:
+    if ADR_FILE.fullmatch(name) and f"]({name})" not in adr_index:
+        bad(f"docs/adr/README.md: does not list {name}: every ADR is in the index")
+
+
+def changelog_section(text: str, version: str) -> str | None:
+    """The `## [version]` section of a changelog, its heading to the next `## [`, or None."""
+    lines = text.splitlines(keepends=True)
+    for i, line in enumerate(lines):
+        if line.startswith(f"## [{version}]"):
+            end = next(
+                (j for j in range(i + 1, len(lines)) if lines[j].startswith("## [")),
+                len(lines),
+            )
+            return "".join(lines[i:end])
+    return None
+
+
+# Read the tags of this tree's own repository: git's variables could point elsewhere, and a replace
+# ref could stand in for what a tag holds (#39).
+GIT_ENV = {k: v for k, v in os.environ.items() if not k.startswith("GIT_")}
+GIT_ENV["GIT_NO_REPLACE_OBJECTS"] = "1"
+
+
+def git_out(*args: str) -> str | None:
+    """git's stdout, or None when git is missing or the command fails."""
+    try:
+        r = subprocess.run(
+            ["git", "-C", ROOT, *args], capture_output=True, text=True, env=GIT_ENV
+        )
+    except OSError:
+        return None
+    return r.stdout if r.returncode == 0 else None
+
+
+tag_list = git_out("tag", "--list", "v[0-9]*")
+release_tags = sorted(tag_list.split()) if tag_list else []
+if not release_tags:
+    if os.environ.get("NONNA_LINT_REQUIRE_TAGS") == "1":
+        bad(
+            "CHANGELOG.md: no version tags to check released sections against (CI fetches them all)"
+        )
+else:
+    try:
+        with open(os.path.join(ROOT, "CHANGELOG.md"), encoding="utf-8") as fh:
+            changelog_now = fh.read()
+    except OSError as e:
+        bad(f"CHANGELOG.md: cannot read it ({e})")
+        changelog_now = ""
+    for tag in release_tags:
+        if git_out("cat-file", "-e", f"{tag}:CHANGELOG.md") is None:
+            continue  # a tag from before the file existed has no section to keep
+        tagged = git_out("show", f"{tag}:CHANGELOG.md")
+        if tagged is None:
+            bad(f"CHANGELOG.md: cannot read it at {tag}")
+            continue
+        released = changelog_section(tagged, tag[1:])
+        if (
+            released is not None
+            and changelog_section(changelog_now, tag[1:]) != released
+        ):
+            bad(
+                f"CHANGELOG.md: the released [{tag[1:]}] section differs from its text at {tag}: "
+                "a release's notes stay as released, so later changes go in a new section above it"
+            )
 
 if offenders:
     print("Harness lint FAILED:")

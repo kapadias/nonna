@@ -5631,6 +5631,37 @@ sed_i '/assets\/scorecard\.svg/d' "$FX/README.md"
 NONNA_LINT_ROOT="$FX" python3 "$LINT" >/dev/null 2>&1; check "lint: a README that does not show the scorecard has no alt text to check" 0 "$?"
 rm -rf "$FX"
 
+# Every ADR is in the ADR index: ADR-0018 went a month unlisted, and nothing checked it.
+FX="$(lint_fixture)"
+printf '# ADR 0099 — A decision nobody indexed\n' > "$FX/docs/adr/0099-a-decision-nobody-indexed.md"
+out="$(NONNA_LINT_ROOT="$FX" python3 "$LINT" 2>&1)"; check "lint: an ADR missing from the ADR index fails" 1 "$?"
+contains "lint: names the ADR the index lacks" "0099-a-decision-nobody-indexed.md" "$out"
+rm -rf "$FX"
+
+# A released CHANGELOG section stays as released: 2.0.0's grew for weeks after its tag, so its
+# notes no longer said what shipped. The check reads each v* tag's own CHANGELOG.md.
+FX="$(lint_fixture)"
+{ "${GIT[@]}" -C "$FX" init -q && "${GIT[@]}" -C "$FX" add CHANGELOG.md \
+    && "${GIT[@]}" -C "$FX" commit -qm released && "${GIT[@]}" -C "$FX" tag v2.0.0; } >/dev/null 2>&1
+NONNA_LINT_ROOT="$FX" NONNA_LINT_REQUIRE_TAGS=1 python3 "$LINT" >/dev/null 2>&1; check "lint: a released CHANGELOG section as tagged passes" 0 "$?"
+python3 -c "
+import sys; p = sys.argv[1]; s = open(p, encoding='utf-8').read()
+open(p, 'w', encoding='utf-8').write(s.replace('## [2.0.0]', '## [2.0.1] — x\n\n- a later fix\n\n## [2.0.0]', 1))" "$FX/CHANGELOG.md"
+NONNA_LINT_ROOT="$FX" NONNA_LINT_REQUIRE_TAGS=1 python3 "$LINT" >/dev/null 2>&1; check "lint: a new section above a released one passes" 0 "$?"
+python3 -c "
+import sys; p = sys.argv[1]; s = open(p, encoding='utf-8').read()
+i = s.index('## [2.0.0]'); j = s.index('\n', i) + 1
+open(p, 'w', encoding='utf-8').write(s[:j] + '\n- appended after the release\n' + s[j:])" "$FX/CHANGELOG.md"
+out="$(NONNA_LINT_ROOT="$FX" NONNA_LINT_REQUIRE_TAGS=1 python3 "$LINT" 2>&1)"; check "lint: an edit to a released CHANGELOG section fails" 1 "$?"
+contains "lint: names the released version and its tag" "[2.0.0] section differs from its text at v2.0.0" "$out"
+rm -rf "$FX"
+# Without tags the check cannot run. A copy with none passes where tags are not required (the
+# unmodified-copy case above, a contributor's shallow clone) and fails closed where CI requires them.
+FX="$(lint_fixture)"
+out="$(NONNA_LINT_ROOT="$FX" NONNA_LINT_REQUIRE_TAGS=1 python3 "$LINT" 2>&1)"; check "lint: with tags required, a tree with no version tags fails" 1 "$?"
+contains "lint: says there are no version tags to check against" "no version tags" "$out"
+rm -rf "$FX"
+
 echo "== bench/examples.py (examples/, round 3's rule-picked runs, word for word) =="
 # examples/ quotes benchmark runs verbatim; a page that no longer matches its sources is a
 # misquote. The bench's own tests cover the builder; this runs its --check on the real tree, in CI.

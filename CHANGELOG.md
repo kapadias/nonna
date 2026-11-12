@@ -25,6 +25,11 @@ that changes, so a plugin installed at 2.0.0 has none of them, the branch guard'
   `assets/nonna.svg`, the one image drawn by hand, which it reads and never writes, and `--check`
   fails on an icon that is missing, the wrong size, over the byte budget or rendered from a logo
   that has since changed.
+- **The lint keeps the release record.** Every ADR is listed in `docs/adr/README.md`, and a
+  CHANGELOG section with a `v<version>` tag reads as it did at that tag. ADR-0018 went a month
+  unlisted, and 2.0.0's section grew for weeks after its release. CI fetches every tag and fails
+  without them (`NONNA_LINT_REQUIRE_TAGS`); where there are none, as in a shallow clone, the check is
+  skipped.
 
 ### Changed
 
