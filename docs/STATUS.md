@@ -84,6 +84,10 @@ never offered to the model, so it is not counted.
 
 History lives in `CHANGELOG.md` and `git log`. Entries here describe the current unit of work.
 
+- **2026-11-17** — Released 2.0.1 (`v2.0.1`, tagged on `main`). Its CHANGELOG heading now carries
+  the day it was tagged, 2026-11-17, not 2026-11-12, the day the release was prepared: from the tag
+  on, the lint keeps the section as released, so a pre-set date would have stayed wrong, as
+  2.0.0's did. A Claude Code plugin gets it with `claude plugin update nonna@nonna`.
 - **2026-11-12** — 2.0.1 is prepared, for `/release 2.0.1` once it is in `develop` (the plan's §3).
   The CHANGELOG's `[2.0.0]` reads again as it did at `v2.0.0`, its pre-set date included, and the
   post-tag work is a `[2.0.1]` section above it, with how each install upgrades: a Claude Code plugin
@@ -679,10 +683,8 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
 
 ## Next / open
 
-- Release 2.0.1, which is prepared: once it is in `develop`, `/release 2.0.1` (a human merges
-  `develop` into `main` and tags it), then close #54, finish #17 (delete `chore/17-demo`, run the
-  go/no-go list) and resubmit to the claude.ai directory. #54's HIGH fix has reached no existing
-  plugin install until then. [The plan](plans/v2.1.md): D1 (A) and D5 (two releases) are decided;
+- After 2.0.1: close #54, finish #17 (delete `chore/17-demo`, run the go/no-go list) and resubmit
+  to the claude.ai directory. [The plan](plans/v2.1.md): D1 (A) and D5 (two releases) are decided;
   D2–D4 and D6 are open. `/release` has no step that dates the CHANGELOG heading, which a tag then
   freezes: add one, since a pre-set date is how 2.0.0's heading drifted.
 - Resubmit the plugin to the claude.ai directory: its validator is the only check of the fixes
