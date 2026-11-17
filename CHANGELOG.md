@@ -3,7 +3,7 @@
 All notable changes to Nonna. Format follows [Keep a Changelog](https://keepachangelog.com/1.1.0/);
 versioning is [SemVer](https://semver.org/spec/v2.0.0.html).
 
-## [2.0.1] — 2026-11-12 — "Merged Is Not Shipped"
+## [2.0.1] — 2026-11-17 — "Merged Is Not Shipped"
 
 The fixes merged after 2.0.0, released. Claude Code keeps an installed plugin at its version until
 that changes, so a plugin installed at 2.0.0 has none of them, the branch guard's Unicode-space fix
