@@ -84,10 +84,12 @@ never offered to the model, so it is not counted.
 
 History lives in `CHANGELOG.md` and `git log`. Entries here describe the current unit of work.
 
-- **2026-11-17** — 2.0.1 is dated for its tag. The CHANGELOG's `[2.0.1]` heading says 2026-11-17,
-  the day the maintainer asked for the release and `v2.0.1` is to be tagged on `main`, not
-  2026-11-12, the day it was prepared: from the tag on, the lint keeps the section as released, so
-  the date has to be the tag's before the tag is made.
+- **2026-11-17** — 2.0.1 is released. `v2.0.1` is on `main`'s merge commit (`5d806f0`), and
+  `release.yml` published the GitHub release with the CHANGELOG's `[2.0.1]` section as its notes.
+  The maintainer pushed the tag: the cloud session that prepared the release could push its branch,
+  not a tag (HTTP 403). The heading says 2026-11-17, the tag's day, not 2026-11-12, the day 2.0.1
+  was prepared: from the tag on, the lint keeps the section as released, so the date had to be the
+  tag's before the tag was made.
 - **2026-11-12** — 2.0.1 is prepared, for `/release 2.0.1` once it is in `develop` (the plan's §3).
   The CHANGELOG's `[2.0.0]` reads again as it did at `v2.0.0`, its pre-set date included, and the
   post-tag work is a `[2.0.1]` section above it, with how each install upgrades: a Claude Code plugin
@@ -683,13 +685,10 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
 
 ## Next / open
 
-- Tag `v2.0.1` on `main` once this date fix reaches it. The tag publishes 2.0.1's notes as a GitHub
-  release, which is also what Gemini CLI installs; a Claude Code plugin already gets 2.0.1 from `main`
-  with `claude plugin update nonna@nonna`. Then close #54, finish #17 (delete `chore/17-demo`, run
-  the go/no-go list) and resubmit to the claude.ai directory. [The plan](plans/v2.1.md): D1 (A) and
-  D5 (two releases) are decided;
-  D2–D4 and D6 are open. `/release` has no step that dates the CHANGELOG heading, which a tag then
-  freezes: add one, since a pre-set date is how 2.0.0's heading drifted.
+- Close #54, whose fix 2.0.1 ships, finish #17 (delete `chore/17-demo`, run the go/no-go list) and
+  resubmit to the claude.ai directory. [The plan](plans/v2.1.md): D1 (A) and D5 (two releases) are
+  decided; D2–D4 and D6 are open. `/release` has no step that dates the CHANGELOG heading, which a
+  tag then freezes: add one, since a pre-set date is how 2.0.0's heading drifted.
 - Resubmit the plugin to the claude.ai directory: its validator is the only check of the fixes
   above that `claude plugin validate --strict` does not make. Expected: no blocking finding. The
   holds left are its reviewer's: the credential patterns in `secret-scan.sh` and `guard-branch.sh`,
