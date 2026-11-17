@@ -53,7 +53,7 @@ never offered to the model, so it is not counted.
 - **Tests** — `tests/run.sh` (gate golden tests; the count is derived and drift-linted, never
   hardcoded) + `tests/harness_lint.py` (self-validation).
 - **Stacks** — `stacks/{python,typescript,go,rust}` wiring the test gate.
-- **Plugin** — `.claude/.claude-plugin/plugin.json` (2.0.0, `displayName`, `userConfig`:
+- **Plugin** — `.claude/.claude-plugin/plugin.json` (2.0.1, `displayName`, `userConfig`:
   `run_tests`, and `mode`, free text that fails closed to full) and `icon.png`, the directory
   listing's icon, + `.claude-plugin/marketplace.json`. Both validate with `--strict`, and the lint
   makes the claude.ai directory's checks that `--strict` does not: only the `userConfig` keys it
@@ -71,7 +71,7 @@ never offered to the model, so it is not counted.
   reads Copilot's payloads as Claude Code's, an `apply_patch` a file at a time. The release workflow
   holds both manifests to the tag, and `review-lanes.sh` sends the hooks file to security review.
 - **Docs** — this `STATUS.md`, `INSTALL.md`, `OVERVIEW.md`, `docs/benchmarks/`, `CHANGELOG.md`, the
-  `docs/adr/` index, and ADRs 0001–0017.
+  `docs/adr/` index, and ADRs 0001–0018.
 - **Launch images** — `assets/build.py` builds the scorecard, the social preview and one card per
   trap task from round 3's files, and renders the plugin's icon from the hand-drawn logo;
   `--check` (standard library only) is run by `tests/run.sh`.
@@ -84,6 +84,23 @@ never offered to the model, so it is not counted.
 
 History lives in `CHANGELOG.md` and `git log`. Entries here describe the current unit of work.
 
+- **2026-11-12** — 2.0.1 is prepared, for `/release 2.0.1` once it is in `develop` (the plan's §3).
+  The CHANGELOG's `[2.0.0]` reads again as it did at `v2.0.0`, its pre-set date included, and the
+  post-tag work is a `[2.0.1]` section above it, with how each install upgrades: a Claude Code plugin
+  stays at its installed version until it is updated. Every manifest says 2.0.1. The lint now fails
+  an ADR missing from the ADR index and a released CHANGELOG section that differs from its tag; CI's
+  harness-lint job fetches every tag and fails without them. That check reads only the tree's own
+  repository, by `refs/tags/`, decodes git's output as UTF-8 (Windows' cp1252 cannot read the
+  CHANGELOG) and fails on a tag it cannot read; the reviews found each. D1 is decided (A, vendor and
+  adapt), and so is D5 (two releases).
+- **2026-11-11** — Planned the next two releases in [docs/plans/v2.1.md](plans/v2.1.md), proposed and
+  awaiting the maintainer's decisions (its §7). 2.0.1 ships what `main` gained after `v2.0.0`: a
+  plugin's cache is keyed by its `version`, so existing installs still run the 2.0.0 content without
+  #54's fix. 2.1.0 closes the gates that still fail open (#38, #39, the branch guard's unrunnable
+  checks), then brings in the arena-skill tournament as a user-only `/arena` whose verdicts are
+  schema-checked and whose referee includes the project's test suite, measured by a benchmark round 4
+  before the README claims anything. It records one measured wave of upstream's arena reviewing the plan:
+  ten competitors averaging about 375K tokens and 30 minutes each (the wave took 42 minutes). ADR-0018 is now in the ADR index.
 - **2026-10-03** — Every path a hook command runs or sources is now a literal `${CLAUDE_PLUGIN_ROOT}/…`
   (ADR-0018, part of #17). The claude.ai plugin **directory** validator — stricter than
   `claude plugin validate`, which still passes — refuses a plugin whose loader-run command sources or
@@ -662,6 +679,12 @@ History lives in `CHANGELOG.md` and `git log`. Entries here describe the current
 
 ## Next / open
 
+- Release 2.0.1, which is prepared: once it is in `develop`, `/release 2.0.1` (a human merges
+  `develop` into `main` and tags it), then close #54, finish #17 (delete `chore/17-demo`, run the
+  go/no-go list) and resubmit to the claude.ai directory. #54's HIGH fix has reached no existing
+  plugin install until then. [The plan](plans/v2.1.md): D1 (A) and D5 (two releases) are decided;
+  D2–D4 and D6 are open. `/release` has no step that dates the CHANGELOG heading, which a tag then
+  freezes: add one, since a pre-set date is how 2.0.0's heading drifted.
 - Resubmit the plugin to the claude.ai directory: its validator is the only check of the fixes
   above that `claude plugin validate --strict` does not make. Expected: no blocking finding. The
   holds left are its reviewer's: the credential patterns in `secret-scan.sh` and `guard-branch.sh`,
